@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import type { Lead, DashboardStats, HunterSource, CardSport } from '@/app/types';
+import RunnerPanel from './components/RunnerPanel';
 
 const HUNTER_LABELS: Record<string, string> = {
   typo_hunter: 'Typo Hunter',
@@ -95,6 +96,9 @@ export default function Dashboard() {
           </button>
         </div>
       </header>
+
+      {/* Run Scan panel */}
+      <RunnerPanel onComplete={fetchData} />
 
       {/* Metrics */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">

@@ -9,6 +9,7 @@ export async function GET(request: NextRequest) {
   const sort = searchParams.get('sort') || 'confidence';
   const limit = parseInt(searchParams.get('limit') || '50');
   const offset = parseInt(searchParams.get('offset') || '0');
+  const discoveredAfter = searchParams.get('discovered_after');
 
   let query = supabaseAdmin
     .from('raw_leads')
@@ -19,6 +20,7 @@ export async function GET(request: NextRequest) {
 
   if (sport) query = query.eq('sport', sport);
   if (hunter) query = query.eq('hunter_source', hunter);
+  if (discoveredAfter) query = query.gte('discovered_at', discoveredAfter);
 
   const { data, error, count } = await query;
 
