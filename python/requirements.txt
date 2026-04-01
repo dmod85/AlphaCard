@@ -1,0 +1,30 @@
+# AlphaCard Python Dependencies
+# pip install -r requirements.txt
+
+# Core
+supabase>=2.0.0
+python-dotenv>=1.0.0
+httpx>=0.27.0
+pydantic>=2.0.0
+
+# eBay API
+requests-oauthlib>=1.3.0
+
+# Fuzzy matching (Typo Hunter)
+rapidfuzz>=3.0.0
+python-Levenshtein>=0.25.0
+
+# Image Analysis (Holo-Heuristic)
+Pillow>=10.0.0
+numpy>=1.26.0
+scikit-image>=0.22.0
+
+# Scheduling
+apscheduler>=3.10.0
+
+# Notifications
+discord-webhook>=1.3.0
+
+# CLI
+rich>=13.0.0
+typer>=0.12.0

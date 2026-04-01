@@ -1,0 +1,13 @@
+node_modules/
+.next/
+out/
+.env
+.env.local
+*.pyc
+__pycache__/
+.venv/
+alphacard.log
+*.egg-info/
+dist/
+build/
+.DS_Store

@@ -1,0 +1,67 @@
+version: '3.8'
+
+services:
+  # =========================================================================
+  # Next.js Dashboard (local dev — use Vercel for production)
+  # =========================================================================
+  dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile.next
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_SUPABASE_URL=${NEXT_PUBLIC_SUPABASE_URL}
+      - NEXT_PUBLIC_SUPABASE_ANON_KEY=${NEXT_PUBLIC_SUPABASE_ANON_KEY}
+      - SUPABASE_SERVICE_KEY=${SUPABASE_SERVICE_KEY}
+    volumes:
+      - ./app:/app/app
+    restart: unless-stopped
+
+  # =========================================================================
+  # Python Hunter Workers
+  # =========================================================================
+  hunters:
+    build:
+      context: .
+      dockerfile: Dockerfile.hunters
+    environment:
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_SERVICE_KEY=${SUPABASE_SERVICE_KEY}
+      - EBAY_APP_ID=${EBAY_APP_ID}
+      - EBAY_CERT_ID=${EBAY_CERT_ID}
+      - EBAY_DEV_ID=${EBAY_DEV_ID}
+      - EBAY_REDIRECT_URI=${EBAY_REDIRECT_URI}
+      - EBAY_OAUTH_TOKEN=${EBAY_OAUTH_TOKEN}
+      - EBAY_ENVIRONMENT=${EBAY_ENVIRONMENT:-PRODUCTION}
+      - DISCORD_WEBHOOK_URL=${DISCORD_WEBHOOK_URL}
+      - PUSHOVER_USER_KEY=${PUSHOVER_USER_KEY}
+      - PUSHOVER_APP_TOKEN=${PUSHOVER_APP_TOKEN}
+      - SCAN_INTERVAL_MINUTES=${SCAN_INTERVAL_MINUTES:-15}
+    restart: unless-stopped
+    # Resource limits (keep it lean)
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+
+  # =========================================================================
+  # One-off hunter run (use: docker compose run --rm hunter-once)
+  # =========================================================================
+  hunter-once:
+    build:
+      context: .
+      dockerfile: Dockerfile.hunters
+    command: ["python", "-m", "scripts.run_hunters", "--once"]
+    environment:
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_SERVICE_KEY=${SUPABASE_SERVICE_KEY}
+      - EBAY_APP_ID=${EBAY_APP_ID}
+      - EBAY_CERT_ID=${EBAY_CERT_ID}
+      - EBAY_DEV_ID=${EBAY_DEV_ID}
+      - EBAY_OAUTH_TOKEN=${EBAY_OAUTH_TOKEN}
+      - EBAY_ENVIRONMENT=${EBAY_ENVIRONMENT:-PRODUCTION}
+      - DISCORD_WEBHOOK_URL=${DISCORD_WEBHOOK_URL}
+    profiles:
+      - tools  # Only runs when explicitly called

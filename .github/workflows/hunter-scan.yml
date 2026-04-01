@@ -1,0 +1,61 @@
+name: AlphaCard Hunter Scan
+
+on:
+  schedule:
+    # Run every 15 minutes during market hours (8am-11pm EST)
+    - cron: '*/15 13-23,0-4 * * *'  # 8am-11pm EST (UTC-5)
+  workflow_dispatch:  # Allow manual triggers
+    inputs:
+      hunter:
+        description: 'Specific hunter to run (typo, holo, stale, or all)'
+        required: false
+        default: 'all'
+
+env:
+  SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+  SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+  EBAY_APP_ID: ${{ secrets.EBAY_APP_ID }}
+  EBAY_CERT_ID: ${{ secrets.EBAY_CERT_ID }}
+  EBAY_DEV_ID: ${{ secrets.EBAY_DEV_ID }}
+  EBAY_OAUTH_TOKEN: ${{ secrets.EBAY_OAUTH_TOKEN }}
+  EBAY_ENVIRONMENT: PRODUCTION
+  DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+  PUSHOVER_USER_KEY: ${{ secrets.PUSHOVER_USER_KEY }}
+  PUSHOVER_APP_TOKEN: ${{ secrets.PUSHOVER_APP_TOKEN }}
+
+jobs:
+  hunt:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+          cache-dependency-path: 'python/requirements.txt'
+
+      - name: Install dependencies
+        run: |
+          cd python
+          pip install -r requirements.txt
+
+      - name: Run hunters
+        run: |
+          cd python
+          if [ "${{ github.event.inputs.hunter }}" != "" ] && [ "${{ github.event.inputs.hunter }}" != "all" ]; then
+            python -m scripts.run_hunters --hunter ${{ github.event.inputs.hunter }} --no-notify
+          else
+            python -m scripts.run_hunters --once
+          fi
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hunter-logs-${{ github.run_number }}
+          path: python/alphacard.log
+          retention-days: 7

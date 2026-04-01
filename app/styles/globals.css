@@ -1,0 +1,28 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --alpha-green: #00FF87;
+  --alpha-dark: #0A0E17;
+}
+
+body {
+  background: #030712;
+  color: #f9fafb;
+  font-family: 'Space Grotesk', system-ui, sans-serif;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #1f2937; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #374151; }
+
+/* Line clamp utility */
+.line-clamp-2 {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
