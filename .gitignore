@@ -11,3 +11,6 @@ alphacard.log
 dist/
 build/
 .DS_Store
+
+.vercel/output
+.vercel/cache
