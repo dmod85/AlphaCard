@@ -2,8 +2,9 @@ name: AlphaCard Hunter Scan
 
 on:
   schedule:
-    # Run every 15 minutes during market hours (8am-11pm EST)
-    - cron: '*/15 13-23,0-4 * * *'  # 8am-11pm EST (UTC-5)
+    # Run twice daily: 9am and 6pm EST (UTC-5 = 14:00 and 23:00 UTC)
+    - cron: '0 14 * * *'   # 9am EST
+    - cron: '0 23 * * *'   # 6pm EST
   workflow_dispatch:  # Allow manual triggers
     inputs:
       hunter:
