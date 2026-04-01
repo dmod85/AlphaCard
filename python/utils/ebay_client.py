@@ -61,6 +61,7 @@ class RateLimiter:
             self.window_start = datetime.now()
 
         self.calls_made += 1
+        time.sleep(1.0)  # 1s floor between every request to avoid burst limits
 
     @property
     def remaining(self) -> int:
@@ -109,7 +110,7 @@ class EbayClient:
         return self._access_token
 
     def _request(
-        self, method: str, url: str, max_retries: int = 3, **kwargs
+        self, method: str, url: str, max_retries: int = 5, **kwargs
     ) -> dict:
         """Make an API request with exponential backoff."""
         self.rate_limiter.wait_if_needed()
@@ -127,7 +128,7 @@ class EbayClient:
                 resp = self._client.request(method, url, headers=headers, **kwargs)
 
                 if resp.status_code == 429:
-                    wait = (2 ** attempt) * 5
+                    wait = (2 ** attempt) * 30  # 30s, 60s, 120s, 240s, 480s
                     logger.warning(f"Rate limited. Backing off {wait}s (attempt {attempt + 1})")
                     time.sleep(wait)
                     continue
