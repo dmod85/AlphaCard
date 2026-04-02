@@ -74,7 +74,9 @@ class EbayClient:
     def __init__(self, config: Optional[EbayConfig] = None):
         self.config = config or EbayConfig()
         self.rate_limiter = RateLimiter()
-        self._access_token: Optional[str] = os.getenv("EBAY_OAUTH_TOKEN")
+        # Always use client_credentials — the EBAY_OAUTH_TOKEN env var is a
+        # user token that expires and causes a wasted 401 on every startup.
+        self._access_token: Optional[str] = None
         self._token_expiry: Optional[datetime] = None
         self._client = httpx.Client(timeout=30.0)
 
@@ -123,20 +125,31 @@ class EbayClient:
             "X-EBAY-C-MARKETPLACE-ID": "EBAY_US",
         })
 
-        for attempt in range(max_retries):
+        # 401 is handled once outside the retry counter — it's an auth issue,
+        # not a transient failure, and shouldn't consume a retry slot.
+        token_refreshed = False
+        attempt = 0
+
+        while attempt < max_retries:
             try:
                 resp = self._client.request(method, url, headers=headers, **kwargs)
 
                 if resp.status_code == 429:
+                    if attempt == max_retries - 1:
+                        logger.error("eBay quota exhausted — skipping this request")
+                        return {}
                     wait = (2 ** attempt) * 30  # 30s, 60s, 120s, 240s, 480s
                     logger.warning(f"Rate limited. Backing off {wait}s (attempt {attempt + 1})")
                     time.sleep(wait)
+                    attempt += 1
                     continue
 
-                if resp.status_code == 401:
+                if resp.status_code == 401 and not token_refreshed:
+                    token_refreshed = True
                     self._access_token = None
                     token = self._ensure_token()
                     headers["Authorization"] = f"Bearer {token}"
+                    # Don't increment attempt — this wasn't a real failure
                     continue
 
                 resp.raise_for_status()
@@ -149,6 +162,7 @@ class EbayClient:
                 wait = (2 ** attempt) * 2
                 logger.warning(f"HTTP error {e.response.status_code}. Retry in {wait}s")
                 time.sleep(wait)
+                attempt += 1
 
         return {}
 
