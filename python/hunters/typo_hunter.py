@@ -206,7 +206,7 @@ class TypoHunter:
             ),
         }
 
-    def hunt(self, max_players: int = None) -> dict:
+    def hunt(self, max_players: int = None, max_variants: int = 8) -> dict:
         """
         Run the Typo Hunter across the entire watchlist.
         
@@ -231,15 +231,21 @@ class TypoHunter:
                 stored_typos = player.get("common_typos", [])
                 target_sets = player.get("target_sets", [])
 
-                variants = self.typo_gen.generate_variants(name, stored_typos)
-                logger.info(f"  {name}: {len(variants)} typo variants generated")
+                all_variants = self.typo_gen.generate_variants(name, stored_typos)
+                # Stored typos first (highest value), then generated — cap total
+                stored = [v for v in all_variants if v.method == "stored"]
+                generated = [v for v in all_variants if v.method != "stored"]
+                variants = (stored + generated)[:max_variants]
+                logger.info(
+                    f"  {name}: {len(all_variants)} variants generated, "
+                    f"searching top {len(variants)}"
+                )
 
                 for variant in variants:
                     try:
-                        # Build search queries combining typo + set names
+                        # One query per variant — set combinations multiply calls 4x
+                        # for minimal gain (typo is the signal, not the set name)
                         queries = [variant.variant]
-                        for card_set in target_sets[:3]:
-                            queries.append(f"{variant.variant} {card_set}")
 
                         for query in queries:
                             results = self.ebay.search_fixed_price(query, limit=50)
