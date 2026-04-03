@@ -3,9 +3,9 @@ import { supabaseAdmin } from '@/app/lib/supabase';
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
-  const { id } = params;
+  const { id } = await params;
 
   // Fetch the lead to get player_name, card_set, card_year 
   const { data: lead, error: leadError } = await supabaseAdmin
