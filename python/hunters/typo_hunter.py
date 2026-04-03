@@ -15,6 +15,7 @@ from rapidfuzz.distance import Levenshtein
 from utils.ebay_client import EbayClient
 from utils.supabase_client import LeadsDB, WatchlistDB, HunterRunsDB
 from hunters.comp_engine import CompEngine
+from hunters.hunt_config import HuntConfig
 
 logger = logging.getLogger("alphacard.typo_hunter")
 
@@ -206,14 +207,23 @@ class TypoHunter:
             ),
         }
 
-    def hunt(self, max_players: int = None, max_variants: int = 8) -> dict:
+    def hunt(self, max_players: int = None, max_variants: int = 8, config: HuntConfig = None) -> dict:
         """
-        Run the Typo Hunter across the entire watchlist.
-        
+        Run the Typo Hunter across the watchlist.
+
         Returns:
             Summary dict with leads_found, items_scanned, errors
         """
-        run_id = self.runs_db.start_run("typo_hunter")
+        if config is None:
+            config = HuntConfig()
+
+        run_id = self.runs_db.start_run("typo_hunter", config={
+            "max_variants": max_variants,
+            "sport": config.sport,
+            "min_price": config.min_price,
+            "max_price": config.max_price,
+            "min_profit": config.min_profit,
+        })
         leads_found = 0
         items_scanned = 0
         errors = 0
@@ -221,6 +231,8 @@ class TypoHunter:
 
         try:
             watchlist = self.watchlist_db.get_active()
+            if config.sport != "all":
+                watchlist = [p for p in watchlist if p.get("sport") == config.sport]
             if max_players:
                 watchlist = watchlist[:max_players]
 
@@ -259,6 +271,12 @@ class TypoHunter:
                                 if not self._is_card_listing(title):
                                     continue
 
+                                # Price range filter
+                                price_data = item.get("price", {})
+                                price = float(price_data.get("value", 0))
+                                if price < config.min_price or price > config.max_price:
+                                    continue
+
                                 # Check fuzzy match to confirm it's the right player
                                 title_match = fuzz.partial_ratio(
                                     name.lower(), title.lower()
@@ -275,23 +293,27 @@ class TypoHunter:
                                 )
 
                                 if comp and comp.median_price > 0:
+                                    estimated_profit = comp.median_price - price
+                                    rough_roi = (estimated_profit / price * 100) if price > 0 else 0
                                     lead["median_comp"] = comp.median_price
                                     lead["comp_count"] = comp.comp_count
+                                    lead["estimated_profit"] = round(estimated_profit, 2)
                                     lead["confidence"] = min(
                                         comp.confidence + (10 if variant.method == "stored" else 0),
                                         100,
                                     )
 
-                                    # Only save if there's profit potential
-                                    if lead.get("estimated_profit", 0) > float(
-                                        os.environ.get("MIN_PROFIT_THRESHOLD", 3)
-                                    ):
-                                        self.leads_db.upsert_lead(lead)
-                                        leads_found += 1
-                                        logger.info(
-                                            f"  💰 LEAD: {title[:60]}... "
-                                            f"(${lead['current_price']} → ${comp.median_price} median)"
-                                        )
+                                    if estimated_profit < config.min_profit:
+                                        continue
+                                    if rough_roi < config.min_roi:
+                                        continue
+
+                                    self.leads_db.upsert_lead(lead)
+                                    leads_found += 1
+                                    logger.info(
+                                        f"  💰 LEAD: {title[:60]}... "
+                                        f"(${price} → ${comp.median_price} median)"
+                                    )
 
                     except Exception as e:
                         errors += 1

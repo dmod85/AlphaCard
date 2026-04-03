@@ -74,6 +74,33 @@ export default function RunnerPanel({ onComplete }: Props) {
   const [newLeadsCount, setNewLeadsCount] = useState<number | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  // Scan filters
+  const [showFilters, setShowFilters] = useState(false);
+  const [sport, setSport] = useState('all');
+  const [minPrice, setMinPrice] = useState('');
+  const [maxPrice, setMaxPrice] = useState('');
+  const [minRoi, setMinRoi] = useState('');
+  const [minProfit, setMinProfit] = useState('');
+  const [broadMode, setBroadMode] = useState(false);
+
+  const buildConfig = () => ({
+    sport,
+    min_price: minPrice ? parseFloat(minPrice) : 1.0,
+    max_price: maxPrice ? parseFloat(maxPrice) : 500.0,
+    min_roi: minRoi ? parseFloat(minRoi) : 0.0,
+    min_profit: minProfit ? parseFloat(minProfit) : 3.0,
+    broad_mode: broadMode,
+  });
+
+  const activeFilterCount = [
+    sport !== 'all',
+    !!minPrice,
+    !!maxPrice,
+    !!minRoi,
+    !!minProfit,
+    broadMode,
+  ].filter(Boolean).length;
+
   const stopPolling = useCallback(() => {
     if (pollRef.current) {
       clearInterval(pollRef.current);
@@ -123,7 +150,7 @@ export default function RunnerPanel({ onComplete }: Props) {
       const res = await fetch('/api/hunters/trigger', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ hunter: hunter === 'all' ? '' : hunter }),
+        body: JSON.stringify({ hunter: hunter === 'all' ? '' : hunter, config: buildConfig() }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to trigger');
@@ -154,7 +181,7 @@ export default function RunnerPanel({ onComplete }: Props) {
   return (
     <div className="mb-6">
       {/* Trigger bar */}
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3 flex-wrap">
         <select
           value={hunter}
           onChange={e => setHunter(e.target.value)}
@@ -178,6 +205,17 @@ export default function RunnerPanel({ onComplete }: Props) {
           {isRunning && <Spinner />}
           {phase === 'triggering' ? 'Dispatching...' : isRunning ? 'Scanning...' : 'Run Scan'}
         </button>
+        <button
+          onClick={() => setShowFilters(v => !v)}
+          disabled={isRunning}
+          className={`text-xs px-3 py-1.5 rounded-lg transition disabled:opacity-50 ${
+            activeFilterCount > 0
+              ? 'bg-amber-500/20 text-amber-400 ring-1 ring-amber-500/30'
+              : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
+          }`}
+        >
+          Filters{activeFilterCount > 0 ? ` (${activeFilterCount})` : ''} {showFilters ? '▲' : '▼'}
+        </button>
         {(phase === 'done' || phase === 'error') && (
           <button
             onClick={reset}
@@ -187,6 +225,82 @@ export default function RunnerPanel({ onComplete }: Props) {
           </button>
         )}
       </div>
+
+      {/* Filter panel */}
+      {showFilters && (
+        <div className="mt-3 bg-gray-900 border border-gray-800 rounded-xl px-4 py-3">
+          <div className="flex flex-wrap gap-4 items-end">
+            <label className="flex flex-col gap-1">
+              <span className="text-[10px] text-gray-500 uppercase tracking-wide">Sport</span>
+              <select
+                value={sport}
+                onChange={e => setSport(e.target.value)}
+                className="bg-gray-800 text-gray-300 text-xs rounded-lg px-2 py-1 border-0"
+              >
+                <option value="all">All sports</option>
+                <option value="nfl">NFL</option>
+                <option value="nba">NBA</option>
+                <option value="mlb">MLB</option>
+                <option value="nhl">NHL</option>
+              </select>
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-[10px] text-gray-500 uppercase tracking-wide">Min price ($)</span>
+              <input
+                type="number" min="0" step="1" placeholder="1"
+                value={minPrice} onChange={e => setMinPrice(e.target.value)}
+                className="bg-gray-800 text-gray-300 text-xs rounded-lg px-2 py-1 border-0 w-20"
+              />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-[10px] text-gray-500 uppercase tracking-wide">Max price ($)</span>
+              <input
+                type="number" min="0" step="1" placeholder="500"
+                value={maxPrice} onChange={e => setMaxPrice(e.target.value)}
+                className="bg-gray-800 text-gray-300 text-xs rounded-lg px-2 py-1 border-0 w-20"
+              />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-[10px] text-gray-500 uppercase tracking-wide">Min ROI (%)</span>
+              <input
+                type="number" min="0" step="5" placeholder="0"
+                value={minRoi} onChange={e => setMinRoi(e.target.value)}
+                className="bg-gray-800 text-gray-300 text-xs rounded-lg px-2 py-1 border-0 w-20"
+              />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-[10px] text-gray-500 uppercase tracking-wide">Min profit ($)</span>
+              <input
+                type="number" min="0" step="1" placeholder="3"
+                value={minProfit} onChange={e => setMinProfit(e.target.value)}
+                className="bg-gray-800 text-gray-300 text-xs rounded-lg px-2 py-1 border-0 w-20"
+              />
+            </label>
+            <label className="flex flex-col gap-1 ml-auto">
+              <span className="text-[10px] text-gray-500 uppercase tracking-wide">Broad mode</span>
+              <div
+                onClick={() => setBroadMode(v => !v)}
+                className={`cursor-pointer flex items-center gap-2 text-xs px-3 py-1 rounded-lg transition ${
+                  broadMode
+                    ? 'bg-amber-500/20 text-amber-400 ring-1 ring-amber-500/30'
+                    : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
+                }`}
+              >
+                <span className={`w-3 h-3 rounded-sm border ${
+                  broadMode ? 'bg-amber-400 border-amber-400' : 'border-gray-600'
+                }`} />
+                Skip watchlist
+              </div>
+            </label>
+          </div>
+          {broadMode && (
+            <p className="text-[10px] text-amber-400/70 mt-2">
+              Broad mode: Holo Engine and Stale Sniper will scan sport-wide queries instead of watchlist players.
+              Typo Hunter still uses the watchlist (typos require known player names).
+            </p>
+          )}
+        </div>
+      )}
 
       {/* Log panel */}
       {phase !== 'idle' && (

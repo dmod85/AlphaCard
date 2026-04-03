@@ -29,6 +29,7 @@ from hunters.comp_engine import CompEngine
 from hunters.typo_hunter import TypoHunter
 from hunters.holo_engine import HoloHeuristicEngine
 from hunters.stale_sniper import StaleSniper
+from hunters.hunt_config import HuntConfig
 
 load_dotenv()
 console = Console()
@@ -55,8 +56,10 @@ def print_banner():
     ))
 
 
-def run_all_hunters(ebay: EbayClient, notify: bool = True):
+def run_all_hunters(ebay: EbayClient, notify: bool = True, config: HuntConfig = None):
     """Run all three hunters in sequence."""
+    if config is None:
+        config = HuntConfig()
     notifier = NotificationRouter() if notify else None
     leads_db = LeadsDB()
     watchlist_db = WatchlistDB()
@@ -76,7 +79,7 @@ def run_all_hunters(ebay: EbayClient, notify: bool = True):
             ebay=ebay, leads_db=leads_db, watchlist_db=watchlist_db,
             runs_db=runs_db, comp_engine=comp_engine,
         )
-        result = typo.hunt()
+        result = typo.hunt(config=config)
         results["typo_hunter"] = result
         total_leads += result["leads_found"]
         total_scanned += result["items_scanned"]
@@ -92,7 +95,7 @@ def run_all_hunters(ebay: EbayClient, notify: bool = True):
         holo = HoloHeuristicEngine(
             ebay=ebay, leads_db=leads_db, runs_db=runs_db, comp_engine=comp_engine,
         )
-        result = holo.hunt(analyze_images=True)
+        result = holo.hunt(analyze_images=True, config=config)
         results["holo_heuristic"] = result
         total_leads += result["leads_found"]
         total_scanned += result["items_scanned"]
@@ -109,7 +112,7 @@ def run_all_hunters(ebay: EbayClient, notify: bool = True):
             ebay=ebay, leads_db=leads_db, watchlist_db=watchlist_db,
             runs_db=runs_db, comp_engine=comp_engine,
         )
-        result = stale.hunt()
+        result = stale.hunt(config=config)
         results["stale_sniper"] = result
         total_leads += result["leads_found"]
         total_scanned += result["items_scanned"]
@@ -146,8 +149,10 @@ def run_all_hunters(ebay: EbayClient, notify: bool = True):
     return results
 
 
-def run_single_hunter(hunter_name: str, ebay: EbayClient):
+def run_single_hunter(hunter_name: str, ebay: EbayClient, config: HuntConfig = None):
     """Run a specific hunter."""
+    if config is None:
+        config = HuntConfig()
     leads_db = LeadsDB()
     watchlist_db = WatchlistDB()
     runs_db = HunterRunsDB()
@@ -158,18 +163,18 @@ def run_single_hunter(hunter_name: str, ebay: EbayClient):
             ebay=ebay, leads_db=leads_db, watchlist_db=watchlist_db,
             runs_db=runs_db, comp_engine=comp_engine,
         )
-        return hunter.hunt()
+        return hunter.hunt(config=config)
     elif hunter_name == "holo":
         hunter = HoloHeuristicEngine(
             ebay=ebay, leads_db=leads_db, runs_db=runs_db, comp_engine=comp_engine,
         )
-        return hunter.hunt()
+        return hunter.hunt(config=config)
     elif hunter_name == "stale":
         hunter = StaleSniper(
             ebay=ebay, leads_db=leads_db, watchlist_db=watchlist_db,
             runs_db=runs_db, comp_engine=comp_engine,
         )
-        return hunter.hunt()
+        return hunter.hunt(config=config)
     else:
         console.print(f"[red]Unknown hunter: {hunter_name}[/]")
         console.print("Available: typo, holo, stale")
@@ -186,7 +191,42 @@ def main():
         "--interval", type=int, default=15,
         help="Schedule interval in minutes (default: 15)",
     )
+    # Scan filters
+    parser.add_argument(
+        "--sport", type=str, default="all",
+        choices=["all", "nfl", "nba", "mlb", "nhl"],
+        help="Restrict to a single sport (default: all)",
+    )
+    parser.add_argument(
+        "--min-price", type=float, default=1.0,
+        help="Skip listings below this price (default: $1)",
+    )
+    parser.add_argument(
+        "--max-price", type=float, default=500.0,
+        help="Skip listings above this price (default: $500)",
+    )
+    parser.add_argument(
+        "--min-roi", type=float, default=0.0,
+        help="Minimum gross ROI %% to save a lead (default: 0)",
+    )
+    parser.add_argument(
+        "--min-profit", type=float, default=3.0,
+        help="Minimum gross profit $ to save a lead (default: $3)",
+    )
+    parser.add_argument(
+        "--broad", action="store_true",
+        help="Broad mode: bypass watchlist, scan sport-wide queries (holo + stale)",
+    )
     args = parser.parse_args()
+
+    config = HuntConfig(
+        sport=args.sport,
+        min_price=args.min_price,
+        max_price=args.max_price,
+        min_roi=args.min_roi,
+        min_profit=args.min_profit,
+        broad_mode=args.broad,
+    )
 
     print_banner()
 
@@ -194,7 +234,7 @@ def main():
 
     if args.hunter:
         console.print(f"\n[bold]Running single hunter: {args.hunter}[/]")
-        result = run_single_hunter(args.hunter, ebay)
+        result = run_single_hunter(args.hunter, ebay, config=config)
         console.print(f"\n[green]Result: {result}[/]")
 
     elif args.schedule:
@@ -205,7 +245,7 @@ def main():
             run_all_hunters,
             "interval",
             minutes=args.interval,
-            args=[ebay, not args.no_notify],
+            args=[ebay, not args.no_notify, config],
             id="alpha_scan",
             name="AlphaCard Full Scan",
             misfire_grace_time=300,
@@ -214,8 +254,7 @@ def main():
         console.print(f"\n[bold green]Scheduler started. Running every {args.interval} minutes.[/]")
         console.print("[dim]Press Ctrl+C to stop.[/]\n")
 
-        # Run immediately on start
-        run_all_hunters(ebay, notify=not args.no_notify)
+        run_all_hunters(ebay, notify=not args.no_notify, config=config)
 
         try:
             scheduler.start()
@@ -224,7 +263,7 @@ def main():
 
     else:
         # Default: run once
-        run_all_hunters(ebay, notify=not args.no_notify)
+        run_all_hunters(ebay, notify=not args.no_notify, config=config)
 
     ebay.close()
 

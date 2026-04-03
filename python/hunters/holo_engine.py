@@ -18,6 +18,7 @@ from PIL import Image
 from utils.ebay_client import EbayClient
 from utils.supabase_client import LeadsDB, HunterRunsDB
 from hunters.comp_engine import CompEngine
+from hunters.hunt_config import HuntConfig, get_broad_queries
 
 logger = logging.getLogger("alphacard.holo_engine")
 
@@ -261,24 +262,38 @@ class HoloHeuristicEngine:
 
         return bool(mismatch_keywords), mismatch_keywords
 
-    def hunt(self, queries: list[str] = None, analyze_images: bool = True) -> dict:
+    def hunt(
+        self,
+        queries: list[str] = None,
+        analyze_images: bool = True,
+        config: HuntConfig = None,
+    ) -> dict:
         """
         Run the Holo-Heuristic Engine.
-        
-        Default queries focus on common base card listings that might be parallels.
+
+        Default queries come from hunt_config.SPORT_BROAD_QUERIES filtered by
+        config.sport. Pass a custom queries list to override.
         """
-        run_id = self.runs_db.start_run("holo_heuristic")
+        if config is None:
+            config = HuntConfig()
+
+        run_id = self.runs_db.start_run("holo_heuristic", config={
+            "sport": config.sport,
+            "min_price": config.min_price,
+            "max_price": config.max_price,
+            "broad_mode": config.broad_mode,
+        })
         leads_found = 0
         items_scanned = 0
         errors = 0
 
         if queries is None:
-            queries = [
-                "2024 Prizm football base rookie",
-                "2024 Select football base",
-                "2023-24 Prizm basketball base rookie",
-                "2024 Topps Chrome baseball base",
-                "2024 Donruss football base rookie",
+            queries = get_broad_queries(config.sport) or [
+                "2025 Prizm football rookie",
+                "2025 Select football rookie",
+                "2024-25 Prizm basketball rookie",
+                "2025 Topps Chrome baseball rookie",
+                "2025-26 Upper Deck hockey rookie",
             ]
 
         try:
@@ -290,6 +305,13 @@ class HoloHeuristicEngine:
 
                 for item in items:
                     title = item.get("title", "")
+
+                    # Price range filter (before expensive get_item call)
+                    price_data = item.get("price", {})
+                    price = float(price_data.get("value", 0))
+                    if price < config.min_price or price > config.max_price:
+                        continue
+
                     title_keywords = self._check_title_for_parallels(title)
 
                     # Skip if title already mentions a parallel

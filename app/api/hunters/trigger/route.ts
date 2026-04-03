@@ -13,18 +13,29 @@ function ghHeaders() {
 }
 
 // POST /api/hunters/trigger — dispatch a workflow run
-// Body: { hunter?: 'typo' | 'holo' | 'stale' | 'all' }
+// Body: { hunter?: 'typo' | 'holo' | 'stale' | 'all', config?: HuntConfig }
 // Returns: { runId, triggeredAt }
 export async function POST(request: NextRequest) {
-  const { hunter } = await request.json().catch(() => ({}));
+  const { hunter, config } = await request.json().catch(() => ({}));
   const triggeredAt = new Date().toISOString();
+
+  // Build workflow inputs — GitHub Actions inputs are all strings
+  const inputs: Record<string, string> = {
+    hunter: hunter || '',
+    sport: config?.sport ?? 'all',
+    min_price: String(config?.min_price ?? 1.0),
+    max_price: String(config?.max_price ?? 500.0),
+    min_roi: String(config?.min_roi ?? 0.0),
+    min_profit: String(config?.min_profit ?? 3.0),
+    broad_mode: String(config?.broad_mode ?? false),
+  };
 
   const dispatch = await fetch(
     `${GITHUB_API}/repos/${REPO}/actions/workflows/${WORKFLOW}/dispatches`,
     {
       method: 'POST',
       headers: { ...ghHeaders(), 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ref: 'master', inputs: { hunter: hunter || '' } }),
+      body: JSON.stringify({ ref: 'master', inputs }),
     }
   );
 

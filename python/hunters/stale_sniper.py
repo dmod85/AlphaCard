@@ -17,6 +17,7 @@ from typing import Optional
 from utils.ebay_client import EbayClient
 from utils.supabase_client import LeadsDB, WatchlistDB, HunterRunsDB
 from hunters.comp_engine import CompEngine
+from hunters.hunt_config import HuntConfig, get_broad_queries, sport_for_query
 
 logger = logging.getLogger("alphacard.stale_sniper")
 
@@ -139,14 +140,26 @@ class StaleSniper:
 
         return min(discount_score + stale_score + offer_score + seller_score, 100)
 
-    def hunt(self, max_players: int = None) -> dict:
+    def hunt(self, max_players: int = None, config: HuntConfig = None) -> dict:
         """
-        Run the Stale Sniper across the watchlist.
+        Run the Stale Sniper.
+
+        In broad_mode (config.broad_mode=True) watchlist is bypassed and
+        sport-specific broad queries are used instead, catching stale listings
+        for players not on the watchlist.
         """
+        if config is None:
+            config = HuntConfig()
+
         run_id = self.runs_db.start_run("stale_sniper", config={
             "min_days_active": self.min_days_active,
             "max_price_pct": self.max_price_pct,
-            "min_profit": self.min_profit,
+            "min_profit": config.min_profit,
+            "sport": config.sport,
+            "broad_mode": config.broad_mode,
+            "min_price": config.min_price,
+            "max_price": config.max_price,
+            "min_roi": config.min_roi,
         })
         leads_found = 0
         items_scanned = 0
@@ -154,122 +167,155 @@ class StaleSniper:
         error_log = []
 
         try:
-            watchlist = self.watchlist_db.get_active()
-            if max_players:
-                watchlist = watchlist[:max_players]
+            # ---------------------------------------------------------------
+            # Build the list of (player_name | None, sport, query) contexts
+            # ---------------------------------------------------------------
+            query_contexts: list[dict] = []
 
-            logger.info(f"Stale Sniper starting. {len(watchlist)} players on watchlist.")
+            if config.broad_mode:
+                broad = get_broad_queries(config.sport)
+                logger.info(f"Stale Sniper (broad mode): {len(broad)} broad queries, sport={config.sport}")
+                for q in broad:
+                    query_contexts.append({
+                        "name": None,
+                        "sport": sport_for_query(q),
+                        "query": q,
+                        "target_sets": [],
+                    })
+            else:
+                watchlist = self.watchlist_db.get_active()
+                if config.sport != "all":
+                    watchlist = [p for p in watchlist if p.get("sport") == config.sport]
+                if max_players:
+                    watchlist = watchlist[:max_players]
+                logger.info(f"Stale Sniper: {len(watchlist)} players on watchlist.")
+                for player in watchlist:
+                    name = player["player_name"]
+                    target_sets = player.get("target_sets", [])
+                    target_years = player.get("target_years", [])
+                    queries = [name]
+                    for card_set in target_sets[:3]:
+                        for year in target_years[:2]:
+                            queries.append(f"{year} {card_set} {name}")
+                    for q in queries:
+                        query_contexts.append({
+                            "name": name,
+                            "sport": player.get("sport", "nfl"),
+                            "query": q,
+                            "target_sets": target_sets,
+                        })
 
-            for player in watchlist:
-                name = player["player_name"]
-                target_sets = player.get("target_sets", [])
-                target_years = player.get("target_years", [])
+            # ---------------------------------------------------------------
+            # Main scan loop
+            # ---------------------------------------------------------------
+            for ctx in query_contexts:
+                name = ctx["name"]
+                sport = ctx["sport"]
+                query = ctx["query"]
+                target_sets = ctx["target_sets"]
 
-                # Build search queries
-                queries = [name]
-                for card_set in target_sets[:3]:
-                    for year in target_years[:2]:
-                        queries.append(f"{year} {card_set} {name}")
+                try:
+                    results = self.ebay.search_best_offer(query, limit=100)
+                    items = results.get("itemSummaries", [])
+                    fixed_results = self.ebay.search_fixed_price(query, limit=50)
+                    items.extend(fixed_results.get("itemSummaries", []))
+                    items_scanned += len(items)
 
-                for query in queries:
-                    try:
-                        # Search for Best Offer listings first (highest value targets)
-                        results = self.ebay.search_best_offer(query, limit=100)
-                        items = results.get("itemSummaries", [])
+                    for item in items:
+                        days_active = self._calculate_days_active(item)
+                        if days_active < self.min_days_active:
+                            continue
 
-                        # Also search fixed price
-                        fixed_results = self.ebay.search_fixed_price(query, limit=50)
-                        items.extend(fixed_results.get("itemSummaries", []))
+                        price_data = item.get("price", {})
+                        price = float(price_data.get("value", 0))
 
-                        items_scanned += len(items)
+                        # Price range filter
+                        if price < config.min_price or price > config.max_price:
+                            continue
 
-                        for item in items:
-                            days_active = self._calculate_days_active(item)
+                        buying_options = item.get("buyingOptions", [])
+                        has_best_offer = "BEST_OFFER" in buying_options
 
-                            # Skip if not stale enough
-                            if days_active < self.min_days_active:
-                                continue
+                        # Comp key: player name if known (watchlist mode),
+                        # else use the listing title (broad mode)
+                        comp_key = name or item.get("title", "")[:80]
+                        comp = self.comp_engine.calculate(
+                            player_name=comp_key,
+                            card_set=target_sets[0] if target_sets else None,
+                        )
 
-                            price_data = item.get("price", {})
-                            price = float(price_data.get("value", 0))
-                            buying_options = item.get("buyingOptions", [])
-                            has_best_offer = "BEST_OFFER" in buying_options
+                        if not comp or comp.median_price <= 0:
+                            continue
 
-                            # Get comp data
-                            comp = self.comp_engine.calculate(
-                                player_name=name,
-                                card_set=target_sets[0] if target_sets else None,
-                            )
+                        price_pct = price / comp.median_price
+                        if price_pct > self.max_price_pct:
+                            continue
 
-                            if not comp or comp.median_price <= 0:
-                                continue
+                        estimated_profit = comp.median_price - price
+                        if estimated_profit < config.min_profit:
+                            continue
 
-                            # Check if price is below threshold
-                            price_pct = price / comp.median_price
-                            if price_pct > self.max_price_pct:
-                                continue
+                        # ROI filter (gross, pre-fees)
+                        rough_roi = (estimated_profit / price * 100) if price > 0 else 0
+                        if rough_roi < config.min_roi:
+                            continue
 
-                            # Calculate profit potential
-                            estimated_profit = comp.median_price - price
-                            if estimated_profit < self.min_profit:
-                                continue
+                        seller_info = item.get("seller", {})
+                        feedback = int(seller_info.get("feedbackScore", 0))
+                        confidence = self._score_lead(
+                            price, comp.median_price, days_active,
+                            has_best_offer, feedback
+                        )
 
-                            # Score the lead
-                            seller_info = item.get("seller", {})
-                            feedback = int(seller_info.get("feedbackScore", 0))
-                            confidence = self._score_lead(
-                                price, comp.median_price, days_active,
-                                has_best_offer, feedback
-                            )
+                        offer_price = self._calculate_offer_price(
+                            price, comp.median_price, days_active
+                        ) if has_best_offer else None
 
-                            # Calculate optimal offer price
-                            offer_price = self._calculate_offer_price(
-                                price, comp.median_price, days_active
-                            ) if has_best_offer else None
+                        reasons = [
+                            f"Stale {days_active} days",
+                            f"Listed at {price_pct:.0%} of ${comp.median_price} median",
+                        ]
+                        if has_best_offer:
+                            reasons.append(f"Best Offer enabled — suggest ${offer_price}")
+                        if feedback < 100:
+                            reasons.append(f"Low-feedback seller ({feedback})")
+                        if config.broad_mode:
+                            reasons.append("broad scan")
 
-                            # Build the lead
-                            reasons = [
-                                f"Stale {days_active} days",
-                                f"Listed at {price_pct:.0%} of ${comp.median_price} median",
-                            ]
-                            if has_best_offer:
-                                reasons.append(f"Best Offer enabled — suggest ${offer_price}")
-                            if feedback < 100:
-                                reasons.append(f"Low-feedback seller ({feedback})")
+                        lead = {
+                            "ebay_item_id": item.get("itemId", ""),
+                            "title": item.get("title", ""),
+                            "seller": seller_info.get("username", ""),
+                            "current_price": price,
+                            "buy_it_now": "FIXED_PRICE" in buying_options,
+                            "best_offer": has_best_offer,
+                            "listing_type": "fixed" if "FIXED_PRICE" in buying_options else "auction",
+                            "image_url": (item.get("image", {}) or {}).get("imageUrl"),
+                            "item_url": item.get("itemWebUrl", ""),
+                            "player_name": name,
+                            "sport": sport,
+                            "median_comp": comp.median_price,
+                            "comp_count": comp.comp_count,
+                            "estimated_profit": round(estimated_profit, 2),
+                            "hunter_source": "stale_sniper",
+                            "confidence": confidence,
+                            "alpha_reason": " | ".join(reasons),
+                            "days_active": days_active,
+                            "listing_date": item.get("itemCreationDate"),
+                        }
 
-                            lead = {
-                                "ebay_item_id": item.get("itemId", ""),
-                                "title": item.get("title", ""),
-                                "seller": seller_info.get("username", ""),
-                                "current_price": price,
-                                "buy_it_now": "FIXED_PRICE" in buying_options,
-                                "best_offer": has_best_offer,
-                                "listing_type": "fixed" if "FIXED_PRICE" in buying_options else "auction",
-                                "image_url": (item.get("image", {}) or {}).get("imageUrl"),
-                                "item_url": item.get("itemWebUrl", ""),
-                                "player_name": name,
-                                "sport": player.get("sport", "nfl"),
-                                "median_comp": comp.median_price,
-                                "comp_count": comp.comp_count,
-                                "hunter_source": "stale_sniper",
-                                "confidence": confidence,
-                                "alpha_reason": " | ".join(reasons),
-                                "days_active": days_active,
-                                "listing_date": item.get("itemCreationDate"),
-                            }
+                        self.leads_db.upsert_lead(lead)
+                        leads_found += 1
+                        logger.info(
+                            f"  🎯 STALE: {item.get('title', '')[:50]}... "
+                            f"({days_active}d, ${price} → ${comp.median_price} comp, "
+                            f"{'BO' if has_best_offer else 'FP'})"
+                        )
 
-                            self.leads_db.upsert_lead(lead)
-                            leads_found += 1
-                            logger.info(
-                                f"  🎯 STALE: {item.get('title', '')[:50]}... "
-                                f"({days_active}d, ${price} → ${comp.median_price} comp, "
-                                f"{'BO' if has_best_offer else 'FP'})"
-                            )
-
-                    except Exception as e:
-                        errors += 1
-                        error_log.append({"query": query, "error": str(e)})
-                        logger.error(f"Stale Sniper error on '{query}': {e}")
+                except Exception as e:
+                    errors += 1
+                    error_log.append({"query": query, "error": str(e)})
+                    logger.error(f"Stale Sniper error on '{query}': {e}")
 
             self.runs_db.finish_run(run_id, leads_found, items_scanned, errors, error_log)
 

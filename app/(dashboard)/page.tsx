@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import type { Lead, DashboardStats, HunterSource, CardSport } from '@/app/types';
+import type { Lead, DashboardStats, HunterSource, CardSport, SoldComp } from '@/app/types';
 import RunnerPanel from './components/RunnerPanel';
 
 const HUNTER_LABELS: Record<string, string> = {
@@ -34,8 +34,11 @@ export default function Dashboard() {
 
   const fetchData = useCallback(async () => {
     try {
+      const params = new URLSearchParams({ status: 'new', sort, limit: '50' });
+      if (sport !== 'all') params.set('sport', sport);
+      if (filter !== 'all') params.set('hunter', filter);
       const [leadsRes, statsRes] = await Promise.all([
-        fetch(`/api/leads?status=new&sort=${sort}&limit=50`),
+        fetch(`/api/leads?${params}`),
         fetch('/api/leads/stats'),
       ]);
       const leadsData = await leadsRes.json();
@@ -47,7 +50,7 @@ export default function Dashboard() {
     } finally {
       setLoading(false);
     }
-  }, [sort]);
+  }, [sort, sport, filter]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -66,9 +69,8 @@ export default function Dashboard() {
     setLeads(prev => prev.filter(l => l.id !== id));
   };
 
-  const filtered = leads
-    .filter(l => filter === 'all' || l.hunter_source === filter)
-    .filter(l => sport === 'all' || l.sport === sport);
+  // Server handles sport/hunter filtering; client array is already filtered
+  const filtered = leads;
 
   const totalProfit = filtered.reduce(
     (sum, l) => sum + Math.max(0, l.estimated_profit || 0), 0
@@ -205,6 +207,35 @@ function LeadCard({
 }) {
   const profit = lead.estimated_profit || 0;
   const isProfit = profit >= 0;
+  const [showComps, setShowComps] = useState(false);
+  const [comps, setComps] = useState<SoldComp[] | null>(null);
+  const [compsLoading, setCompsLoading] = useState(false);
+
+  const fetchComps = async () => {
+    if (comps !== null) { setShowComps(v => !v); return; }
+    setCompsLoading(true);
+    setShowComps(true);
+    try {
+      const res = await fetch(`/api/leads/${lead.id}/comps`);
+      const data = await res.json();
+      setComps(data.comps || []);
+    } catch {
+      setComps([]);
+    } finally {
+      setCompsLoading(false);
+    }
+  };
+
+  const usedComps = comps?.filter(c => !c.is_outlier) ?? [];
+  const median = usedComps.length
+    ? (() => {
+        const sorted = [...usedComps].sort((a, b) => a.sold_price - b.sold_price);
+        const mid = Math.floor(sorted.length / 2);
+        return sorted.length % 2
+          ? sorted[mid].sold_price
+          : (sorted[mid - 1].sold_price + sorted[mid].sold_price) / 2;
+      })()
+    : null;
 
   return (
     <div
@@ -216,13 +247,22 @@ function LeadCard({
         }`}
     >
       <div className="flex gap-4">
-        {/* Card Image Placeholder */}
-        <div className="w-14 h-20 bg-gray-800 rounded-lg flex items-center justify-center text-gray-600 text-sm font-medium shrink-0">
-          {(lead.player_name || '??')
-            .split(' ')
-            .map(w => w[0])
-            .join('')
-            .slice(0, 2)}
+        {/* Card Image */}
+        <div className="w-14 h-20 bg-gray-800 rounded-lg flex items-center justify-center text-gray-600 text-sm font-medium shrink-0 overflow-hidden">
+          {lead.image_url ? (
+            <img
+              src={lead.image_url}
+              alt={lead.title}
+              className="w-full h-full object-cover"
+              onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+            />
+          ) : (
+            (lead.player_name || '??')
+              .split(' ')
+              .map(w => w[0])
+              .join('')
+              .slice(0, 2)
+          )}
         </div>
 
         {/* Content */}
@@ -242,6 +282,11 @@ function LeadCard({
             <span className="text-[10px] px-2 py-0.5 rounded-full bg-green-500/10 text-green-400 font-medium">
               {lead.sport.toUpperCase()}
             </span>
+            {lead.alpha_reason?.includes('broad scan') && (
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-500/10 text-purple-400 font-medium">
+                Broad
+              </span>
+            )}
             {lead.best_offer && (
               <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400 font-medium">
                 Best Offer
@@ -289,7 +334,72 @@ function LeadCard({
             >
               Dismiss
             </button>
+            <button
+              onClick={fetchComps}
+              className="ml-auto text-xs px-3 py-1 rounded-lg bg-gray-800 text-gray-400 hover:bg-gray-700 transition"
+            >
+              {compsLoading
+                ? 'Loading…'
+                : comps !== null
+                  ? `${showComps ? '▲' : '▼'} Comps (${usedComps.length})`
+                  : `Comps (${lead.comp_count})`}
+            </button>
           </div>
+
+          {showComps && (
+            <div className="mt-3 rounded-lg overflow-hidden border border-gray-800">
+              {compsLoading ? (
+                <div className="text-xs text-gray-500 px-3 py-2">Loading comp sales…</div>
+              ) : comps && comps.length === 0 ? (
+                <div className="text-xs text-gray-500 px-3 py-2">No comps in the last 60 days.</div>
+              ) : (
+                <>
+                  {median !== null && (
+                    <div className="flex justify-between items-center px-3 py-1.5 bg-gray-800/60 text-xs">
+                      <span className="text-gray-400">
+                        {usedComps.length} sales used · {comps!.length - usedComps.length} outliers removed
+                      </span>
+                      <span className="text-white font-medium">Median ${median.toFixed(2)}</span>
+                    </div>
+                  )}
+                  <table className="w-full text-xs">
+                    <tbody>
+                      {comps!.map(comp => (
+                        <tr
+                          key={comp.id}
+                          className={`border-t border-gray-800/60 ${comp.is_outlier ? 'opacity-40' : ''}`}
+                        >
+                          <td className="px-3 py-1.5 text-gray-500 whitespace-nowrap">
+                            {new Date(comp.sold_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                          </td>
+                          <td className="px-3 py-1.5 text-gray-300 max-w-0 w-full truncate">
+                            {comp.item_url ? (
+                              <a
+                                href={comp.item_url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="hover:text-blue-400 transition"
+                              >
+                                {comp.title}
+                              </a>
+                            ) : comp.title}
+                          </td>
+                          <td className="px-3 py-1.5 text-right whitespace-nowrap font-medium text-white">
+                            ${comp.sold_price.toFixed(2)}
+                          </td>
+                          {comp.is_outlier && (
+                            <td className="px-2 py-1.5 text-red-400 whitespace-nowrap" title={comp.outlier_reason ?? 'Outlier'}>
+                              ✕
+                            </td>
+                          )}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Numbers */}

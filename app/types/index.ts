@@ -82,6 +82,18 @@ export interface InventoryCard {
   notes: string | null;
 }
 
+export interface SoldComp {
+  id: string;
+  ebay_item_id: string;
+  title: string;
+  sold_price: number;
+  sold_date: string;
+  item_url: string | null;
+  image_url: string | null;
+  is_outlier: boolean;
+  outlier_reason: string | null;
+}
+
 export interface HunterRun {
   id: string;
   hunter_type: HunterSource;

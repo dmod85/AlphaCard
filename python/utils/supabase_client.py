@@ -5,7 +5,7 @@ Database operations for leads, comps, inventory, and watchlist.
 
 import os
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from supabase import create_client, Client
@@ -120,13 +120,16 @@ class CompsDB:
         card_year: Optional[int] = None,
         parallel_type: Optional[str] = None,
         limit: int = 50,
+        max_age_days: int = 60,
     ) -> list[dict]:
-        """Fetch cached comps for a card."""
+        """Fetch cached comps for a card. Only returns comps sold within max_age_days."""
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=max_age_days)).isoformat()
         query = (
             self.db.table("sold_comps")
             .select("*")
             .ilike("player_name", f"%{player_name}%")
             .eq("is_outlier", False)
+            .gte("sold_date", cutoff)
             .order("sold_date", desc=True)
             .limit(limit)
         )
