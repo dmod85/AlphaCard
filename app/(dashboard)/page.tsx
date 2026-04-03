@@ -69,7 +69,7 @@ export default function Dashboard() {
     setLeads(prev => prev.filter(l => l.id !== id));
   };
 
-  // Server handles sport/hunter filtering; client array is already filtered
+  // Server handles sport/hunter filtering; client array is already filtered sdfsdj
   const filtered = leads;
 
   const totalProfit = filtered.reduce(
@@ -131,8 +131,8 @@ export default function Dashboard() {
             key={f}
             onClick={() => setFilter(f)}
             className={`px-3 py-1 rounded-full text-xs font-medium transition ${filter === f
-                ? 'bg-blue-500/20 text-blue-400 ring-1 ring-blue-500/30'
-                : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
+              ? 'bg-blue-500/20 text-blue-400 ring-1 ring-blue-500/30'
+              : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
               }`}
           >
             {f === 'all' ? 'All sources' : HUNTER_LABELS[f]}
@@ -229,21 +229,21 @@ function LeadCard({
   const usedComps = comps?.filter(c => !c.is_outlier) ?? [];
   const median = usedComps.length
     ? (() => {
-        const sorted = [...usedComps].sort((a, b) => a.sold_price - b.sold_price);
-        const mid = Math.floor(sorted.length / 2);
-        return sorted.length % 2
-          ? sorted[mid].sold_price
-          : (sorted[mid - 1].sold_price + sorted[mid].sold_price) / 2;
-      })()
+      const sorted = [...usedComps].sort((a, b) => a.sold_price - b.sold_price);
+      const mid = Math.floor(sorted.length / 2);
+      return sorted.length % 2
+        ? sorted[mid].sold_price
+        : (sorted[mid - 1].sold_price + sorted[mid].sold_price) / 2;
+    })()
     : null;
 
   return (
     <div
       className={`bg-gray-900 rounded-xl p-4 border transition hover:border-gray-600 ${lead.death_zone
-          ? 'border-l-4 border-l-red-500 border-gray-800'
-          : lead.grade_candidate
-            ? 'border-l-4 border-l-amber-500 border-gray-800'
-            : 'border-gray-800'
+        ? 'border-l-4 border-l-red-500 border-gray-800'
+        : lead.grade_candidate
+          ? 'border-l-4 border-l-amber-500 border-gray-800'
+          : 'border-gray-800'
         }`}
     >
       <div className="flex gap-4">
