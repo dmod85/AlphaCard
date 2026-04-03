@@ -5,12 +5,36 @@ on:
     # Run twice daily: 9am and 6pm EST (UTC-5 = 14:00 and 23:00 UTC)
     - cron: '0 14 * * *'   # 9am EST
     - cron: '0 23 * * *'   # 6pm EST
-  workflow_dispatch:  # Allow manual triggers
+  workflow_dispatch:
     inputs:
       hunter:
-        description: 'Specific hunter to run (typo, holo, stale, or all)'
+        description: 'Specific hunter to run (typo, holo, stale, or empty for all)'
+        required: false
+        default: ''
+      sport:
+        description: 'Sport filter (all, nfl, nba, mlb, nhl)'
         required: false
         default: 'all'
+      min_price:
+        description: 'Minimum listing price'
+        required: false
+        default: '1.0'
+      max_price:
+        description: 'Maximum listing price'
+        required: false
+        default: '500.0'
+      min_roi:
+        description: 'Minimum ROI percentage'
+        required: false
+        default: '0.0'
+      min_profit:
+        description: 'Minimum profit dollars'
+        required: false
+        default: '3.0'
+      broad_mode:
+        description: 'Bypass watchlist, scan sport-wide (true/false)'
+        required: false
+        default: 'false'
 
 env:
   SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -47,10 +71,23 @@ jobs:
       - name: Run hunters
         run: |
           cd python
-          if [ "${{ github.event.inputs.hunter }}" != "" ] && [ "${{ github.event.inputs.hunter }}" != "all" ]; then
-            python -m scripts.run_hunters --hunter ${{ github.event.inputs.hunter }} --no-notify
+          HUNTER="${{ github.event.inputs.hunter }}"
+          SPORT="${{ github.event.inputs.sport || 'all' }}"
+          MIN_PRICE="${{ github.event.inputs.min_price || '1.0' }}"
+          MAX_PRICE="${{ github.event.inputs.max_price || '500.0' }}"
+          MIN_ROI="${{ github.event.inputs.min_roi || '0.0' }}"
+          MIN_PROFIT="${{ github.event.inputs.min_profit || '3.0' }}"
+          BROAD="${{ github.event.inputs.broad_mode || 'false' }}"
+
+          CONFIG_ARGS="--sport $SPORT --min-price $MIN_PRICE --max-price $MAX_PRICE --min-roi $MIN_ROI --min-profit $MIN_PROFIT"
+          if [ "$BROAD" = "true" ]; then
+            CONFIG_ARGS="$CONFIG_ARGS --broad"
+          fi
+
+          if [ -n "$HUNTER" ] && [ "$HUNTER" != "all" ]; then
+            python -m scripts.run_hunters --hunter "$HUNTER" --no-notify $CONFIG_ARGS
           else
-            python -m scripts.run_hunters --once
+            python -m scripts.run_hunters --once $CONFIG_ARGS
           fi
 
       - name: Upload logs
