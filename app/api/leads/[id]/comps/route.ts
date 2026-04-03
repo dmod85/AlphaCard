@@ -7,7 +7,7 @@ export async function GET(
 ) {
   const { id } = params;
 
-  // Fetch the lead to get player_name, card_set, card_year sdfsd
+  // Fetch the lead to get player_name, card_set, card_year 
   const { data: lead, error: leadError } = await supabaseAdmin
     .from('raw_leads')
     .select('player_name, card_set, card_year, parallel_type')
