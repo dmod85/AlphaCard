@@ -236,11 +236,13 @@ class StaleSniper:
                         buying_options = item.get("buyingOptions", [])
                         has_best_offer = "BEST_OFFER" in buying_options
 
-                        # Comp key: player name if known (watchlist mode),
-                        # else use the listing title (broad mode)
-                        comp_key = name or item.get("title", "")[:80]
+                        # Comp key: player name if known (watchlist mode).
+                        # In broad mode, skip comps — a raw title is not a
+                        # reliable player name for the comp engine.
+                        if not name:
+                            continue
                         comp = self.comp_engine.calculate(
-                            player_name=comp_key,
+                            player_name=name,
                             card_set=target_sets[0] if target_sets else None,
                         )
 

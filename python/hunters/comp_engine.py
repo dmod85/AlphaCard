@@ -1,19 +1,42 @@
 """
 AlphaCard - Comp Engine
 Calculates median sold prices with statistical outlier removal.
-Uses IQR method to strip shill bids and pricing errors.
+
+Multi-layer filtering:
+1. Lot detection — exclude multi-card bundles
+2. Title relevance — verify the comp matches the target card
+3. IQR outlier removal — strip statistical outliers
+4. Median-cap pass — remove anything >3x the initial median
 """
 
+import re
 import logging
 import statistics
 from datetime import datetime
 from typing import Optional
 from dataclasses import dataclass
 
+from rapidfuzz import fuzz
+
 from utils.ebay_client import EbayClient
 from utils.supabase_client import CompsDB
 
 logger = logging.getLogger("alphacard.comps")
+
+# Patterns that indicate a multi-card lot
+_LOT_PATTERNS = re.compile(
+    r"""
+    \b(?:lot|bundle|collection|set\s+of|grab\s+bag|mystery\s+pack)\b
+    | \b\d+\s*(?:card|cards)\b          # "10 cards", "5card"
+    | \bx\s*\d{2,}\b                    # "x20"
+    | \b\d{2,}\s*x\b                    # "20x"
+    | \(\d{2,}\)                         # "(25)"
+    """,
+    re.IGNORECASE | re.VERBOSE,
+)
+
+# Patterns for numbered parallels that signal premium cards
+_NUMBERED_RE = re.compile(r"/\d{1,4}\b")
 
 
 @dataclass
@@ -32,17 +55,69 @@ class CompResult:
 class CompEngine:
     """
     Calculates fair market value for a card using sold comps.
-    
-    Outlier removal strategy:
-    1. Remove anything below $0.99 (shill bids, lot breakdowns)
-    2. Remove anything that is a clear error (>10x the median of the middle 60%)
-    3. Apply IQR method (1.5x interquartile range)
-    4. Require minimum 3 comps for a reliable median
+
+    Filtering pipeline (applied to every comp candidate):
+    1. _is_lot()          — reject multi-card lots
+    2. _title_matches()   — confirm player/set/year relevance
+    3. Price floor         — reject < $0.99
+    4. IQR outlier removal — statistical method
+    5. Median-cap pass     — reject > 3× initial median
     """
 
     def __init__(self, ebay: Optional[EbayClient] = None, comps_db: Optional[CompsDB] = None):
         self.ebay = ebay or EbayClient()
         self.comps_db = comps_db or CompsDB()
+
+    # ------------------------------------------------------------------
+    # Filtering helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _is_lot(title: str) -> bool:
+        """Detect multi-card lots that would skew comps."""
+        return bool(_LOT_PATTERNS.search(title))
+
+    @staticmethod
+    def _title_matches(
+        title: str,
+        player_name: str,
+        card_set: Optional[str] = None,
+        card_year: Optional[int] = None,
+        parallel_type: Optional[str] = None,
+    ) -> bool:
+        """
+        Check that a comp title is actually relevant to the target card.
+
+        Requirements:
+        - Player name must fuzzy-match at >=75
+        - If card_year provided, it must appear in the title
+        - If card_set provided, it must fuzzy-match at >=60
+        - If parallel_type is 'base', reject titles with /XXX numbering
+        """
+        title_lower = title.lower()
+
+        # Player name check (fuzzy)
+        if fuzz.partial_ratio(player_name.lower(), title_lower) < 75:
+            return False
+
+        # Year check (exact substring)
+        if card_year and str(card_year) not in title:
+            return False
+
+        # Set check (fuzzy — sellers abbreviate set names)
+        if card_set and fuzz.partial_ratio(card_set.lower(), title_lower) < 60:
+            return False
+
+        # Base-card guard: reject numbered parallels when we want base comps
+        if parallel_type and parallel_type.lower() == "base":
+            if _NUMBERED_RE.search(title):
+                return False
+
+        return True
+
+    # ------------------------------------------------------------------
+    # Outlier removal
+    # ------------------------------------------------------------------
 
     def _remove_outliers_iqr(self, prices: list[float], multiplier: float = 1.5) -> list[float]:
         """Remove outliers using the Interquartile Range method."""
@@ -63,11 +138,27 @@ class CompEngine:
 
         return [p for p in sorted_prices if lower_bound <= p <= upper_bound]
 
+    @staticmethod
+    def _cap_at_median_multiple(prices: list[float], cap: float = 3.0) -> list[float]:
+        """
+        Second-pass outlier removal: drop anything >cap× the median.
+        Catches high-value parallels / autographs that IQR missed
+        because IQR widens with high variance.
+        """
+        if len(prices) < 3:
+            return prices
+        med = statistics.median(prices)
+        floor = med / cap
+        ceiling = med * cap
+        return [p for p in prices if floor <= p <= ceiling]
+
+    # ------------------------------------------------------------------
+    # Confidence scoring
+    # ------------------------------------------------------------------
+
     def _calculate_confidence(self, cleaned_prices: list[float]) -> float:
         """
-        Calculate confidence score (0-100) based on:
-        - Number of comps (more = higher confidence)
-        - Price variance (lower = higher confidence)
+        Confidence score (0-100) based on comp count and price variance.
         """
         n = len(cleaned_prices)
         if n == 0:
@@ -86,9 +177,8 @@ class CompEngine:
             return count_score
 
         stdev = statistics.stdev(cleaned_prices)
-        cv = stdev / mean  # Coefficient of variation
+        cv = stdev / mean
 
-        # Lower CV = higher confidence. CV < 0.2 is excellent, > 1.0 is terrible
         if cv < 0.15:
             variance_score = 50
         elif cv < 0.3:
@@ -102,6 +192,10 @@ class CompEngine:
 
         return round(count_score + variance_score, 1)
 
+    # ------------------------------------------------------------------
+    # Main entry point
+    # ------------------------------------------------------------------
+
     def calculate(
         self,
         player_name: str,
@@ -112,13 +206,15 @@ class CompEngine:
     ) -> Optional[CompResult]:
         """
         Calculate the median sold price for a card.
-        
-        1. Check Supabase cache first
-        2. If stale or missing, fetch from eBay
-        3. Clean outliers
-        4. Return CompResult
+
+        Pipeline:
+        1. Load cached comps (already relevance-filtered on insert)
+        2. If too few, fetch from eBay with title filtering
+        3. Clean outliers (IQR + median cap)
+        4. Mark outliers in the DB for the dashboard
         """
         raw_prices: list[float] = []
+        raw_titles: list[str] = []   # parallel list for outlier marking
 
         # Step 1: Check cache
         if use_cache:
@@ -129,8 +225,19 @@ class CompEngine:
                 parallel_type=parallel_type,
             )
             if cached:
-                raw_prices = [float(c["sold_price"]) for c in cached]
-                logger.info(f"Cache hit: {len(cached)} comps for {player_name}")
+                for c in cached:
+                    title = c.get("title", "")
+                    price = float(c["sold_price"])
+                    # Re-filter cached results (old data may not have been filtered)
+                    if self._is_lot(title):
+                        continue
+                    if not self._title_matches(title, player_name, card_set, card_year, parallel_type):
+                        continue
+                    raw_prices.append(price)
+                    raw_titles.append(title)
+                logger.info(
+                    f"Cache hit: {len(cached)} stored, {len(raw_prices)} after relevance filter for {player_name}"
+                )
 
         # Step 2: Fetch from eBay if needed
         if len(raw_prices) < 3:
@@ -148,24 +255,41 @@ class CompEngine:
             try:
                 items = self.ebay.search_sold_items(query, limit=100)
                 for item in items:
+                    title = item.get("title", "")
                     price_data = item.get("price", {})
                     price = float(price_data.get("value", 0))
-                    if price > 0:
-                        raw_prices.append(price)
+                    if price <= 0:
+                        continue
 
-                        # Cache the comp
-                        self.comps_db.upsert_comps([{
-                            "ebay_item_id": item.get("itemId", ""),
-                            "title": item.get("title", ""),
-                            "sold_price": price,
-                            "sold_date": item.get("itemEndDate") or datetime.utcnow().isoformat(),
-                            "player_name": player_name,
-                            "card_year": card_year,
-                            "card_set": card_set,
-                            "parallel_type": parallel_type,
-                            "image_url": (item.get("image", {}) or {}).get("imageUrl"),
-                            "item_url": item.get("itemWebUrl"),
-                        }])
+                    # Filter before caching
+                    is_lot = self._is_lot(title)
+                    is_relevant = self._title_matches(
+                        title, player_name, card_set, card_year, parallel_type
+                    )
+
+                    # Cache everything but mark lots/irrelevant as outliers
+                    self.comps_db.upsert_comps([{
+                        "ebay_item_id": item.get("itemId", ""),
+                        "title": title,
+                        "sold_price": price,
+                        "sold_date": item.get("itemEndDate") or datetime.utcnow().isoformat(),
+                        "player_name": player_name,
+                        "card_year": card_year,
+                        "card_set": card_set,
+                        "parallel_type": parallel_type,
+                        "image_url": (item.get("image", {}) or {}).get("imageUrl"),
+                        "item_url": item.get("itemWebUrl"),
+                        "is_outlier": is_lot or not is_relevant,
+                        "outlier_reason": (
+                            "lot" if is_lot
+                            else "irrelevant title" if not is_relevant
+                            else None
+                        ),
+                    }])
+
+                    if not is_lot and is_relevant:
+                        raw_prices.append(price)
+                        raw_titles.append(title)
             except Exception as e:
                 logger.error(f"Failed to fetch comps: {e}")
 
@@ -173,11 +297,13 @@ class CompEngine:
             logger.warning(f"No comps found for {player_name}")
             return None
 
-        # Step 3: Remove outliers
-        # First pass: remove obvious errors
+        # Step 3: Remove outliers — three passes
+        # Pass 1: price floor
         filtered = [p for p in raw_prices if p >= 0.99]
-        # Second pass: IQR method
+        # Pass 2: IQR method
         cleaned = self._remove_outliers_iqr(filtered)
+        # Pass 3: median cap (catches high-value parallels IQR missed)
+        cleaned = self._cap_at_median_multiple(cleaned, cap=3.0)
 
         if not cleaned:
             cleaned = filtered[:] if filtered else raw_prices[:]

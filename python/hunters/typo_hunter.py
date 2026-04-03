@@ -4,6 +4,7 @@ Finds undervalued listings by searching for common misspellings.
 Uses Levenshtein distance + phonetic matching + custom card-world typo patterns.
 """
 
+import os
 import logging
 import itertools
 from typing import Optional
@@ -341,7 +342,3 @@ class TypoHunter:
         }
         logger.info(f"Typo Hunter complete: {summary}")
         return summary
-
-
-# Allow importing os at module level (used in hunt method)
-import os

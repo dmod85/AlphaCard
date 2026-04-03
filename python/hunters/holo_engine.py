@@ -357,6 +357,12 @@ class HoloHeuristicEngine:
                         price = float(price_data.get("value", 0))
                         buying_options = item.get("buyingOptions", [])
 
+                        # Get comp data so we can calculate profit
+                        comp = self.comp_engine.calculate(player_name=title[:60])
+                        median_comp = comp.median_price if comp else 0
+                        comp_count = comp.comp_count if comp else 0
+                        estimated_profit = round(median_comp - price, 2) if median_comp > 0 else 0
+
                         lead = {
                             "ebay_item_id": item.get("itemId", ""),
                             "title": title,
@@ -370,6 +376,10 @@ class HoloHeuristicEngine:
                             "hunter_source": "holo_heuristic",
                             "confidence": min(confidence, 95),
                             "alpha_reason": " | ".join(reasons),
+                            "median_comp": median_comp,
+                            "comp_count": comp_count,
+                            "estimated_profit": estimated_profit,
+                            "sport": config.sport if config.sport != "all" else "nfl",
                         }
 
                         self.leads_db.upsert_lead(lead)
