@@ -139,3 +139,57 @@ export interface InventorySummary {
   total_profit: number;
   avg_roi: number;
 }
+
+// ============================================================================
+// eBay Bulk Listing Types
+// ============================================================================
+
+export interface EbayListingJob {
+  id: string;
+  total_items: number;
+  listed_count: number;
+  failed_count: number;
+  status: 'pending' | 'processing' | 'completed' | 'failed';
+  created_at: string;
+  completed_at: string | null;
+}
+
+export interface EbayListingItem {
+  id: string;
+  job_id: string;
+  title: string;
+  player_name: string | null;
+  card_year: number | null;
+  card_set: string | null;
+  card_number: string | null;
+  sport: string;
+  condition: 'graded' | 'ungraded';
+  grader: string | null;
+  grade: string | null;
+  cert_number: string | null;
+  price: number;
+  quantity: number;
+  image_urls: string[] | null;
+  ebay_item_id: string | null;
+  ebay_listing_url: string | null;
+  status: 'pending' | 'listed' | 'failed';
+  error_message: string | null;
+  created_at: string;
+}
+
+export interface BulkListStagingItem {
+  id: string;
+  title: string;
+  player_name: string;
+  card_year: number | null;
+  card_set: string;
+  card_number: string;
+  sport: string;
+  condition: 'graded' | 'ungraded';
+  grader: string;
+  grade: string;
+  cert_number: string;
+  price: number;
+  quantity: number;
+  image_urls: string[];
+}

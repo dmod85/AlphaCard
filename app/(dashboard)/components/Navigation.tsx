@@ -8,6 +8,7 @@ const NAV_ITEMS = [
   { href: '/', label: 'Leads', icon: '⚡' },
   { href: '/watchlist', label: 'Watchlist', icon: '👁' },
   { href: '/inventory', label: 'Inventory', icon: '📦' },
+  { href: '/bulk-list', label: 'Bulk List', icon: '🚀' },
   { href: '/analytics', label: 'Analytics', icon: '📊' },
 ];
 
