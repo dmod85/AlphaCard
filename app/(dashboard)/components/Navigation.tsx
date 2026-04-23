@@ -8,7 +8,7 @@ const NAV_ITEMS = [
   { href: '/', label: 'Leads', icon: '⚡' },
   { href: '/watchlist', label: 'Watchlist', icon: '👁' },
   { href: '/inventory', label: 'Inventory', icon: '📦' },
-  { href: '/bulk-list', label: 'Bulk List', icon: '🚀' },
+  { href: '/bulk-list', label: 'Bulk List ', icon: '🚀' },
   { href: '/analytics', label: 'Analytics', icon: '📊' },
 ];
 
@@ -41,11 +41,10 @@ export default function Navigation() {
               onClick={() => {
                 if (item.href === '/' && newLeads > 0) reset();
               }}
-              className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition ${
-                isActive
+              className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition ${isActive
                   ? 'bg-gray-800 text-white font-medium'
                   : 'text-gray-400 hover:text-gray-200 hover:bg-gray-900'
-              }`}
+                }`}
             >
               <span className="text-base">{item.icon}</span>
               <span>{item.label}</span>
