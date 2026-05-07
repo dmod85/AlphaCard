@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/app/lib/supabase-admin';
+import { getValidToken } from '@/app/lib/ebay-auth';
 
 // eBay Trading API config
 const EBAY_API_URL = process.env.EBAY_ENVIRONMENT === 'PRODUCTION'
@@ -23,12 +24,6 @@ const CATEGORY_MAP: Record<string, string> = {
 // Condition IDs
 const CONDITION_GRADED = '2750';
 const CONDITION_UNGRADED = '4000';
-
-function getOAuthToken(): string {
-  const token = process.env.EBAY_OAUTH_TOKEN || '';
-  // Strip surrounding quotes if present
-  return token.replace(/^['"]|['"]$/g, '');
-}
 
 function buildItemXml(item: any): string {
   const categoryId = CATEGORY_MAP[item.sport] || CATEGORY_MAP.other;
@@ -136,11 +131,11 @@ function escapeXml(str: string): string {
     .replace(/'/g, '&apos;');
 }
 
-function buildAddItemsRequest(items: any[]): string {
+function buildAddItemsRequest(items: any[], token: string): string {
   return `<?xml version="1.0" encoding="utf-8"?>
 <AddItemsRequest xmlns="urn:ebay:apis:eBLBaseComponents">
   <RequesterCredentials>
-    <eBayAuthToken>${getOAuthToken()}</eBayAuthToken>
+    <eBayAuthToken>${token}</eBayAuthToken>
   </RequesterCredentials>
   <ErrorLanguage>en_US</ErrorLanguage>
   <WarningLevel>High</WarningLevel>
@@ -232,6 +227,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'No items provided' }, { status: 400 });
     }
 
+    const ebayToken = await getValidToken();
+
     // Create the job
     const { data: job, error: jobError } = await supabaseAdmin
       .from('ebay_listing_jobs')
@@ -279,7 +276,7 @@ export async function POST(request: NextRequest) {
       const batch = insertedItems.slice(i, i + 5);
 
       try {
-        const xmlRequest = buildAddItemsRequest(batch);
+        const xmlRequest = buildAddItemsRequest(batch, ebayToken);
         const xmlResponse = await callEbayApi(xmlRequest);
         const results = parseAddItemsResponse(xmlResponse);
 

@@ -28,17 +28,23 @@ export default function ActiveListingsPage() {
   const [itemStates, setItemStates] = useState<Record<string, ItemState>>({});
   const [rewriting, setRewriting] = useState(false);
   const [summary, setSummary] = useState<{ done: number; failed: number } | null>(null);
+  const [needsAuth, setNeedsAuth] = useState(false);
   const selectAllRef = useRef<HTMLInputElement>(null);
 
   const fetchListings = useCallback(async () => {
     setLoading(true);
     setError(null);
+    setNeedsAuth(false);
     setSelected(new Set());
     setItemStates({});
     setSummary(null);
     try {
       const res = await fetch('/api/ebay/active-listings');
       const data = await res.json();
+      if (res.status === 401 || data.error === 'EBAY_AUTH_REQUIRED') {
+        setNeedsAuth(true);
+        return;
+      }
       if (!res.ok) throw new Error(data.error || 'Failed to fetch listings');
       setListings(data.listings);
       setTotal(data.total);
@@ -49,7 +55,14 @@ export default function ActiveListingsPage() {
     }
   }, []);
 
-  useEffect(() => { fetchListings(); }, [fetchListings]);
+  useEffect(() => {
+    // After OAuth redirect, strip the query param then reload listings
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('ebay_connected')) {
+      window.history.replaceState({}, '', '/active-listings');
+    }
+    fetchListings();
+  }, [fetchListings]);
 
   // Update indeterminate state on the select-all checkbox
   useEffect(() => {
@@ -153,6 +166,24 @@ export default function ActiveListingsPage() {
           </button>
         </div>
       </div>
+
+      {/* eBay auth required */}
+      {needsAuth && (
+        <div className="mb-6 p-5 bg-yellow-500/10 border border-yellow-500/30 rounded-xl flex items-center justify-between">
+          <div>
+            <p className="text-yellow-300 font-semibold text-sm">eBay account not connected</p>
+            <p className="text-yellow-400/70 text-xs mt-0.5">
+              Authorize AlphaCard to access your eBay seller account to view and edit listings.
+            </p>
+          </div>
+          <a
+            href="/api/ebay/auth"
+            className="px-4 py-2 bg-yellow-500 text-black text-sm font-semibold rounded-lg hover:bg-yellow-400 transition whitespace-nowrap ml-4"
+          >
+            Connect eBay
+          </a>
+        </div>
+      )}
 
       {/* Summary banner */}
       {summary && (

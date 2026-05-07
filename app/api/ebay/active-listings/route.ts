@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getValidToken } from '@/app/lib/ebay-auth';
 
 const EBAY_API_URL = process.env.EBAY_ENVIRONMENT === 'PRODUCTION'
   ? 'https://api.ebay.com/ws/api.dll'
@@ -7,11 +8,6 @@ const EBAY_API_URL = process.env.EBAY_ENVIRONMENT === 'PRODUCTION'
 const EBAY_APP_ID = process.env.EBAY_APP_ID!;
 const EBAY_DEV_ID = process.env.EBAY_DEV_ID!;
 const EBAY_CERT_ID = process.env.EBAY_CERT_ID!;
-
-function getOAuthToken(): string {
-  const token = process.env.EBAY_OAUTH_TOKEN || '';
-  return token.replace(/^['"]|['"]$/g, '');
-}
 
 function decodeXml(str: string): string {
   return str
@@ -39,11 +35,11 @@ async function callEbayApi(xmlBody: string, callName: string): Promise<string> {
   return response.text();
 }
 
-function buildGetMyeBaySellingRequest(page: number): string {
+function buildGetMyeBaySellingRequest(page: number, token: string): string {
   return `<?xml version="1.0" encoding="utf-8"?>
 <GetMyeBaySellingRequest xmlns="urn:ebay:apis:eBLBaseComponents">
   <RequesterCredentials>
-    <eBayAuthToken>${getOAuthToken()}</eBayAuthToken>
+    <eBayAuthToken>${token}</eBayAuthToken>
   </RequesterCredentials>
   <ActiveList>
     <Include>true</Include>
@@ -106,11 +102,11 @@ function buildDescription(title: string): string {
 </div>`;
 }
 
-function buildReviseItemRequest(itemId: string, description: string): string {
+function buildReviseItemRequest(itemId: string, description: string, token: string): string {
   return `<?xml version="1.0" encoding="utf-8"?>
 <ReviseItemRequest xmlns="urn:ebay:apis:eBLBaseComponents">
   <RequesterCredentials>
-    <eBayAuthToken>${getOAuthToken()}</eBayAuthToken>
+    <eBayAuthToken>${token}</eBayAuthToken>
   </RequesterCredentials>
   <Item>
     <ItemID>${itemId}</ItemID>
@@ -124,7 +120,8 @@ function buildReviseItemRequest(itemId: string, description: string): string {
 // GET — fetch active listings
 export async function GET() {
   try {
-    const xml = buildGetMyeBaySellingRequest(1);
+    const token = await getValidToken();
+    const xml = buildGetMyeBaySellingRequest(1, token);
     const response = await callEbayApi(xml, 'GetMyeBaySelling');
 
     const ack = response.match(/<Ack>(.*?)<\/Ack>/)?.[1];
@@ -140,6 +137,9 @@ export async function GET() {
 
     return NextResponse.json({ listings, total });
   } catch (err: any) {
+    if (err.message === 'EBAY_AUTH_REQUIRED') {
+      return NextResponse.json({ error: 'EBAY_AUTH_REQUIRED' }, { status: 401 });
+    }
     return NextResponse.json({ error: err.message || 'Failed to fetch listings' }, { status: 500 });
   }
 }
@@ -153,12 +153,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'No items provided' }, { status: 400 });
     }
 
+    const token = await getValidToken();
     const results: Array<{ itemId: string; success: boolean; error?: string }> = [];
 
     for (const item of items) {
       try {
         const description = buildDescription(item.title);
-        const xml = buildReviseItemRequest(item.itemId, description);
+        const xml = buildReviseItemRequest(item.itemId, description, token);
         const response = await callEbayApi(xml, 'ReviseItem');
 
         const ack = response.match(/<Ack>(.*?)<\/Ack>/)?.[1];
@@ -177,6 +178,9 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ results });
   } catch (err: any) {
+    if (err.message === 'EBAY_AUTH_REQUIRED') {
+      return NextResponse.json({ error: 'EBAY_AUTH_REQUIRED' }, { status: 401 });
+    }
     return NextResponse.json({ error: err.message || 'Internal server error' }, { status: 500 });
   }
 }
