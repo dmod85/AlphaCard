@@ -1,0 +1,125 @@
+{
+  "id": "2026-topps-series-1-all-kings",
+  "name": "2026 Topps Series 1 - All Kings",
+  "year": 2026,
+  "brand": "Topps",
+  "sport": "Baseball",
+  "baseParallels": [
+    {
+      "id": "base",
+      "name": "Base",
+      "odds": "1:1"
+    },
+    {
+      "id": "gold-1",
+      "name": "Gold /1"
+    }
+  ],
+  "cards": [
+    {
+      "id": "2026-topps-series-1-all-kings-ak-1",
+      "cardNumber": "AK-1",
+      "playerName": "Aaron Judge",
+      "team": "New York Yankees",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-all-kings-ak-2",
+      "cardNumber": "AK-2",
+      "playerName": "Ronald Acu\u00f1a Jr.",
+      "team": "Atlanta Braves",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-all-kings-ak-3",
+      "cardNumber": "AK-3",
+      "playerName": "Bryce Harper",
+      "team": "Philadelphia Phillies",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-all-kings-ak-4",
+      "cardNumber": "AK-4",
+      "playerName": "Shohei Ohtani",
+      "team": "Los Angeles Dodgers",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-all-kings-ak-5",
+      "cardNumber": "AK-5",
+      "playerName": "Mike Trout",
+      "team": "Angels",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-all-kings-ak-6",
+      "cardNumber": "AK-6",
+      "playerName": "Pete Crow-Armstrong",
+      "team": "Chicago Cubs",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-all-kings-ak-7",
+      "cardNumber": "AK-7",
+      "playerName": "Bobby Witt Jr.",
+      "team": "Kansas City Royals",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-all-kings-ak-8",
+      "cardNumber": "AK-8",
+      "playerName": "Elly De La Cruz",
+      "team": "Cincinnati Reds",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-all-kings-ak-9",
+      "cardNumber": "AK-9",
+      "playerName": "Cal Ripken Jr.",
+      "team": "Baltimore Orioles",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-all-kings-ak-10",
+      "cardNumber": "AK-10",
+      "playerName": "Hank Aaron",
+      "team": "Atlanta Braves",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-all-kings-ak-11",
+      "cardNumber": "AK-11",
+      "playerName": "Rickey Henderson",
+      "team": "Oakland Athletics",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-all-kings-ak-12",
+      "cardNumber": "AK-12",
+      "playerName": "Barry Bonds",
+      "team": "San Francisco Giants",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-all-kings-ak-13",
+      "cardNumber": "AK-13",
+      "playerName": "Babe Ruth",
+      "team": "New York Yankees",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-all-kings-ak-14",
+      "cardNumber": "AK-14",
+      "playerName": "Roman Anthony",
+      "team": "Boston Red Sox",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-all-kings-ak-15",
+      "cardNumber": "AK-15",
+      "playerName": "Jac Caglianone",
+      "team": "Kansas City Royals",
+      "rarity": "Insert"
+    }
+  ]
+}

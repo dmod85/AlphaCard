@@ -1,0 +1,43 @@
+{
+  "id": "2026-topps-series-1-celebration-perennial-all-stars",
+  "name": "2026 Topps Series 1 Celebration - Perennial All Stars",
+  "year": 2026,
+  "brand": "Topps",
+  "sport": "Baseball",
+  "baseParallels": [
+    { "id": "base", "name": "Base", "odds": "1:1" },
+    { "id": "green-99", "name": "Green /99" },
+    { "id": "gold-50", "name": "Gold /50" },
+    { "id": "orange-25", "name": "Orange /25" },
+    { "id": "black-10", "name": "Black /10" },
+    { "id": "red-5", "name": "Red /5" },
+    { "id": "foilfractor-1", "name": "Foilfractor /1" }
+  ],
+  "cards": [
+    { "id": "cel-pas-1", "cardNumber": "PAS-1", "playerName": "Mike Trout", "team": "Los Angeles Angels", "rarity": "Insert" },
+    { "id": "cel-pas-2", "cardNumber": "PAS-2", "playerName": "Ronald Acuña Jr.", "team": "Atlanta Braves", "rarity": "Insert" },
+    { "id": "cel-pas-3", "cardNumber": "PAS-3", "playerName": "Kyle Tucker", "team": "Chicago Cubs", "rarity": "Insert" },
+    { "id": "cel-pas-4", "cardNumber": "PAS-4", "playerName": "Jose Altuve", "team": "Houston Astros", "rarity": "Insert" },
+    { "id": "cel-pas-5", "cardNumber": "PAS-5", "playerName": "Francisco Lindor", "team": "New York Mets", "rarity": "Insert" },
+    { "id": "cel-pas-6", "cardNumber": "PAS-6", "playerName": "Clayton Kershaw", "team": "Los Angeles Dodgers", "rarity": "Insert" },
+    { "id": "cel-pas-7", "cardNumber": "PAS-7", "playerName": "Nolan Arenado", "team": "St. Louis Cardinals", "rarity": "Insert" },
+    { "id": "cel-pas-8", "cardNumber": "PAS-8", "playerName": "Freddie Freeman", "team": "Los Angeles Dodgers", "rarity": "Insert" },
+    { "id": "cel-pas-9", "cardNumber": "PAS-9", "playerName": "Shohei Ohtani", "team": "Los Angeles Dodgers", "rarity": "Insert" },
+    { "id": "cel-pas-10", "cardNumber": "PAS-10", "playerName": "Bryce Harper", "team": "Philadelphia Phillies", "rarity": "Insert" },
+    { "id": "cel-pas-11", "cardNumber": "PAS-11", "playerName": "Mookie Betts", "team": "Los Angeles Dodgers", "rarity": "Insert" },
+    { "id": "cel-pas-12", "cardNumber": "PAS-12", "playerName": "Juan Soto", "team": "New York Mets", "rarity": "Insert" },
+    { "id": "cel-pas-13", "cardNumber": "PAS-13", "playerName": "Fernando Tatis Jr.", "team": "San Diego Padres", "rarity": "Insert" },
+    { "id": "cel-pas-14", "cardNumber": "PAS-14", "playerName": "Aaron Judge", "team": "New York Yankees", "rarity": "Insert" },
+    { "id": "cel-pas-15", "cardNumber": "PAS-15", "playerName": "Elly De La Cruz", "team": "Cincinnati Reds", "rarity": "Insert" },
+    { "id": "cel-pas-16", "cardNumber": "PAS-16", "playerName": "José Ramírez", "team": "Cleveland Guardians", "rarity": "Insert" },
+    { "id": "cel-pas-17", "cardNumber": "PAS-17", "playerName": "Vladimir Guerrero Jr.", "team": "Toronto Blue Jays", "rarity": "Insert" },
+    { "id": "cel-pas-18", "cardNumber": "PAS-18", "playerName": "Bobby Witt Jr.", "team": "Kansas City Royals", "rarity": "Insert" },
+    { "id": "cel-pas-19", "cardNumber": "PAS-19", "playerName": "Pete Alonso", "team": "New York Mets", "rarity": "Insert" },
+    { "id": "cel-pas-20", "cardNumber": "PAS-20", "playerName": "Paul Skenes", "team": "Pittsburgh Pirates", "rarity": "Insert" },
+    { "id": "cel-pas-21", "cardNumber": "PAS-21", "playerName": "Tarik Skubal", "team": "Detroit Tigers", "rarity": "Insert" },
+    { "id": "cel-pas-22", "cardNumber": "PAS-22", "playerName": "Chris Sale", "team": "Atlanta Braves", "rarity": "Insert" },
+    { "id": "cel-pas-23", "cardNumber": "PAS-23", "playerName": "Pete Crow-Armstrong", "team": "Chicago Cubs", "rarity": "Insert" },
+    { "id": "cel-pas-24", "cardNumber": "PAS-24", "playerName": "Manny Machado", "team": "San Diego Padres", "rarity": "Insert" },
+    { "id": "cel-pas-25", "cardNumber": "PAS-25", "playerName": "Christian Yelich", "team": "Milwaukee Brewers", "rarity": "Insert" }
+  ]
+}

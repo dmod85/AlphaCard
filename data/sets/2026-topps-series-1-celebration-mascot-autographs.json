@@ -1,0 +1,32 @@
+{
+  "id": "2026-topps-series-1-celebration-mascot-autographs",
+  "name": "2026 Topps Series 1 Celebration - Mascot Autographs",
+  "year": 2026,
+  "brand": "Topps",
+  "sport": "Baseball",
+  "baseParallels": [
+    { "id": "base", "name": "Base", "odds": "1:1" },
+    { "id": "gold-50", "name": "Gold /50" },
+    { "id": "orange-25", "name": "Orange /25" },
+    { "id": "black-10", "name": "Black /10" },
+    { "id": "red-5", "name": "Red /5" },
+    { "id": "foilfractor-1", "name": "Foilfractor /1" }
+  ],
+  "cards": [
+    { "id": "cel-ma-1", "cardNumber": "M-1", "playerName": "Baxter", "team": "Arizona Diamondbacks", "rarity": "Autograph" },
+    { "id": "cel-ma-2", "cardNumber": "M-2", "playerName": "Wally the Green Monster", "team": "Boston Red Sox", "rarity": "Autograph" },
+    { "id": "cel-ma-3", "cardNumber": "M-3", "playerName": "Mascot", "team": "Chicago White Sox", "rarity": "Autograph" },
+    { "id": "cel-ma-4", "cardNumber": "M-4", "playerName": "Dinger", "team": "Colorado Rockies", "rarity": "Autograph" },
+    { "id": "cel-ma-5", "cardNumber": "M-5", "playerName": "Bernie Brewer", "team": "Milwaukee Brewers", "rarity": "Autograph" },
+    { "id": "cel-ma-6", "cardNumber": "M-6", "playerName": "Rosie Red", "team": "Cincinnati Reds", "rarity": "Autograph" },
+    { "id": "cel-ma-7", "cardNumber": "M-7", "playerName": "Mr. Red", "team": "Cincinnati Reds", "rarity": "Autograph" },
+    { "id": "cel-ma-8", "cardNumber": "M-8", "playerName": "Mariner Moose", "team": "Seattle Mariners", "rarity": "Autograph" },
+    { "id": "cel-ma-9", "cardNumber": "M-9", "playerName": "Sluggerrr", "team": "Kansas City Royals", "rarity": "Autograph" },
+    { "id": "cel-ma-11", "cardNumber": "M-11", "playerName": "Mr. Met", "team": "New York Mets", "rarity": "Autograph" },
+    { "id": "cel-ma-12", "cardNumber": "M-12", "playerName": "Rangers Captain", "team": "Texas Rangers", "rarity": "Autograph" },
+    { "id": "cel-ma-14", "cardNumber": "M-14", "playerName": "Mrs. Met", "team": "New York Mets", "rarity": "Autograph" },
+    { "id": "cel-ma-15", "cardNumber": "M-15", "playerName": "Paws", "team": "Detroit Tigers", "rarity": "Autograph" },
+    { "id": "cel-ma-16", "cardNumber": "M-16", "playerName": "Mascot", "team": "Athletics", "rarity": "Autograph" },
+    { "id": "cel-ma-17", "cardNumber": "M-17", "playerName": "Pirate Parrot", "team": "Pittsburgh Pirates", "rarity": "Autograph" }
+  ]
+}

@@ -1,0 +1,128 @@
+{
+  "id": "2026-topps-series-1-oversized-2026-topps-baseball",
+  "name": "2026 Topps Series 1 - Oversized 2026 Topps Baseball",
+  "year": 2026,
+  "brand": "Topps",
+  "sport": "Baseball",
+  "baseParallels": [
+    {
+      "id": "base",
+      "name": "Base",
+      "odds": "1:1"
+    }
+  ],
+  "cards": [
+    {
+      "id": "2026-topps-series-1-oversized-2026-topps-baseball-1",
+      "cardNumber": "1",
+      "playerName": "Aaron Judge",
+      "team": "New York Yankees",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-oversized-2026-topps-baseball-20",
+      "cardNumber": "20",
+      "playerName": "Vladimir Guerrero Jr.",
+      "team": "Toronto Blue Jays",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-oversized-2026-topps-baseball-50",
+      "cardNumber": "50",
+      "playerName": "Ronald Acu\u00f1a Jr.",
+      "team": "Atlanta Braves",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-oversized-2026-topps-baseball-97",
+      "cardNumber": "97",
+      "playerName": "Nick Kurtz",
+      "team": "Athletics",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-oversized-2026-topps-baseball-100",
+      "cardNumber": "100",
+      "playerName": "Paul Skenes",
+      "team": "Pittsburgh Pirates",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-oversized-2026-topps-baseball-104",
+      "cardNumber": "104",
+      "playerName": "Samuel Basallo",
+      "team": "Baltimore Orioles",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-oversized-2026-topps-baseball-123",
+      "cardNumber": "123",
+      "playerName": "Francisco Lindor",
+      "team": "New York Mets",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-oversized-2026-topps-baseball-138",
+      "cardNumber": "138",
+      "playerName": "Jac Caglianone",
+      "team": "Kansas City Royals",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-oversized-2026-topps-baseball-146",
+      "cardNumber": "146",
+      "playerName": "Julio Rodr\u00edguez",
+      "team": "Seattle Mariners",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-oversized-2026-topps-baseball-189",
+      "cardNumber": "189",
+      "playerName": "Roman Anthony",
+      "team": "Boston Red Sox",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-oversized-2026-topps-baseball-196",
+      "cardNumber": "196",
+      "playerName": "Pete Crow-Armstrong",
+      "team": "Chicago Cubs",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-oversized-2026-topps-baseball-200",
+      "cardNumber": "200",
+      "playerName": "Shohei Ohtani",
+      "team": "Los Angeles Dodgers",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-oversized-2026-topps-baseball-205",
+      "cardNumber": "205",
+      "playerName": "Bobby Witt Jr.",
+      "team": "Kansas City Royals",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-oversized-2026-topps-baseball-250",
+      "cardNumber": "250",
+      "playerName": "Bryce Harper",
+      "team": "Philadelphia Phillies",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-oversized-2026-topps-baseball-333",
+      "cardNumber": "333",
+      "playerName": "Fernando Tatis Jr.",
+      "team": "San Diego Padres",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-oversized-2026-topps-baseball-350",
+      "cardNumber": "350",
+      "playerName": "Mike Trout",
+      "team": "Angels",
+      "rarity": "Insert"
+    }
+  ]
+}

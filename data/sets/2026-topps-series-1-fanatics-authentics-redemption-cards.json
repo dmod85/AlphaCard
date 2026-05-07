@@ -1,0 +1,226 @@
+{
+  "id": "2026-topps-series-1-fanatics-authentics-redemption-cards",
+  "name": "2026 Topps Series 1 - Fanatics Authentics Redemption Cards",
+  "year": 2026,
+  "brand": "Topps",
+  "sport": "Baseball",
+  "baseParallels": [
+    {
+      "id": "base",
+      "name": "Base",
+      "odds": "1:1"
+    }
+  ],
+  "cards": [
+    {
+      "id": "2026-topps-series-1-fanatics-authentics-redemption-cards-oneil-cruz",
+      "cardNumber": "NA",
+      "playerName": "Oneil Cruz",
+      "team": "Pittsburgh Pirates",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-fanatics-authentics-redemption-cards-manny-machado",
+      "cardNumber": "NA",
+      "playerName": "Manny Machado",
+      "team": "San Diego Padres",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-fanatics-authentics-redemption-cards-trea-turner",
+      "cardNumber": "NA",
+      "playerName": "Trea Turner",
+      "team": "Philadelphia Phillies",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-fanatics-authentics-redemption-cards-derek-jeter",
+      "cardNumber": "NA",
+      "playerName": "Derek Jeter",
+      "team": "New York Yankees",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-fanatics-authentics-redemption-cards-brooks-lee",
+      "cardNumber": "NA",
+      "playerName": "Brooks Lee",
+      "team": "Minnesota Twins",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-fanatics-authentics-redemption-cards-francisco-lindor",
+      "cardNumber": "NA",
+      "playerName": "Francisco Lindor",
+      "team": "New York Mets",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-fanatics-authentics-redemption-cards-julio-rodr-guez",
+      "cardNumber": "NA",
+      "playerName": "Julio Rodr\u00edguez",
+      "team": "Seattle Mariners",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-fanatics-authentics-redemption-cards-jacob-wilson",
+      "cardNumber": "NA",
+      "playerName": "Jacob Wilson",
+      "team": "Athletics",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-fanatics-authentics-redemption-cards-jordan-lawlar",
+      "cardNumber": "NA",
+      "playerName": "Jordan Lawlar",
+      "team": "Arizona Diamondbacks",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-fanatics-authentics-redemption-cards-ozzie-smith",
+      "cardNumber": "NA",
+      "playerName": "Ozzie Smith",
+      "team": "St. Louis Cardinals",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-fanatics-authentics-redemption-cards-dylan-crews",
+      "cardNumber": "NA",
+      "playerName": "Dylan Crews",
+      "team": "Washington Nationals",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-fanatics-authentics-redemption-cards-corey-seager",
+      "cardNumber": "NA",
+      "playerName": "Corey Seager",
+      "team": "Texas Rangers",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-fanatics-authentics-redemption-cards-junior-caminero",
+      "cardNumber": "NA",
+      "playerName": "Junior Caminero",
+      "team": "Tampa Bay Rays",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-fanatics-authentics-redemption-cards-vladimir-guerrero-jr-",
+      "cardNumber": "NA",
+      "playerName": "Vladimir Guerrero Jr.",
+      "team": "Toronto Blue Jays",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-fanatics-authentics-redemption-cards-william-contreras",
+      "cardNumber": "NA",
+      "playerName": "William Contreras",
+      "team": "Milwaukee Brewers",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-fanatics-authentics-redemption-cards-eury-p-rez",
+      "cardNumber": "NA",
+      "playerName": "Eury P\u00e9rez",
+      "team": "Miami Marlins",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-fanatics-authentics-redemption-cards-dansby-swanson",
+      "cardNumber": "NA",
+      "playerName": "Dansby Swanson",
+      "team": "Chicago Cubs",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-fanatics-authentics-redemption-cards-johnny-bench",
+      "cardNumber": "NA",
+      "playerName": "Johnny Bench",
+      "team": "Cincinnati Reds",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-fanatics-authentics-redemption-cards-david-ortiz",
+      "cardNumber": "NA",
+      "playerName": "David Ortiz",
+      "team": "Boston Red Sox",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-fanatics-authentics-redemption-cards-adley-rutschman",
+      "cardNumber": "NA",
+      "playerName": "Adley Rutschman",
+      "team": "Baltimore Orioles",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-fanatics-authentics-redemption-cards-frank-thomas",
+      "cardNumber": "NA",
+      "playerName": "Frank Thomas",
+      "team": "Chicago White Sox",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-fanatics-authentics-redemption-cards-ronald-acu-a-jr-",
+      "cardNumber": "NA",
+      "playerName": "Ronald Acu\u00f1a Jr.",
+      "team": "Atlanta Braves",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-fanatics-authentics-redemption-cards-jos-ram-rez",
+      "cardNumber": "NA",
+      "playerName": "Jos\u00e9 Ram\u00edrez",
+      "team": "Cleveland Guardians",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-fanatics-authentics-redemption-cards-tood-helton",
+      "cardNumber": "NA",
+      "playerName": "Tood Helton",
+      "team": "Colorado Rockies",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-fanatics-authentics-redemption-cards-albert-pujols",
+      "cardNumber": "NA",
+      "playerName": "Albert Pujols",
+      "team": "Angels",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-fanatics-authentics-redemption-cards-mookie-betts",
+      "cardNumber": "NA",
+      "playerName": "Mookie Betts",
+      "team": "Los Angeles Dodgers",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-fanatics-authentics-redemption-cards-bobby-witt-jr-",
+      "cardNumber": "NA",
+      "playerName": "Bobby Witt Jr.",
+      "team": "Kansas City Royals",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-fanatics-authentics-redemption-cards-cam-smith",
+      "cardNumber": "NA",
+      "playerName": "Cam Smith",
+      "team": "Houston Astros",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-fanatics-authentics-redemption-cards-riley-greene",
+      "cardNumber": "NA",
+      "playerName": "Riley Greene",
+      "team": "Detroit Tigers",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-fanatics-authentics-redemption-cards-buster-posey",
+      "cardNumber": "NA",
+      "playerName": "Buster Posey",
+      "team": "San Francisco Giants",
+      "rarity": "Insert"
+    }
+  ]
+}

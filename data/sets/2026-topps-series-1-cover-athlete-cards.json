@@ -1,0 +1,86 @@
+{
+  "id": "2026-topps-series-1-cover-athlete-cards",
+  "name": "2026 Topps Series 1 - Cover Athlete Cards",
+  "year": 2026,
+  "brand": "Topps",
+  "sport": "Baseball",
+  "baseParallels": [
+    {
+      "id": "base",
+      "name": "Base",
+      "odds": "1:1"
+    }
+  ],
+  "cards": [
+    {
+      "id": "2026-topps-series-1-cover-athlete-cards-ca-1",
+      "cardNumber": "CA-1",
+      "playerName": "Mike Trout",
+      "team": "Angels",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-cover-athlete-cards-ca-2",
+      "cardNumber": "CA-2",
+      "playerName": "Pete Alonso",
+      "team": "New York Mets",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-cover-athlete-cards-ca-3",
+      "cardNumber": "CA-3",
+      "playerName": "Julio Rodr\u00edguez",
+      "team": "Seattle Mariners",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-cover-athlete-cards-ca-4",
+      "cardNumber": "CA-4",
+      "playerName": "Ronald Acu\u00f1a Jr.",
+      "team": "Atlanta Braves",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-cover-athlete-cards-ca-5",
+      "cardNumber": "CA-5",
+      "playerName": "Aaron Judge",
+      "team": "New York Yankees",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-cover-athlete-cards-ca-6",
+      "cardNumber": "CA-6",
+      "playerName": "Shohei Ohtani",
+      "team": "Angels",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-cover-athlete-cards-ca-7",
+      "cardNumber": "CA-7",
+      "playerName": "Bryce Harper",
+      "team": "Washington Nationals",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-cover-athlete-cards-ca-8",
+      "cardNumber": "CA-8",
+      "playerName": "Albert Pujols",
+      "team": "St. Louis Cardinals",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-cover-athlete-cards-ca-9",
+      "cardNumber": "CA-9",
+      "playerName": "Juan Soto",
+      "team": "Washington Nationals",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-cover-athlete-cards-ca-10",
+      "cardNumber": "CA-10",
+      "playerName": "Prince Fielder",
+      "team": "Detroit Tigers",
+      "rarity": "Insert"
+    }
+  ]
+}

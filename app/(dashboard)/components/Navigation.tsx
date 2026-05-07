@@ -9,6 +9,7 @@ const NAV_ITEMS = [
   { href: '/watchlist', label: 'Watchlist', icon: '👁' },
   { href: '/inventory', label: 'Inventory', icon: '📦' },
   { href: '/bulk-list', label: 'Bulk List ', icon: '🚀' },
+  { href: '/active-listings', label: 'Active Listings', icon: '📋' },
   { href: '/analytics', label: 'Analytics', icon: '📊' },
 ];
 

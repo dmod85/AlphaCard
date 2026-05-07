@@ -1,0 +1,39 @@
+{
+  "id": "2026-topps-series-1-celebration-mascot-relics",
+  "name": "2026 Topps Series 1 Celebration - Mascot Relics",
+  "year": 2026,
+  "brand": "Topps",
+  "sport": "Baseball",
+  "baseParallels": [
+    { "id": "base", "name": "Base", "odds": "1:1" },
+    { "id": "green-99", "name": "Green /99" },
+    { "id": "gold-50", "name": "Gold /50" },
+    { "id": "orange-25", "name": "Orange /25" },
+    { "id": "black-10", "name": "Black /10" },
+    { "id": "red-5", "name": "Red /5" },
+    { "id": "foilfractor-1", "name": "Foilfractor /1" }
+  ],
+  "cards": [
+    { "id": "cel-mr-ath", "cardNumber": "MAS-ATH", "playerName": "Mascot", "team": "Athletics", "rarity": "Memorabilia" },
+    { "id": "cel-mr-bbr", "cardNumber": "MAS-BBR", "playerName": "Bernie Brewer", "team": "Milwaukee Brewers", "rarity": "Memorabilia" },
+    { "id": "cel-mr-blo", "cardNumber": "MAS-BLO", "playerName": "Blooper", "team": "Atlanta Braves", "rarity": "Memorabilia" },
+    { "id": "cel-mr-bx", "cardNumber": "MAS-BX", "playerName": "Baxter", "team": "Arizona Diamondbacks", "rarity": "Memorabilia" },
+    { "id": "cel-mr-cap", "cardNumber": "MAS-CAP", "playerName": "Rangers Captain", "team": "Texas Rangers", "rarity": "Memorabilia" },
+    { "id": "cel-mr-clk", "cardNumber": "MAS-CLK", "playerName": "Clark", "team": "Chicago Cubs", "rarity": "Memorabilia" },
+    { "id": "cel-mr-cws", "cardNumber": "MAS-CWS", "playerName": "Mascot", "team": "Chicago White Sox", "rarity": "Memorabilia" },
+    { "id": "cel-mr-din", "cardNumber": "MAS-DIN", "playerName": "Dinger", "team": "Colorado Rockies", "rarity": "Memorabilia" },
+    { "id": "cel-mr-mos", "cardNumber": "MAS-MOS", "playerName": "Mariner Moose", "team": "Seattle Mariners", "rarity": "Memorabilia" },
+    { "id": "cel-mr-mrm", "cardNumber": "MAS-MRM", "playerName": "Mr. Met", "team": "New York Mets", "rarity": "Memorabilia" },
+    { "id": "cel-mr-mrr", "cardNumber": "MAS-MRR", "playerName": "Mr. Red", "team": "Cincinnati Reds", "rarity": "Memorabilia" },
+    { "id": "cel-mr-mrs", "cardNumber": "MAS-MRS", "playerName": "Mrs. Met", "team": "New York Mets", "rarity": "Memorabilia" },
+    { "id": "cel-mr-orb", "cardNumber": "MAS-ORB", "playerName": "Orbit", "team": "Houston Astros", "rarity": "Memorabilia" },
+    { "id": "cel-mr-paw", "cardNumber": "MAS-PAW", "playerName": "Paws", "team": "Detroit Tigers", "rarity": "Memorabilia" },
+    { "id": "cel-mr-pir", "cardNumber": "MAS-PIR", "playerName": "Pirate Parrot", "team": "Pittsburgh Pirates", "rarity": "Memorabilia" },
+    { "id": "cel-mr-ray", "cardNumber": "MAS-RAY", "playerName": "Raymond", "team": "Tampa Bay Rays", "rarity": "Memorabilia" },
+    { "id": "cel-mr-ros", "cardNumber": "MAS-ROS", "playerName": "Rosie Red", "team": "Cincinnati Reds", "rarity": "Memorabilia" },
+    { "id": "cel-mr-scr", "cardNumber": "MAS-SCR", "playerName": "Screech", "team": "Washington Nationals", "rarity": "Memorabilia" },
+    { "id": "cel-mr-slg", "cardNumber": "MAS-SLG", "playerName": "Sluggerrr", "team": "Kansas City Royals", "rarity": "Memorabilia" },
+    { "id": "cel-mr-tcb", "cardNumber": "MAS-TCB", "playerName": "T.C. Bear", "team": "Minnesota Twins", "rarity": "Memorabilia" },
+    { "id": "cel-mr-wgm", "cardNumber": "MAS-WGM", "playerName": "Wally the Green Monster", "team": "Boston Red Sox", "rarity": "Memorabilia" }
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "id": "2026-topps-series-1-celebration-mascots-dynasty-auto-logo-patches",
+  "name": "2026 Topps Series 1 Celebration - Mascots Dynasty Autographed MLB Logo Patches",
+  "year": 2026,
+  "brand": "Topps",
+  "sport": "Baseball",
+  "baseParallels": [
+    { "id": "base", "name": "Base", "odds": "1:1" }
+  ],
+  "cards": [
+    { "id": "cel-mdlap-cl", "cardNumber": "MDLAP-CL", "playerName": "Clark", "team": "Chicago Cubs", "rarity": "Autograph" },
+    { "id": "cel-mdlap-mm", "cardNumber": "MDLAP-MM", "playerName": "Mr. Met", "team": "New York Mets", "rarity": "Autograph" },
+    { "id": "cel-mdlap-mrd", "cardNumber": "MDLAP-MRD", "playerName": "Mr. Red", "team": "Cincinnati Reds", "rarity": "Autograph" },
+    { "id": "cel-mdlap-mrsm", "cardNumber": "MDLAP-MRSM", "playerName": "Mrs. Met", "team": "New York Mets", "rarity": "Autograph" },
+    { "id": "cel-mdlap-paw", "cardNumber": "MDLAP-PAW", "playerName": "Paws", "team": "Detroit Tigers", "rarity": "Autograph" },
+    { "id": "cel-mdlap-pp", "cardNumber": "MDLAP-PP", "playerName": "Pirate Parrot", "team": "Pittsburgh Pirates", "rarity": "Autograph" }
+  ]
+}

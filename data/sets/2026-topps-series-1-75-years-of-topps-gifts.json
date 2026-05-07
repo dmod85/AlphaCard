@@ -1,0 +1,93 @@
+{
+  "id": "2026-topps-series-1-75-years-of-topps-gifts",
+  "name": "2026 Topps Series 1 - 75 Years Of Topps Gifts",
+  "year": 2026,
+  "brand": "Topps",
+  "sport": "Baseball",
+  "baseParallels": [
+    {
+      "id": "base",
+      "name": "Base",
+      "odds": "1:1"
+    }
+  ],
+  "cards": [
+    {
+      "id": "2026-topps-series-1-75-years-of-topps-gifts-2",
+      "cardNumber": "2",
+      "playerName": "Tickets to the Home Run Derby Major League Baseball",
+      "team": "",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-75-years-of-topps-gifts-2",
+      "cardNumber": "2",
+      "playerName": "Tickets to the MLB All-Star Game",
+      "team": "",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-75-years-of-topps-gifts-2",
+      "cardNumber": "2",
+      "playerName": "Tickets to a Special Events Game",
+      "team": "",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-75-years-of-topps-gifts--7500-gift-card-topps-",
+      "cardNumber": "GIFT",
+      "playerName": "$7500 Gift Card (Topps)",
+      "team": "",
+      "rarity": "Promo"
+    },
+    {
+      "id": "2026-topps-series-1-75-years-of-topps-gifts--7500-gift-card-fanatics-collect-",
+      "cardNumber": "GIFT",
+      "playerName": "$7500 Gift Card (Fanatics Collect)",
+      "team": "",
+      "rarity": "Promo"
+    },
+    {
+      "id": "2026-topps-series-1-75-years-of-topps-gifts-brewers-team-gift",
+      "cardNumber": "GIFT",
+      "playerName": "Brewers Team Gift",
+      "team": "",
+      "rarity": "Promo"
+    },
+    {
+      "id": "2026-topps-series-1-75-years-of-topps-gifts-pirates-team-gift",
+      "cardNumber": "GIFT",
+      "playerName": "Pirates Team Gift",
+      "team": "",
+      "rarity": "Promo"
+    },
+    {
+      "id": "2026-topps-series-1-75-years-of-topps-gifts-phillies-team-gift",
+      "cardNumber": "GIFT",
+      "playerName": "Phillies Team Gift",
+      "team": "",
+      "rarity": "Promo"
+    },
+    {
+      "id": "2026-topps-series-1-75-years-of-topps-gifts-astros-gameday-experience",
+      "cardNumber": "GIFT",
+      "playerName": "Astros Gameday Experience",
+      "team": "",
+      "rarity": "Promo"
+    },
+    {
+      "id": "2026-topps-series-1-75-years-of-topps-gifts-red-sox-gameday-experience",
+      "cardNumber": "GIFT",
+      "playerName": "Red Sox Gameday Experience",
+      "team": "",
+      "rarity": "Promo"
+    },
+    {
+      "id": "2026-topps-series-1-75-years-of-topps-gifts-orioles-gameday-experience",
+      "cardNumber": "GIFT",
+      "playerName": "Orioles Gameday Experience",
+      "team": "",
+      "rarity": "Promo"
+    }
+  ]
+}

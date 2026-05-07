@@ -1,0 +1,223 @@
+{
+  "id": "2026-topps-series-1-topps-profiles",
+  "name": "2026 Topps Series 1 - Topps Profiles",
+  "year": 2026,
+  "brand": "Topps",
+  "sport": "Baseball",
+  "baseParallels": [
+    {
+      "id": "base",
+      "name": "Base",
+      "odds": "1:1"
+    },
+    {
+      "id": "pink-foil",
+      "name": "Pink Foil"
+    },
+    {
+      "id": "blue-foil-150",
+      "name": "Blue Foil /150"
+    },
+    {
+      "id": "green-foil-99",
+      "name": "Green Foil /99"
+    },
+    {
+      "id": "gold-foil-50",
+      "name": "Gold Foil /50"
+    },
+    {
+      "id": "orange-foil-25",
+      "name": "Orange Foil /25"
+    },
+    {
+      "id": "black-foil-10",
+      "name": "Black Foil /10"
+    },
+    {
+      "id": "red-foil-5",
+      "name": "Red Foil /5"
+    },
+    {
+      "id": "foilfractor-1",
+      "name": "Foilfractor /1"
+    }
+  ],
+  "cards": [
+    {
+      "id": "2026-topps-series-1-topps-profiles-tp-1",
+      "cardNumber": "TP-1",
+      "playerName": "Shohei Ohtani",
+      "team": "Los Angeles Dodgers",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-topps-profiles-tp-2",
+      "cardNumber": "TP-2",
+      "playerName": "Mike Trout",
+      "team": "Angels",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-topps-profiles-tp-3",
+      "cardNumber": "TP-3",
+      "playerName": "Hank Aaron",
+      "team": "Atlanta Braves",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-topps-profiles-tp-4",
+      "cardNumber": "TP-4",
+      "playerName": "Gunnar Henderson",
+      "team": "Baltimore Orioles",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-topps-profiles-tp-5",
+      "cardNumber": "TP-5",
+      "playerName": "Elly De La Cruz",
+      "team": "Cincinnati Reds",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-topps-profiles-tp-6",
+      "cardNumber": "TP-6",
+      "playerName": "Corbin Carroll",
+      "team": "Arizona Diamondbacks",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-topps-profiles-tp-7",
+      "cardNumber": "TP-7",
+      "playerName": "Ronald Acu\u00f1a Jr.",
+      "team": "Atlanta Braves",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-topps-profiles-tp-8",
+      "cardNumber": "TP-8",
+      "playerName": "Mookie Betts",
+      "team": "Los Angeles Dodgers",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-topps-profiles-tp-9",
+      "cardNumber": "TP-9",
+      "playerName": "Jos\u00e9 Ram\u00edrez",
+      "team": "Cleveland Guardians",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-topps-profiles-tp-10",
+      "cardNumber": "TP-10",
+      "playerName": "Francisco Lindor",
+      "team": "New York Mets",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-topps-profiles-tp-11",
+      "cardNumber": "TP-11",
+      "playerName": "Juan Soto",
+      "team": "New York Mets",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-topps-profiles-tp-12",
+      "cardNumber": "TP-12",
+      "playerName": "Ichiro",
+      "team": "Seattle Mariners",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-topps-profiles-tp-13",
+      "cardNumber": "TP-13",
+      "playerName": "Pete Crow-Armstrong",
+      "team": "Chicago Cubs",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-topps-profiles-tp-14",
+      "cardNumber": "TP-14",
+      "playerName": "Paul Skenes",
+      "team": "Pittsburgh Pirates",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-topps-profiles-tp-15",
+      "cardNumber": "TP-15",
+      "playerName": "James Wood",
+      "team": "Washington Nationals",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-topps-profiles-tp-16",
+      "cardNumber": "TP-16",
+      "playerName": "Bobby Witt Jr.",
+      "team": "Kansas City Royals",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-topps-profiles-tp-17",
+      "cardNumber": "TP-17",
+      "playerName": "Vladimir Guerrero Jr.",
+      "team": "Toronto Blue Jays",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-topps-profiles-tp-18",
+      "cardNumber": "TP-18",
+      "playerName": "Aaron Judge",
+      "team": "New York Yankees",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-topps-profiles-tp-19",
+      "cardNumber": "TP-19",
+      "playerName": "Bryce Harper",
+      "team": "Philadelphia Phillies",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-topps-profiles-tp-20",
+      "cardNumber": "TP-20",
+      "playerName": "Jackie Robinson",
+      "team": "Brooklyn Dodgers",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-topps-profiles-tp-21",
+      "cardNumber": "TP-21",
+      "playerName": "Julio Rodr\u00edguez",
+      "team": "Seattle Mariners",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-topps-profiles-tp-22",
+      "cardNumber": "TP-22",
+      "playerName": "Jac Caglianone",
+      "team": "Kansas City Royals",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-topps-profiles-tp-23",
+      "cardNumber": "TP-23",
+      "playerName": "Roman Anthony",
+      "team": "Boston Red Sox",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-topps-profiles-tp-24",
+      "cardNumber": "TP-24",
+      "playerName": "Cal Raleigh",
+      "team": "Seattle Mariners",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-topps-profiles-tp-25",
+      "cardNumber": "TP-25",
+      "playerName": "Randy Johnson",
+      "team": "Seattle Mariners",
+      "rarity": "Insert"
+    }
+  ]
+}

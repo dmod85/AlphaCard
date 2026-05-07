@@ -1,0 +1,244 @@
+{
+  "id": "2026-topps-series-1-2025-greatest-hits",
+  "name": "2026 Topps Series 1 - 2025 Greatest Hits",
+  "year": 2026,
+  "brand": "Topps",
+  "sport": "Baseball",
+  "baseParallels": [
+    {
+      "id": "base",
+      "name": "Base",
+      "odds": "1:1"
+    },
+    {
+      "id": "pink-foil",
+      "name": "Pink Foil"
+    },
+    {
+      "id": "blue-foil-150",
+      "name": "Blue Foil /150"
+    },
+    {
+      "id": "green-foil-99",
+      "name": "Green Foil /99"
+    },
+    {
+      "id": "gold-foil-50",
+      "name": "Gold Foil /50"
+    },
+    {
+      "id": "orange-foil-25",
+      "name": "Orange Foil /25"
+    },
+    {
+      "id": "black-foil-10",
+      "name": "Black Foil /10"
+    },
+    {
+      "id": "red-foil-5",
+      "name": "Red Foil /5"
+    },
+    {
+      "id": "foilfractor-1",
+      "name": "Foilfractor /1"
+    }
+  ],
+  "cards": [
+    {
+      "id": "2026-topps-series-1-2025-greatest-hits-gh-1",
+      "cardNumber": "GH-1",
+      "playerName": "Pete Crow-Armstrong",
+      "team": "Chicago Cubs",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-2025-greatest-hits-gh-2",
+      "cardNumber": "GH-2",
+      "playerName": "Aaron Judge",
+      "team": "New York Yankees",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-2025-greatest-hits-gh-3",
+      "cardNumber": "GH-3",
+      "playerName": "Ceddanne Rafaela",
+      "team": "Boston Red Sox",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-2025-greatest-hits-gh-4",
+      "cardNumber": "GH-4",
+      "playerName": "James Wood",
+      "team": "Washington Nationals",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-2025-greatest-hits-gh-5",
+      "cardNumber": "GH-5",
+      "playerName": "Christian Yelich",
+      "team": "Milwaukee Brewers",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-2025-greatest-hits-gh-6",
+      "cardNumber": "GH-6",
+      "playerName": "Jasson Dom\u00ednguez",
+      "team": "New York Yankees",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-2025-greatest-hits-gh-7",
+      "cardNumber": "GH-7",
+      "playerName": "Freddie Freeman",
+      "team": "Los Angeles Dodgers",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-2025-greatest-hits-gh-8",
+      "cardNumber": "GH-8",
+      "playerName": "Cal Raleigh",
+      "team": "Seattle Mariners",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-2025-greatest-hits-gh-9",
+      "cardNumber": "GH-9",
+      "playerName": "Matt Chapman",
+      "team": "San Francisco Giants",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-2025-greatest-hits-gh-10",
+      "cardNumber": "GH-10",
+      "playerName": "Bryce Harper",
+      "team": "Philadelphia Phillies",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-2025-greatest-hits-gh-11",
+      "cardNumber": "GH-11",
+      "playerName": "Andrew McCutchen",
+      "team": "Pittsburgh Pirates",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-2025-greatest-hits-gh-12",
+      "cardNumber": "GH-12",
+      "playerName": "Byron Buxton",
+      "team": "Minnesota Twins",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-2025-greatest-hits-gh-13",
+      "cardNumber": "GH-13",
+      "playerName": "Manny Machado",
+      "team": "San Diego Padres",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-2025-greatest-hits-gh-14",
+      "cardNumber": "GH-14",
+      "playerName": "Mike Trout",
+      "team": "Angels",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-2025-greatest-hits-gh-15",
+      "cardNumber": "GH-15",
+      "playerName": "Cody Bellinger",
+      "team": "New York Yankees",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-2025-greatest-hits-gh-16",
+      "cardNumber": "GH-16",
+      "playerName": "Kyle Schwarber",
+      "team": "Philadelphia Phillies",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-2025-greatest-hits-gh-17",
+      "cardNumber": "GH-17",
+      "playerName": "Shohei Ohtani",
+      "team": "Los Angeles Dodgers",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-2025-greatest-hits-gh-18",
+      "cardNumber": "GH-18",
+      "playerName": "Bobby Witt Jr.",
+      "team": "Kansas City Royals",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-2025-greatest-hits-gh-19",
+      "cardNumber": "GH-19",
+      "playerName": "Ronald Acu\u00f1a Jr.",
+      "team": "Atlanta Braves",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-2025-greatest-hits-gh-20",
+      "cardNumber": "GH-20",
+      "playerName": "Jackson Chourio",
+      "team": "Milwaukee Brewers",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-2025-greatest-hits-gh-21",
+      "cardNumber": "GH-21",
+      "playerName": "Patrick Bailey",
+      "team": "San Francisco Giants",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-2025-greatest-hits-gh-22",
+      "cardNumber": "GH-22",
+      "playerName": "Marcus Semien",
+      "team": "Texas Rangers",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-2025-greatest-hits-gh-23",
+      "cardNumber": "GH-23",
+      "playerName": "Nick Kurtz",
+      "team": "Athletics",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-2025-greatest-hits-gh-24",
+      "cardNumber": "GH-24",
+      "playerName": "Max Muncy",
+      "team": "Los Angeles Dodgers",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-2025-greatest-hits-gh-25",
+      "cardNumber": "GH-25",
+      "playerName": "Jac Caglianone",
+      "team": "Kansas City Royals",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-2025-greatest-hits-gh-26",
+      "cardNumber": "GH-26",
+      "playerName": "Roman Anthony",
+      "team": "Boston Red Sox",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-2025-greatest-hits-gh-27",
+      "cardNumber": "GH-27",
+      "playerName": "Michael Busch",
+      "team": "Chicago Cubs",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-2025-greatest-hits-gh-28",
+      "cardNumber": "GH-28",
+      "playerName": "Pete Alonso",
+      "team": "New York Mets",
+      "rarity": "Insert"
+    }
+  ]
+}

@@ -1,0 +1,90 @@
+{
+  "id": "2026-topps-series-1-all-aces",
+  "name": "2026 Topps Series 1 - All Aces",
+  "year": 2026,
+  "brand": "Topps",
+  "sport": "Baseball",
+  "baseParallels": [
+    {
+      "id": "base",
+      "name": "Base",
+      "odds": "1:1"
+    },
+    {
+      "id": "gold-1",
+      "name": "Gold /1"
+    }
+  ],
+  "cards": [
+    {
+      "id": "2026-topps-series-1-all-aces-aa-1",
+      "cardNumber": "AA-1",
+      "playerName": "Shohei Ohtani",
+      "team": "Los Angeles Dodgers",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-all-aces-aa-2",
+      "cardNumber": "AA-2",
+      "playerName": "Paul Skenes",
+      "team": "Pittsburgh Pirates",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-all-aces-aa-3",
+      "cardNumber": "AA-3",
+      "playerName": "Nolan Ryan",
+      "team": "Texas Rangers",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-all-aces-aa-4",
+      "cardNumber": "AA-4",
+      "playerName": "Chase Burns",
+      "team": "Cincinnati Reds",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-all-aces-aa-5",
+      "cardNumber": "AA-5",
+      "playerName": "Jacob Misiorowski",
+      "team": "Milwaukee Brewers",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-all-aces-aa-6",
+      "cardNumber": "AA-6",
+      "playerName": "Nolan McLean",
+      "team": "New York Mets",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-all-aces-aa-7",
+      "cardNumber": "AA-7",
+      "playerName": "Bubba Chandler",
+      "team": "Pittsburgh Pirates",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-all-aces-aa-8",
+      "cardNumber": "AA-8",
+      "playerName": "Tarik Skubal",
+      "team": "Detroit Tigers",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-all-aces-aa-9",
+      "cardNumber": "AA-9",
+      "playerName": "Zack Wheeler",
+      "team": "Philadelphia Phillies",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-all-aces-aa-10",
+      "cardNumber": "AA-10",
+      "playerName": "Walter Johnson",
+      "team": "Washington Senators",
+      "rarity": "Insert"
+    }
+  ]
+}

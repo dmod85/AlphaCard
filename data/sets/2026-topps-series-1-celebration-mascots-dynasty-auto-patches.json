@@ -1,0 +1,19 @@
+{
+  "id": "2026-topps-series-1-celebration-mascots-dynasty-auto-patches",
+  "name": "2026 Topps Series 1 Celebration - Mascots Dynasty Autographed Patches",
+  "year": 2026,
+  "brand": "Topps",
+  "sport": "Baseball",
+  "baseParallels": [
+    { "id": "base", "name": "Base", "odds": "1:1" }
+  ],
+  "cards": [
+    { "id": "cel-mdap-cl", "cardNumber": "MDAP-CL", "playerName": "Clark", "team": "Chicago Cubs", "rarity": "Autograph" },
+    { "id": "cel-mdap-mm", "cardNumber": "MDAP-MM", "playerName": "Mr. Met", "team": "New York Mets", "rarity": "Autograph" },
+    { "id": "cel-mdap-mrm", "cardNumber": "MDAP-MRM", "playerName": "Mr. Red", "team": "Cincinnati Reds", "rarity": "Autograph" },
+    { "id": "cel-mdap-mrsm", "cardNumber": "MDAP-MRSM", "playerName": "Mrs. Met", "team": "New York Mets", "rarity": "Autograph" },
+    { "id": "cel-mdap-paw", "cardNumber": "MDAP-PAW", "playerName": "Paws", "team": "Detroit Tigers", "rarity": "Autograph" },
+    { "id": "cel-mdap-pp", "cardNumber": "MDAP-PP", "playerName": "Pirate Parrot", "team": "Pittsburgh Pirates", "rarity": "Autograph" },
+    { "id": "cel-mdap-rr", "cardNumber": "MDAP-RR", "playerName": "Rosie Red", "team": "Cincinnati Reds", "rarity": "Autograph" }
+  ]
+}

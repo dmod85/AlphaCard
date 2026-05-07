@@ -17,6 +17,7 @@ export default function StagingTable({ items, onRemove, onUpdate }: Props) {
           <thead className="bg-gray-800/60 sticky top-0 z-10">
             <tr>
               <th className="text-left p-3 text-gray-500 font-medium w-8">#</th>
+              <th className="text-left p-3 text-gray-500 font-medium w-12">Img</th>
               <th className="text-left p-3 text-gray-500 font-medium">Title</th>
               <th className="text-left p-3 text-gray-500 font-medium">Player</th>
               <th className="text-left p-3 text-gray-500 font-medium">Sport</th>
@@ -30,6 +31,26 @@ export default function StagingTable({ items, onRemove, onUpdate }: Props) {
             {items.map((item, idx) => (
               <tr key={item.id} className="border-t border-gray-800/50 hover:bg-gray-800/30 transition group">
                 <td className="p-3 text-gray-600">{idx + 1}</td>
+                <td className="p-3">
+                  {item.image_urls && item.image_urls.length > 0 ? (
+                    <div className="relative w-9 h-9 flex-shrink-0">
+                      <img
+                        src={item.image_urls[0]}
+                        alt=""
+                        className="w-9 h-9 rounded object-cover border border-gray-700"
+                      />
+                      {item.image_urls.length > 1 && (
+                        <span className="absolute -bottom-1 -right-1 bg-gray-700 text-[9px] text-gray-300 rounded-full w-4 h-4 flex items-center justify-center font-medium">
+                          {item.image_urls.length}
+                        </span>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="w-9 h-9 rounded border border-gray-800 bg-gray-800/40 flex items-center justify-center text-gray-600 text-[10px]">
+                      —
+                    </div>
+                  )}
+                </td>
                 <td className="p-3 max-w-xs">
                   <input
                     type="text"

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { supabaseAdmin } from '@/app/lib/supabase';
+import { supabaseAdmin } from '@/app/lib/supabase-admin';
 
 // eBay Trading API config
 const EBAY_API_URL = process.env.EBAY_ENVIRONMENT === 'PRODUCTION'
@@ -73,6 +73,22 @@ function buildItemXml(item: any): string {
       ${specifics.map(s => `<NameValueList><Name>${escapeXml(s.name)}</Name><Value>${escapeXml(s.value)}</Value></NameValueList>`).join('\n      ')}
     </ItemSpecifics>` : '';
 
+  // Build description (required by eBay)
+  const descParts: string[] = [];
+  if (item.player_name) descParts.push(item.player_name);
+  if (item.card_year && item.card_set) descParts.push(`${item.card_year} ${item.card_set}`);
+  else if (item.card_year) descParts.push(String(item.card_year));
+  else if (item.card_set) descParts.push(item.card_set);
+  if (item.card_number) descParts.push(`Card #${item.card_number}`);
+  if (item.condition === 'graded' && item.grader) {
+    descParts.push(`Graded ${item.grader} ${item.grade || ''}`.trim());
+    if (item.cert_number) descParts.push(`Cert #${item.cert_number}`);
+  } else {
+    descParts.push('Near Mint or Better (NM+) condition.');
+  }
+  descParts.push('Ships from the United States. Please message with any questions.');
+  const description = descParts.join(' | ');
+
   // Build picture URLs
   const pictureXml = item.image_urls && item.image_urls.length > 0
     ? `<PictureDetails>${item.image_urls.map((url: string) => `<PictureURL>${escapeXml(url)}</PictureURL>`).join('')}</PictureDetails>`
@@ -81,6 +97,7 @@ function buildItemXml(item: any): string {
   return `
     <Item>
       <Title>${escapeXml(title)}</Title>
+      <Description><![CDATA[${description}]]></Description>
       <PrimaryCategory><CategoryID>${categoryId}</CategoryID></PrimaryCategory>
       <ConditionID>${conditionId}</ConditionID>
       ${conditionDescriptors}
@@ -89,6 +106,7 @@ function buildItemXml(item: any): string {
       <ListingType>FixedPriceItem</ListingType>
       <ListingDuration>GTC</ListingDuration>
       <BestOfferDetails><BestOfferEnabled>true</BestOfferEnabled></BestOfferDetails>
+      <Location>United States</Location>
       <Country>US</Country>
       <Currency>USD</Currency>
       <DispatchTimeMax>3</DispatchTimeMax>

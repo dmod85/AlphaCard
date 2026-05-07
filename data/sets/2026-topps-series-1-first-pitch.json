@@ -1,0 +1,111 @@
+{
+  "id": "2026-topps-series-1-first-pitch",
+  "name": "2026 Topps Series 1 - First Pitch",
+  "year": 2026,
+  "brand": "Topps",
+  "sport": "Baseball",
+  "baseParallels": [
+    {
+      "id": "base",
+      "name": "Base",
+      "odds": "1:1"
+    },
+    {
+      "id": "pink-foil",
+      "name": "Pink Foil"
+    },
+    {
+      "id": "blue-foil-150",
+      "name": "Blue Foil /150"
+    },
+    {
+      "id": "green-foil-99",
+      "name": "Green Foil /99"
+    },
+    {
+      "id": "gold-foil-50",
+      "name": "Gold Foil /50"
+    },
+    {
+      "id": "orange-foil-25",
+      "name": "Orange Foil /25"
+    },
+    {
+      "id": "black-foil-10",
+      "name": "Black Foil /10"
+    },
+    {
+      "id": "red-foil-5",
+      "name": "Red Foil /5"
+    },
+    {
+      "id": "foilfractor-1",
+      "name": "Foilfractor /1"
+    }
+  ],
+  "cards": [
+    {
+      "id": "2026-topps-series-1-first-pitch-fp-1",
+      "cardNumber": "FP-1",
+      "playerName": "Shad Mayfield",
+      "team": "Texas Rangers",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-first-pitch-fp-2",
+      "cardNumber": "FP-2",
+      "playerName": "Kelvin Sampson",
+      "team": "Houston Astros",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-first-pitch-fp-3",
+      "cardNumber": "FP-3",
+      "playerName": "Caroline Marks",
+      "team": "Angels",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-first-pitch-fp-4",
+      "cardNumber": "FP-4",
+      "playerName": "Kevin Negandhi",
+      "team": "Seattle Mariners",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-first-pitch-fp-5",
+      "cardNumber": "FP-5",
+      "playerName": "Jesse Eisenberg",
+      "team": "Cincinnati Reds",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-first-pitch-fp-6",
+      "cardNumber": "FP-6",
+      "playerName": "Tony Hawk",
+      "team": "San Diego Padres",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-first-pitch-fp-7",
+      "cardNumber": "FP-7",
+      "playerName": "Jackie Hornung",
+      "team": "New York Mets",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-first-pitch-fp-8",
+      "cardNumber": "FP-8",
+      "playerName": "Alysha Newman",
+      "team": "Toronto Blue Jays",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-first-pitch-fp-9",
+      "cardNumber": "FP-9",
+      "playerName": "Mannie Fresh",
+      "team": "Cleveland Guardians",
+      "rarity": "Insert"
+    }
+  ]
+}

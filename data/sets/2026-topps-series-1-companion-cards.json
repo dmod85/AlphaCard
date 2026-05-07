@@ -1,0 +1,128 @@
+{
+  "id": "2026-topps-series-1-companion-cards",
+  "name": "2026 Topps Series 1 - Companion Cards",
+  "year": 2026,
+  "brand": "Topps",
+  "sport": "Baseball",
+  "baseParallels": [
+    {
+      "id": "base",
+      "name": "Base",
+      "odds": "1:1"
+    }
+  ],
+  "cards": [
+    {
+      "id": "2026-topps-series-1-companion-cards-1",
+      "cardNumber": "1",
+      "playerName": "Aaron Judge",
+      "team": "New York Yankees",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-companion-cards-20",
+      "cardNumber": "20",
+      "playerName": "Vladimir Guerrero Jr.",
+      "team": "Toronto Blue Jays",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-companion-cards-50",
+      "cardNumber": "50",
+      "playerName": "Ronald Acu\u00f1a Jr.",
+      "team": "Atlanta Braves",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-companion-cards-97",
+      "cardNumber": "97",
+      "playerName": "Nick Kurtz",
+      "team": "Athletics",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-companion-cards-100",
+      "cardNumber": "100",
+      "playerName": "Paul Skenes",
+      "team": "Pittsburgh Pirates",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-companion-cards-104",
+      "cardNumber": "104",
+      "playerName": "Samuel Basallo",
+      "team": "Baltimore Orioles",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-companion-cards-123",
+      "cardNumber": "123",
+      "playerName": "Francisco Lindor",
+      "team": "New York Mets",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-companion-cards-138",
+      "cardNumber": "138",
+      "playerName": "Jac Caglianone",
+      "team": "Kansas City Royals",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-companion-cards-146",
+      "cardNumber": "146",
+      "playerName": "Julio Rodr\u00edguez",
+      "team": "Seattle Mariners",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-companion-cards-189",
+      "cardNumber": "189",
+      "playerName": "Roman Anthony",
+      "team": "Boston Red Sox",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-companion-cards-196",
+      "cardNumber": "196",
+      "playerName": "Pete Crow-Armstrong",
+      "team": "Chicago Cubs",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-companion-cards-200",
+      "cardNumber": "200",
+      "playerName": "Shohei Ohtani",
+      "team": "Los Angeles Dodgers",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-companion-cards-205",
+      "cardNumber": "205",
+      "playerName": "Bobby Witt Jr.",
+      "team": "Kansas City Royals",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-companion-cards-250",
+      "cardNumber": "250",
+      "playerName": "Bryce Harper",
+      "team": "Philadelphia Phillies",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-companion-cards-333",
+      "cardNumber": "333",
+      "playerName": "Fernando Tatis Jr.",
+      "team": "San Diego Padres",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-companion-cards-350",
+      "cardNumber": "350",
+      "playerName": "Mike Trout",
+      "team": "Angels",
+      "rarity": "Insert"
+    }
+  ]
+}

@@ -1,0 +1,226 @@
+{
+  "id": "2026-topps-series-1-stars-of-mlb",
+  "name": "2026 Topps Series 1 - Stars Of MLB",
+  "year": 2026,
+  "brand": "Topps",
+  "sport": "Baseball",
+  "baseParallels": [
+    {
+      "id": "base",
+      "name": "Base",
+      "odds": "1:1"
+    }
+  ],
+  "cards": [
+    {
+      "id": "2026-topps-series-1-stars-of-mlb-smlb-1",
+      "cardNumber": "SMLB-1",
+      "playerName": "Aaron Judge",
+      "team": "New York Yankees",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-stars-of-mlb-smlb-2",
+      "cardNumber": "SMLB-2",
+      "playerName": "Bryce Harper",
+      "team": "Philadelphia Phillies",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-stars-of-mlb-smlb-3",
+      "cardNumber": "SMLB-3",
+      "playerName": "Fernando Tatis Jr.",
+      "team": "San Diego Padres",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-stars-of-mlb-smlb-4",
+      "cardNumber": "SMLB-4",
+      "playerName": "Julio Rodr\u00edguez",
+      "team": "Seattle Mariners",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-stars-of-mlb-smlb-5",
+      "cardNumber": "SMLB-5",
+      "playerName": "Bobby Witt Jr.",
+      "team": "Kansas City Royals",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-stars-of-mlb-smlb-6",
+      "cardNumber": "SMLB-6",
+      "playerName": "Vladimir Guerrero Jr.",
+      "team": "Toronto Blue Jays",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-stars-of-mlb-smlb-7",
+      "cardNumber": "SMLB-7",
+      "playerName": "Mike Trout",
+      "team": "Angels",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-stars-of-mlb-smlb-8",
+      "cardNumber": "SMLB-8",
+      "playerName": "Yordan Alvarez",
+      "team": "Houston Astros",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-stars-of-mlb-smlb-9",
+      "cardNumber": "SMLB-9",
+      "playerName": "Shohei Ohtani",
+      "team": "Los Angeles Dodgers",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-stars-of-mlb-smlb-10",
+      "cardNumber": "SMLB-10",
+      "playerName": "Francisco Lindor",
+      "team": "New York Mets",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-stars-of-mlb-smlb-11",
+      "cardNumber": "SMLB-11",
+      "playerName": "Gunnar Henderson",
+      "team": "Baltimore Orioles",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-stars-of-mlb-smlb-12",
+      "cardNumber": "SMLB-12",
+      "playerName": "Elly De La Cruz",
+      "team": "Cincinnati Reds",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-stars-of-mlb-smlb-13",
+      "cardNumber": "SMLB-13",
+      "playerName": "Samuel Basallo",
+      "team": "Baltimore Orioles",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-stars-of-mlb-smlb-14",
+      "cardNumber": "SMLB-14",
+      "playerName": "Corbin Carroll",
+      "team": "Arizona Diamondbacks",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-stars-of-mlb-smlb-15",
+      "cardNumber": "SMLB-15",
+      "playerName": "Ronald Acu\u00f1a Jr.",
+      "team": "Atlanta Braves",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-stars-of-mlb-smlb-16",
+      "cardNumber": "SMLB-16",
+      "playerName": "Mookie Betts",
+      "team": "Los Angeles Dodgers",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-stars-of-mlb-smlb-17",
+      "cardNumber": "SMLB-17",
+      "playerName": "James Wood",
+      "team": "Washington Nationals",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-stars-of-mlb-smlb-18",
+      "cardNumber": "SMLB-18",
+      "playerName": "Jos\u00e9 Ram\u00edrez",
+      "team": "Cleveland Guardians",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-stars-of-mlb-smlb-19",
+      "cardNumber": "SMLB-19",
+      "playerName": "Rafael Devers",
+      "team": "San Francisco Giants",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-stars-of-mlb-smlb-20",
+      "cardNumber": "SMLB-20",
+      "playerName": "Christian Yelich",
+      "team": "Milwaukee Brewers",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-stars-of-mlb-smlb-21",
+      "cardNumber": "SMLB-21",
+      "playerName": "Paul Skenes",
+      "team": "Pittsburgh Pirates",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-stars-of-mlb-smlb-22",
+      "cardNumber": "SMLB-22",
+      "playerName": "Byron Buxton",
+      "team": "Minnesota Twins",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-stars-of-mlb-smlb-23",
+      "cardNumber": "SMLB-23",
+      "playerName": "Juan Soto",
+      "team": "New York Mets",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-stars-of-mlb-smlb-24",
+      "cardNumber": "SMLB-24",
+      "playerName": "Jac Caglianone",
+      "team": "Kansas City Royals",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-stars-of-mlb-smlb-25",
+      "cardNumber": "SMLB-25",
+      "playerName": "Roman Anthony",
+      "team": "Boston Red Sox",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-stars-of-mlb-smlb-26",
+      "cardNumber": "SMLB-26",
+      "playerName": "Jacob Misiorowski",
+      "team": "Milwaukee Brewers",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-stars-of-mlb-smlb-27",
+      "cardNumber": "SMLB-27",
+      "playerName": "Chase Burns",
+      "team": "Cincinnati Reds",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-stars-of-mlb-smlb-28",
+      "cardNumber": "SMLB-28",
+      "playerName": "Kyle Teel",
+      "team": "Chicago White Sox",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-stars-of-mlb-smlb-29",
+      "cardNumber": "SMLB-29",
+      "playerName": "Tarik Skubal",
+      "team": "Detroit Tigers",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-stars-of-mlb-smlb-30",
+      "cardNumber": "SMLB-30",
+      "playerName": "Jacob Wilson",
+      "team": "Athletics",
+      "rarity": "Insert"
+    }
+  ]
+}

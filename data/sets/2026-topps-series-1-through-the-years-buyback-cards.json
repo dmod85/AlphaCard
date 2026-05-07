@@ -1,0 +1,15 @@
+{
+  "id": "2026-topps-series-1-through-the-years-buyback-cards",
+  "name": "2026 Topps Series 1 - Through The Years Buyback Cards",
+  "year": 2026,
+  "brand": "Topps",
+  "sport": "Baseball",
+  "baseParallels": [
+    {
+      "id": "base",
+      "name": "Base",
+      "odds": "1:1"
+    }
+  ],
+  "cards": []
+}

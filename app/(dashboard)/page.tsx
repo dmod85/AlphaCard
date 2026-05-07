@@ -28,6 +28,7 @@ export default function Dashboard() {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [filter, setFilter] = useState<string>('all');
+  const [clockTime, setClockTime] = useState<string>('');
   const [sport, setSport] = useState<string>('all');
   const [sort, setSort] = useState<string>('confidence');
   const [loading, setLoading] = useState(true);
@@ -60,6 +61,14 @@ export default function Dashboard() {
     return () => clearInterval(interval);
   }, [fetchData]);
 
+  // Clock — client-only to avoid hydration mismatch
+  useEffect(() => {
+    const tick = () => setClockTime(new Date().toLocaleTimeString());
+    tick();
+    const interval = setInterval(tick, 1000);
+    return () => clearInterval(interval);
+  }, []);
+
   const updateLead = async (id: string, updates: Partial<Lead>) => {
     await fetch('/api/leads', {
       method: 'PATCH',
@@ -88,7 +97,7 @@ export default function Dashboard() {
         </div>
         <div className="flex gap-3 items-center">
           <div className="text-xs text-gray-600">
-            {new Date().toLocaleTimeString()} · Auto-refreshing
+            {clockTime && `${clockTime} · `}Auto-refreshing
           </div>
           <button
             onClick={fetchData}

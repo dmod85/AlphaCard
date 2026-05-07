@@ -1,0 +1,66 @@
+{
+  "id": "2026-topps-series-1-celebration-dugout-peeks",
+  "name": "2026 Topps Series 1 Celebration - Dugout Peeks",
+  "year": 2026,
+  "brand": "Topps",
+  "sport": "Baseball",
+  "baseParallels": [
+    {
+      "id": "base",
+      "name": "Base",
+      "odds": "1:1"
+    },
+    {
+      "id": "gold-50",
+      "name": "Gold /50"
+    },
+    {
+      "id": "orange-25",
+      "name": "Orange /25"
+    },
+    {
+      "id": "black-10",
+      "name": "Black /10"
+    },
+    {
+      "id": "red-5",
+      "name": "Red /5"
+    },
+    {
+      "id": "foilfractor-1",
+      "name": "Foilfractor /1"
+    }
+  ],
+  "cards": [
+    { "id": "cel-dp-1", "cardNumber": "1", "playerName": "Aaron Judge", "team": "New York Yankees", "rarity": "Variation" },
+    { "id": "cel-dp-10", "cardNumber": "10", "playerName": "Jacob Misiorowski", "team": "Milwaukee Brewers", "rarity": "Variation" },
+    { "id": "cel-dp-20", "cardNumber": "20", "playerName": "Vladimir Guerrero Jr.", "team": "Toronto Blue Jays", "rarity": "Variation" },
+    { "id": "cel-dp-46", "cardNumber": "46", "playerName": "Gunnar Henderson", "team": "Baltimore Orioles", "rarity": "Variation" },
+    { "id": "cel-dp-66", "cardNumber": "66", "playerName": "Roki Sasaki", "team": "Los Angeles Dodgers", "rarity": "Variation" },
+    { "id": "cel-dp-100", "cardNumber": "100", "playerName": "Paul Skenes", "team": "Pittsburgh Pirates", "rarity": "Variation" },
+    { "id": "cel-dp-123", "cardNumber": "123", "playerName": "Francisco Lindor", "team": "New York Mets", "rarity": "Variation" },
+    { "id": "cel-dp-138", "cardNumber": "138", "playerName": "Jac Caglianone", "team": "Kansas City Royals", "rarity": "Variation" },
+    { "id": "cel-dp-140", "cardNumber": "140", "playerName": "Cal Raleigh", "team": "Seattle Mariners", "rarity": "Variation" },
+    { "id": "cel-dp-150", "cardNumber": "150", "playerName": "Elly De La Cruz", "team": "Cincinnati Reds", "rarity": "Variation" },
+    { "id": "cel-dp-189", "cardNumber": "189", "playerName": "Roman Anthony", "team": "Boston Red Sox", "rarity": "Variation" },
+    { "id": "cel-dp-196", "cardNumber": "196", "playerName": "Pete Crow-Armstrong", "team": "Chicago Cubs", "rarity": "Variation" },
+    { "id": "cel-dp-200", "cardNumber": "200", "playerName": "Shohei Ohtani", "team": "Los Angeles Dodgers", "rarity": "Variation" },
+    { "id": "cel-dp-205", "cardNumber": "205", "playerName": "Bobby Witt Jr.", "team": "Kansas City Royals", "rarity": "Variation" },
+    { "id": "cel-dp-209", "cardNumber": "209", "playerName": "Riley Greene", "team": "Detroit Tigers", "rarity": "Variation" },
+    { "id": "cel-dp-217", "cardNumber": "217", "playerName": "Seiya Suzuki", "team": "Chicago Cubs", "rarity": "Variation" },
+    { "id": "cel-dp-219", "cardNumber": "219", "playerName": "Rafael Devers", "team": "San Francisco Giants", "rarity": "Variation" },
+    { "id": "cel-dp-238", "cardNumber": "238", "playerName": "Austin Riley", "team": "Atlanta Braves", "rarity": "Variation" },
+    { "id": "cel-dp-242", "cardNumber": "242", "playerName": "Juan Soto", "team": "New York Mets", "rarity": "Variation" },
+    { "id": "cel-dp-250", "cardNumber": "250", "playerName": "Kyle Schwarber", "team": "Philadelphia Phillies", "rarity": "Variation" },
+    { "id": "cel-dp-255", "cardNumber": "255", "playerName": "Byron Buxton", "team": "Minnesota Twins", "rarity": "Variation" },
+    { "id": "cel-dp-257", "cardNumber": "257", "playerName": "Ketel Marte", "team": "Arizona Diamondbacks", "rarity": "Variation" },
+    { "id": "cel-dp-300", "cardNumber": "300", "playerName": "Tarik Skubal", "team": "Detroit Tigers", "rarity": "Variation" },
+    { "id": "cel-dp-307", "cardNumber": "307", "playerName": "Jeremy Peña", "team": "Houston Astros", "rarity": "Variation" },
+    { "id": "cel-dp-308", "cardNumber": "308", "playerName": "Jazz Chisholm Jr.", "team": "New York Yankees", "rarity": "Variation" },
+    { "id": "cel-dp-324", "cardNumber": "324", "playerName": "Lawrence Butler", "team": "Athletics", "rarity": "Variation" },
+    { "id": "cel-dp-328", "cardNumber": "328", "playerName": "Junior Caminero", "team": "Tampa Bay Rays", "rarity": "Variation" },
+    { "id": "cel-dp-333", "cardNumber": "333", "playerName": "Fernando Tatis Jr.", "team": "San Diego Padres", "rarity": "Variation" },
+    { "id": "cel-dp-349", "cardNumber": "349", "playerName": "James Wood", "team": "Washington Nationals", "rarity": "Variation" },
+    { "id": "cel-dp-350", "cardNumber": "350", "playerName": "Mike Trout", "team": "Los Angeles Angels", "rarity": "Variation" }
+  ]
+}

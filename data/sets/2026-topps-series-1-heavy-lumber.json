@@ -1,0 +1,156 @@
+{
+  "id": "2026-topps-series-1-heavy-lumber",
+  "name": "2026 Topps Series 1 - Heavy Lumber",
+  "year": 2026,
+  "brand": "Topps",
+  "sport": "Baseball",
+  "baseParallels": [
+    {
+      "id": "base",
+      "name": "Base",
+      "odds": "1:1"
+    }
+  ],
+  "cards": [
+    {
+      "id": "2026-topps-series-1-heavy-lumber-hl-1",
+      "cardNumber": "HL-1",
+      "playerName": "Mike Trout",
+      "team": "Angels",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-heavy-lumber-hl-2",
+      "cardNumber": "HL-2",
+      "playerName": "Shohei Ohtani",
+      "team": "Los Angeles Dodgers",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-heavy-lumber-hl-3",
+      "cardNumber": "HL-3",
+      "playerName": "Aaron Judge",
+      "team": "New York Yankees",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-heavy-lumber-hl-4",
+      "cardNumber": "HL-4",
+      "playerName": "Bryce Harper",
+      "team": "Philadelphia Phillies",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-heavy-lumber-hl-5",
+      "cardNumber": "HL-5",
+      "playerName": "Elly De La Cruz",
+      "team": "Cincinnati Reds",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-heavy-lumber-hl-6",
+      "cardNumber": "HL-6",
+      "playerName": "Ronald Acu\u00f1a Jr.",
+      "team": "Atlanta Braves",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-heavy-lumber-hl-7",
+      "cardNumber": "HL-7",
+      "playerName": "Pete Crow-Armstrong",
+      "team": "Chicago Cubs",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-heavy-lumber-hl-8",
+      "cardNumber": "HL-8",
+      "playerName": "Francisco Lindor",
+      "team": "New York Mets",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-heavy-lumber-hl-9",
+      "cardNumber": "HL-9",
+      "playerName": "Bobby Witt Jr.",
+      "team": "Kansas City Royals",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-heavy-lumber-hl-10",
+      "cardNumber": "HL-10",
+      "playerName": "Fernando Tatis Jr.",
+      "team": "San Diego Padres",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-heavy-lumber-hl-11",
+      "cardNumber": "HL-11",
+      "playerName": "Babe Ruth",
+      "team": "New York Yankees",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-heavy-lumber-hl-12",
+      "cardNumber": "HL-12",
+      "playerName": "Ken Griffey Jr.",
+      "team": "Seattle Mariners",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-heavy-lumber-hl-13",
+      "cardNumber": "HL-13",
+      "playerName": "Barry Bonds",
+      "team": "Pittsburgh Pirates",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-heavy-lumber-hl-14",
+      "cardNumber": "HL-14",
+      "playerName": "Samuel Basallo",
+      "team": "Baltimore Orioles",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-heavy-lumber-hl-15",
+      "cardNumber": "HL-15",
+      "playerName": "Cal Raleigh",
+      "team": "Seattle Mariners",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-heavy-lumber-hl-16",
+      "cardNumber": "HL-16",
+      "playerName": "Rafael Devers",
+      "team": "San Francisco Giants",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-heavy-lumber-hl-17",
+      "cardNumber": "HL-17",
+      "playerName": "James Wood",
+      "team": "Washington Nationals",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-heavy-lumber-hl-18",
+      "cardNumber": "HL-18",
+      "playerName": "Jac Caglianone",
+      "team": "Kansas City Royals",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-heavy-lumber-hl-19",
+      "cardNumber": "HL-19",
+      "playerName": "Roman Anthony",
+      "team": "Boston Red Sox",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-heavy-lumber-hl-20",
+      "cardNumber": "HL-20",
+      "playerName": "Christian Moore",
+      "team": "Angels",
+      "rarity": "Insert"
+    }
+  ]
+}

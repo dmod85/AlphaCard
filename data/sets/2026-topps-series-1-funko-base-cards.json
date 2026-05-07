@@ -1,0 +1,51 @@
+{
+  "id": "2026-topps-series-1-funko-base-cards",
+  "name": "2026 Topps Series 1 - Funko Base Cards",
+  "year": 2026,
+  "brand": "Topps",
+  "sport": "Baseball",
+  "baseParallels": [
+    {
+      "id": "base",
+      "name": "Base",
+      "odds": "1:1"
+    }
+  ],
+  "cards": [
+    {
+      "id": "2026-topps-series-1-funko-base-cards-1",
+      "cardNumber": "1",
+      "playerName": "Aaron Judge",
+      "team": "New York Yankees",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-funko-base-cards-200",
+      "cardNumber": "200",
+      "playerName": "Shohei Ohtani",
+      "team": "Los Angeles Dodgers",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-funko-base-cards-250",
+      "cardNumber": "250",
+      "playerName": "Bryce Harper",
+      "team": "Philadelphia Phillies",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-funko-base-cards-350",
+      "cardNumber": "350",
+      "playerName": "Mike Trout",
+      "team": "Angels",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-funko-base-cards-420",
+      "cardNumber": "420",
+      "playerName": "Luis Arraez",
+      "team": "San Diego Padres",
+      "rarity": "Insert"
+    }
+  ]
+}

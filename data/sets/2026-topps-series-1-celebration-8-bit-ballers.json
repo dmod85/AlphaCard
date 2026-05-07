@@ -1,0 +1,43 @@
+{
+  "id": "2026-topps-series-1-celebration-8-bit-ballers",
+  "name": "2026 Topps Series 1 Celebration - 8 Bit Ballers",
+  "year": 2026,
+  "brand": "Topps",
+  "sport": "Baseball",
+  "baseParallels": [
+    { "id": "base", "name": "Base", "odds": "1:1" },
+    { "id": "green-99", "name": "Green /99" },
+    { "id": "gold-50", "name": "Gold /50" },
+    { "id": "orange-25", "name": "Orange /25" },
+    { "id": "black-10", "name": "Black /10" },
+    { "id": "red-5", "name": "Red /5" },
+    { "id": "foilfractor-1", "name": "Foilfractor /1" }
+  ],
+  "cards": [
+    { "id": "cel-8b-1", "cardNumber": "8B-1", "playerName": "Jac Caglianone", "team": "Kansas City Royals", "rarity": "Insert" },
+    { "id": "cel-8b-2", "cardNumber": "8B-2", "playerName": "Roman Anthony", "team": "Boston Red Sox", "rarity": "Insert" },
+    { "id": "cel-8b-3", "cardNumber": "8B-3", "playerName": "Chase Burns", "team": "Cincinnati Reds", "rarity": "Insert" },
+    { "id": "cel-8b-4", "cardNumber": "8B-4", "playerName": "Kyle Teel", "team": "Chicago White Sox", "rarity": "Insert" },
+    { "id": "cel-8b-5", "cardNumber": "8B-5", "playerName": "Jacob Misiorowski", "team": "Milwaukee Brewers", "rarity": "Insert" },
+    { "id": "cel-8b-6", "cardNumber": "8B-6", "playerName": "Nick Kurtz", "team": "Athletics", "rarity": "Insert" },
+    { "id": "cel-8b-7", "cardNumber": "8B-7", "playerName": "Shohei Ohtani", "team": "Los Angeles Dodgers", "rarity": "Insert" },
+    { "id": "cel-8b-8", "cardNumber": "8B-8", "playerName": "Mike Trout", "team": "Los Angeles Angels", "rarity": "Insert" },
+    { "id": "cel-8b-9", "cardNumber": "8B-9", "playerName": "Ronald Acuña Jr.", "team": "Atlanta Braves", "rarity": "Insert" },
+    { "id": "cel-8b-10", "cardNumber": "8B-10", "playerName": "Aaron Judge", "team": "New York Yankees", "rarity": "Insert" },
+    { "id": "cel-8b-11", "cardNumber": "8B-11", "playerName": "Bryce Harper", "team": "Philadelphia Phillies", "rarity": "Insert" },
+    { "id": "cel-8b-12", "cardNumber": "8B-12", "playerName": "Pete Crow-Armstrong", "team": "Chicago Cubs", "rarity": "Insert" },
+    { "id": "cel-8b-13", "cardNumber": "8B-13", "playerName": "Ken Griffey Jr.", "team": "Seattle Mariners", "rarity": "Insert" },
+    { "id": "cel-8b-14", "cardNumber": "8B-14", "playerName": "Derek Jeter", "team": "New York Yankees", "rarity": "Insert" },
+    { "id": "cel-8b-15", "cardNumber": "8B-15", "playerName": "Cal Ripken Jr.", "team": "Baltimore Orioles", "rarity": "Insert" },
+    { "id": "cel-8b-16", "cardNumber": "8B-16", "playerName": "Nolan Ryan", "team": "Houston Astros", "rarity": "Insert" },
+    { "id": "cel-8b-17", "cardNumber": "8B-17", "playerName": "Rickey Henderson", "team": "Oakland Athletics", "rarity": "Insert" },
+    { "id": "cel-8b-18", "cardNumber": "8B-18", "playerName": "Owen Caissie", "team": "Chicago Cubs", "rarity": "Insert" },
+    { "id": "cel-8b-19", "cardNumber": "8B-19", "playerName": "Bobby Witt Jr.", "team": "Kansas City Royals", "rarity": "Insert" },
+    { "id": "cel-8b-20", "cardNumber": "8B-20", "playerName": "Samuel Basallo", "team": "Baltimore Orioles", "rarity": "Insert" },
+    { "id": "cel-8b-21", "cardNumber": "8B-21", "playerName": "Alex Freeland", "team": "Los Angeles Dodgers", "rarity": "Insert" },
+    { "id": "cel-8b-22", "cardNumber": "8B-22", "playerName": "Bubba Chandler", "team": "Pittsburgh Pirates", "rarity": "Insert" },
+    { "id": "cel-8b-23", "cardNumber": "8B-23", "playerName": "Carson Williams", "team": "Tampa Bay Rays", "rarity": "Insert" },
+    { "id": "cel-8b-24", "cardNumber": "8B-24", "playerName": "Elly De La Cruz", "team": "Cincinnati Reds", "rarity": "Insert" },
+    { "id": "cel-8b-25", "cardNumber": "8B-25", "playerName": "Kyle Schwarber", "team": "Philadelphia Phillies", "rarity": "Insert" }
+  ]
+}

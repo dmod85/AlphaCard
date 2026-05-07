@@ -1,0 +1,38 @@
+{
+  "id": "2026-topps-series-1-celebration-gameday-drip",
+  "name": "2026 Topps Series 1 Celebration - Gameday Drip",
+  "year": 2026,
+  "brand": "Topps",
+  "sport": "Baseball",
+  "baseParallels": [
+    { "id": "base", "name": "Base", "odds": "1:1" },
+    { "id": "green-99", "name": "Green /99" },
+    { "id": "gold-50", "name": "Gold /50" },
+    { "id": "orange-25", "name": "Orange /25" },
+    { "id": "black-10", "name": "Black /10" },
+    { "id": "red-5", "name": "Red /5" },
+    { "id": "foilfractor-1", "name": "Foilfractor /1" }
+  ],
+  "cards": [
+    { "id": "cel-gd-1", "cardNumber": "GD-1", "playerName": "Elly De La Cruz", "team": "Cincinnati Reds", "rarity": "Insert" },
+    { "id": "cel-gd-2", "cardNumber": "GD-2", "playerName": "Shohei Ohtani", "team": "Los Angeles Dodgers", "rarity": "Insert" },
+    { "id": "cel-gd-3", "cardNumber": "GD-3", "playerName": "Javier Báez", "team": "Detroit Tigers", "rarity": "Insert" },
+    { "id": "cel-gd-4", "cardNumber": "GD-4", "playerName": "Pete Crow-Armstrong", "team": "Chicago Cubs", "rarity": "Insert" },
+    { "id": "cel-gd-5", "cardNumber": "GD-5", "playerName": "Julio Rodríguez", "team": "Seattle Mariners", "rarity": "Insert" },
+    { "id": "cel-gd-6", "cardNumber": "GD-6", "playerName": "Ronald Acuña Jr.", "team": "Atlanta Braves", "rarity": "Insert" },
+    { "id": "cel-gd-7", "cardNumber": "GD-7", "playerName": "Aaron Judge", "team": "New York Yankees", "rarity": "Insert" },
+    { "id": "cel-gd-8", "cardNumber": "GD-8", "playerName": "Fernando Tatis Jr.", "team": "San Diego Padres", "rarity": "Insert" },
+    { "id": "cel-gd-9", "cardNumber": "GD-9", "playerName": "Jazz Chisholm Jr.", "team": "New York Yankees", "rarity": "Insert" },
+    { "id": "cel-gd-10", "cardNumber": "GD-10", "playerName": "Francisco Lindor", "team": "New York Mets", "rarity": "Insert" },
+    { "id": "cel-gd-11", "cardNumber": "GD-11", "playerName": "Bobby Witt Jr.", "team": "Kansas City Royals", "rarity": "Insert" },
+    { "id": "cel-gd-12", "cardNumber": "GD-12", "playerName": "Vladimir Guerrero Jr.", "team": "Toronto Blue Jays", "rarity": "Insert" },
+    { "id": "cel-gd-13", "cardNumber": "GD-13", "playerName": "Gunnar Henderson", "team": "Baltimore Orioles", "rarity": "Insert" },
+    { "id": "cel-gd-14", "cardNumber": "GD-14", "playerName": "Corbin Carroll", "team": "Arizona Diamondbacks", "rarity": "Insert" },
+    { "id": "cel-gd-15", "cardNumber": "GD-15", "playerName": "Jackson Chourio", "team": "Milwaukee Brewers", "rarity": "Insert" },
+    { "id": "cel-gd-16", "cardNumber": "GD-16", "playerName": "Mookie Betts", "team": "Los Angeles Dodgers", "rarity": "Insert" },
+    { "id": "cel-gd-17", "cardNumber": "GD-17", "playerName": "Matt Chapman", "team": "San Francisco Giants", "rarity": "Insert" },
+    { "id": "cel-gd-18", "cardNumber": "GD-18", "playerName": "José Ramírez", "team": "Cleveland Guardians", "rarity": "Insert" },
+    { "id": "cel-gd-19", "cardNumber": "GD-19", "playerName": "Andrew McCutchen", "team": "Pittsburgh Pirates", "rarity": "Insert" },
+    { "id": "cel-gd-20", "cardNumber": "GD-20", "playerName": "Carlos Correa", "team": "Houston Astros", "rarity": "Insert" }
+  ]
+}

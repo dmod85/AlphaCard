@@ -1,0 +1,156 @@
+{
+  "id": "2026-topps-series-1-titans-of-the-game",
+  "name": "2026 Topps Series 1 - Titans Of The Game",
+  "year": 2026,
+  "brand": "Topps",
+  "sport": "Baseball",
+  "baseParallels": [
+    {
+      "id": "base",
+      "name": "Base",
+      "odds": "1:1"
+    }
+  ],
+  "cards": [
+    {
+      "id": "2026-topps-series-1-titans-of-the-game-tog-1",
+      "cardNumber": "TOG-1",
+      "playerName": "Shohei Ohtani",
+      "team": "Los Angeles Dodgers",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-titans-of-the-game-tog-2",
+      "cardNumber": "TOG-2",
+      "playerName": "Mike Trout",
+      "team": "Angels",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-titans-of-the-game-tog-3",
+      "cardNumber": "TOG-3",
+      "playerName": "Aaron Judge",
+      "team": "New York Yankees",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-titans-of-the-game-tog-4",
+      "cardNumber": "TOG-4",
+      "playerName": "Gunnar Henderson",
+      "team": "Baltimore Orioles",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-titans-of-the-game-tog-5",
+      "cardNumber": "TOG-5",
+      "playerName": "Elly De La Cruz",
+      "team": "Cincinnati Reds",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-titans-of-the-game-tog-6",
+      "cardNumber": "TOG-6",
+      "playerName": "Corbin Carroll",
+      "team": "Arizona Diamondbacks",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-titans-of-the-game-tog-7",
+      "cardNumber": "TOG-7",
+      "playerName": "Ronald Acu\u00f1a Jr.",
+      "team": "Atlanta Braves",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-titans-of-the-game-tog-8",
+      "cardNumber": "TOG-8",
+      "playerName": "Mookie Betts",
+      "team": "Los Angeles Dodgers",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-titans-of-the-game-tog-9",
+      "cardNumber": "TOG-9",
+      "playerName": "Roman Anthony",
+      "team": "Boston Red Sox",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-titans-of-the-game-tog-10",
+      "cardNumber": "TOG-10",
+      "playerName": "Samuel Basallo",
+      "team": "Baltimore Orioles",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-titans-of-the-game-tog-11",
+      "cardNumber": "TOG-11",
+      "playerName": "Juan Soto",
+      "team": "New York Mets",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-titans-of-the-game-tog-12",
+      "cardNumber": "TOG-12",
+      "playerName": "Jac Caglianone",
+      "team": "Kansas City Royals",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-titans-of-the-game-tog-13",
+      "cardNumber": "TOG-13",
+      "playerName": "Pete Crow-Armstrong",
+      "team": "Chicago Cubs",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-titans-of-the-game-tog-14",
+      "cardNumber": "TOG-14",
+      "playerName": "Paul Skenes",
+      "team": "Pittsburgh Pirates",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-titans-of-the-game-tog-15",
+      "cardNumber": "TOG-15",
+      "playerName": "James Wood",
+      "team": "Washington Nationals",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-titans-of-the-game-tog-16",
+      "cardNumber": "TOG-16",
+      "playerName": "Bobby Witt Jr.",
+      "team": "Kansas City Royals",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-titans-of-the-game-tog-17",
+      "cardNumber": "TOG-17",
+      "playerName": "Vladimir Guerrero Jr.",
+      "team": "Toronto Blue Jays",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-titans-of-the-game-tog-18",
+      "cardNumber": "TOG-18",
+      "playerName": "Bryce Harper",
+      "team": "Philadelphia Phillies",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-titans-of-the-game-tog-19",
+      "cardNumber": "TOG-19",
+      "playerName": "Fernando Tatis Jr.",
+      "team": "San Diego Padres",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-titans-of-the-game-tog-20",
+      "cardNumber": "TOG-20",
+      "playerName": "Julio Rodr\u00edguez",
+      "team": "Seattle Mariners",
+      "rarity": "Insert"
+    }
+  ]
+}

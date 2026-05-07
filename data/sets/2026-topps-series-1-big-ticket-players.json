@@ -1,0 +1,230 @@
+{
+  "id": "2026-topps-series-1-big-ticket-players",
+  "name": "2026 Topps Series 1 - Big Ticket Players",
+  "year": 2026,
+  "brand": "Topps",
+  "sport": "Baseball",
+  "baseParallels": [
+    {
+      "id": "base",
+      "name": "Base",
+      "odds": "1:1"
+    },
+    {
+      "id": "pink-foil",
+      "name": "Pink Foil"
+    },
+    {
+      "id": "blue-foil-150",
+      "name": "Blue Foil /150"
+    },
+    {
+      "id": "green-foil-99",
+      "name": "Green Foil /99"
+    },
+    {
+      "id": "gold-foil-50",
+      "name": "Gold Foil /50"
+    },
+    {
+      "id": "orange-foil-25",
+      "name": "Orange Foil /25"
+    },
+    {
+      "id": "black-foil-10",
+      "name": "Black Foil /10"
+    },
+    {
+      "id": "red-foil-5",
+      "name": "Red Foil /5"
+    },
+    {
+      "id": "foilfractor-1",
+      "name": "Foilfractor /1"
+    }
+  ],
+  "cards": [
+    {
+      "id": "2026-topps-series-1-big-ticket-players-btp-1",
+      "cardNumber": "BTP-1",
+      "playerName": "Mike Trout",
+      "team": "Angels",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-big-ticket-players-btp-2",
+      "cardNumber": "BTP-2",
+      "playerName": "Jacob Misiorowski",
+      "team": "Milwaukee Brewers",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-big-ticket-players-btp-3",
+      "cardNumber": "BTP-3",
+      "playerName": "Shohei Ohtani",
+      "team": "Los Angeles Dodgers",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-big-ticket-players-btp-4",
+      "cardNumber": "BTP-4",
+      "playerName": "Gunnar Henderson",
+      "team": "Baltimore Orioles",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-big-ticket-players-btp-5",
+      "cardNumber": "BTP-5",
+      "playerName": "Elly De La Cruz",
+      "team": "Cincinnati Reds",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-big-ticket-players-btp-6",
+      "cardNumber": "BTP-6",
+      "playerName": "Corbin Carroll",
+      "team": "Arizona Diamondbacks",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-big-ticket-players-btp-7",
+      "cardNumber": "BTP-7",
+      "playerName": "Ronald Acu\u00f1a Jr.",
+      "team": "Atlanta Braves",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-big-ticket-players-btp-8",
+      "cardNumber": "BTP-8",
+      "playerName": "Mookie Betts",
+      "team": "Los Angeles Dodgers",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-big-ticket-players-btp-9",
+      "cardNumber": "BTP-9",
+      "playerName": "Jos\u00e9 Ram\u00edrez",
+      "team": "Cleveland Guardians",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-big-ticket-players-btp-10",
+      "cardNumber": "BTP-10",
+      "playerName": "Francisco Lindor",
+      "team": "New York Mets",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-big-ticket-players-btp-11",
+      "cardNumber": "BTP-11",
+      "playerName": "Juan Soto",
+      "team": "New York Mets",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-big-ticket-players-btp-12",
+      "cardNumber": "BTP-12",
+      "playerName": "Jackson Chourio",
+      "team": "Milwaukee Brewers",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-big-ticket-players-btp-13",
+      "cardNumber": "BTP-13",
+      "playerName": "Pete Crow-Armstrong",
+      "team": "Chicago Cubs",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-big-ticket-players-btp-14",
+      "cardNumber": "BTP-14",
+      "playerName": "Paul Skenes",
+      "team": "Pittsburgh Pirates",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-big-ticket-players-btp-15",
+      "cardNumber": "BTP-15",
+      "playerName": "James Wood",
+      "team": "Washington Nationals",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-big-ticket-players-btp-16",
+      "cardNumber": "BTP-16",
+      "playerName": "Bobby Witt Jr.",
+      "team": "Kansas City Royals",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-big-ticket-players-btp-17",
+      "cardNumber": "BTP-17",
+      "playerName": "Vladimir Guerrero Jr.",
+      "team": "Toronto Blue Jays",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-big-ticket-players-btp-18",
+      "cardNumber": "BTP-18",
+      "playerName": "Aaron Judge",
+      "team": "New York Yankees",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-big-ticket-players-btp-19",
+      "cardNumber": "BTP-19",
+      "playerName": "Bryce Harper",
+      "team": "Philadelphia Phillies",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-big-ticket-players-btp-20",
+      "cardNumber": "BTP-20",
+      "playerName": "Fernando Tatis Jr.",
+      "team": "San Diego Padres",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-big-ticket-players-btp-21",
+      "cardNumber": "BTP-21",
+      "playerName": "Julio Rodr\u00edguez",
+      "team": "Seattle Mariners",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-big-ticket-players-btp-22",
+      "cardNumber": "BTP-22",
+      "playerName": "Jac Caglianone",
+      "team": "Kansas City Royals",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-big-ticket-players-btp-23",
+      "cardNumber": "BTP-23",
+      "playerName": "Roman Anthony",
+      "team": "Boston Red Sox",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-big-ticket-players-btp-24",
+      "cardNumber": "BTP-24",
+      "playerName": "Chase Burns",
+      "team": "Cincinnati Reds",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-big-ticket-players-btp-25",
+      "cardNumber": "BTP-25",
+      "playerName": "Samuel Basallo",
+      "team": "Baltimore Orioles",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-big-ticket-players-btp-26",
+      "cardNumber": "BTP-26",
+      "playerName": "Kyle Teel",
+      "team": "Chicago White Sox",
+      "rarity": "Insert"
+    }
+  ]
+}

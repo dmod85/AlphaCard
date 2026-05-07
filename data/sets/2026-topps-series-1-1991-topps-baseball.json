@@ -1,0 +1,720 @@
+{
+  "id": "2026-topps-series-1-1991-topps-baseball",
+  "name": "2026 Topps Series 1 - 1991 Topps Baseball",
+  "year": 2026,
+  "brand": "Topps",
+  "sport": "Baseball",
+  "baseParallels": [
+    {
+      "id": "base",
+      "name": "Base",
+      "odds": "1:1"
+    },
+    {
+      "id": "pink",
+      "name": "Pink"
+    }
+  ],
+  "cards": [
+    {
+      "id": "2026-topps-series-1-1991-topps-baseball-t91-1",
+      "cardNumber": "T91-1",
+      "playerName": "Mike Trout",
+      "team": "Angels",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-1991-topps-baseball-t91-2",
+      "cardNumber": "T91-2",
+      "playerName": "Riley Greene",
+      "team": "Detroit Tigers",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-1991-topps-baseball-t91-3",
+      "cardNumber": "T91-3",
+      "playerName": "Bobby Witt Jr.",
+      "team": "Kansas City Royals",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-1991-topps-baseball-t91-4",
+      "cardNumber": "T91-4",
+      "playerName": "Colson Montgomery",
+      "team": "Chicago White Sox",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-1991-topps-baseball-t91-5",
+      "cardNumber": "T91-5",
+      "playerName": "Kyle Schwarber",
+      "team": "Philadelphia Phillies",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-1991-topps-baseball-t91-6",
+      "cardNumber": "T91-6",
+      "playerName": "Colby Thomas",
+      "team": "Athletics",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-1991-topps-baseball-t91-7",
+      "cardNumber": "T91-7",
+      "playerName": "Jose Altuve",
+      "team": "Houston Astros",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-1991-topps-baseball-t91-8",
+      "cardNumber": "T91-8",
+      "playerName": "Fernando Tatis Jr.",
+      "team": "San Diego Padres",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-1991-topps-baseball-t91-9",
+      "cardNumber": "T91-9",
+      "playerName": "Vladimir Guerrero Jr.",
+      "team": "Toronto Blue Jays",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-1991-topps-baseball-t91-10",
+      "cardNumber": "T91-10",
+      "playerName": "Owen Caissie",
+      "team": "Chicago Cubs",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-1991-topps-baseball-t91-11",
+      "cardNumber": "T91-11",
+      "playerName": "Will Clark",
+      "team": "San Francisco Giants",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-1991-topps-baseball-t91-12",
+      "cardNumber": "T91-12",
+      "playerName": "Pete Alonso",
+      "team": "New York Mets",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-1991-topps-baseball-t91-13",
+      "cardNumber": "T91-13",
+      "playerName": "Chipper Jones",
+      "team": "Atlanta Braves",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-1991-topps-baseball-t91-14",
+      "cardNumber": "T91-14",
+      "playerName": "Oneil Cruz",
+      "team": "Pittsburgh Pirates",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-1991-topps-baseball-t91-15",
+      "cardNumber": "T91-15",
+      "playerName": "David Ortiz",
+      "team": "Boston Red Sox",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-1991-topps-baseball-t91-16",
+      "cardNumber": "T91-16",
+      "playerName": "James Wood",
+      "team": "Washington Nationals",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-1991-topps-baseball-t91-17",
+      "cardNumber": "T91-17",
+      "playerName": "Jeff Bagwell",
+      "team": "Houston Astros",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-1991-topps-baseball-t91-18",
+      "cardNumber": "T91-18",
+      "playerName": "Jackson Chourio",
+      "team": "Milwaukee Brewers",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-1991-topps-baseball-t91-19",
+      "cardNumber": "T91-19",
+      "playerName": "Francisco Lindor",
+      "team": "New York Mets",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-1991-topps-baseball-t91-20",
+      "cardNumber": "T91-20",
+      "playerName": "Samuel Basallo",
+      "team": "Baltimore Orioles",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-1991-topps-baseball-t91-21",
+      "cardNumber": "T91-21",
+      "playerName": "Mookie Betts",
+      "team": "Los Angeles Dodgers",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-1991-topps-baseball-t91-22",
+      "cardNumber": "T91-22",
+      "playerName": "Elly De La Cruz",
+      "team": "Cincinnati Reds",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-1991-topps-baseball-t91-23",
+      "cardNumber": "T91-23",
+      "playerName": "Manny Machado",
+      "team": "San Diego Padres",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-1991-topps-baseball-t91-24",
+      "cardNumber": "T91-24",
+      "playerName": "Dylan Beavers",
+      "team": "Baltimore Orioles",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-1991-topps-baseball-t91-25",
+      "cardNumber": "T91-25",
+      "playerName": "Ryne Sandberg",
+      "team": "Chicago Cubs",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-1991-topps-baseball-t91-26",
+      "cardNumber": "T91-26",
+      "playerName": "Ryan Ritter",
+      "team": "Colorado Rockies",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-1991-topps-baseball-t91-27",
+      "cardNumber": "T91-27",
+      "playerName": "Shoeless Joe Jackson",
+      "team": "Chicago White Sox",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-1991-topps-baseball-t91-28",
+      "cardNumber": "T91-28",
+      "playerName": "Brice Matthews",
+      "team": "Houston Astros",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-1991-topps-baseball-t91-29",
+      "cardNumber": "T91-29",
+      "playerName": "Bo Jackson",
+      "team": "Kansas City Royals",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-1991-topps-baseball-t91-30",
+      "cardNumber": "T91-30",
+      "playerName": "Derek Jeter",
+      "team": "New York Yankees",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-1991-topps-baseball-t91-31",
+      "cardNumber": "T91-31",
+      "playerName": "Frank Thomas",
+      "team": "Chicago White Sox",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-1991-topps-baseball-t91-32",
+      "cardNumber": "T91-32",
+      "playerName": "Robin Yount",
+      "team": "Milwaukee Brewers",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-1991-topps-baseball-t91-33",
+      "cardNumber": "T91-33",
+      "playerName": "Ichiro",
+      "team": "Seattle Mariners",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-1991-topps-baseball-t91-34",
+      "cardNumber": "T91-34",
+      "playerName": "Aaron Judge",
+      "team": "New York Yankees",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-1991-topps-baseball-t91-35",
+      "cardNumber": "T91-35",
+      "playerName": "Alex Freeland",
+      "team": "Los Angeles Dodgers",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-1991-topps-baseball-t91-36",
+      "cardNumber": "T91-36",
+      "playerName": "Yordan Alvarez",
+      "team": "Houston Astros",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-1991-topps-baseball-t91-37",
+      "cardNumber": "T91-37",
+      "playerName": "Seiya Suzuki",
+      "team": "Chicago Cubs",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-1991-topps-baseball-t91-38",
+      "cardNumber": "T91-38",
+      "playerName": "Carson Williams",
+      "team": "Tampa Bay Rays",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-1991-topps-baseball-t91-39",
+      "cardNumber": "T91-39",
+      "playerName": "Julio Rodr\u00edguez",
+      "team": "Seattle Mariners",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-1991-topps-baseball-t91-40",
+      "cardNumber": "T91-40",
+      "playerName": "Andrew McCutchen",
+      "team": "Pittsburgh Pirates",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-1991-topps-baseball-t91-41",
+      "cardNumber": "T91-41",
+      "playerName": "Brady House",
+      "team": "Washington Nationals",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-1991-topps-baseball-t91-42",
+      "cardNumber": "T91-42",
+      "playerName": "Jac Caglianone",
+      "team": "Kansas City Royals",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-1991-topps-baseball-t91-43",
+      "cardNumber": "T91-43",
+      "playerName": "Albert Pujols",
+      "team": "St. Louis Cardinals",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-1991-topps-baseball-t91-44",
+      "cardNumber": "T91-44",
+      "playerName": "Mark McGwire",
+      "team": "Oakland Athletics",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-1991-topps-baseball-t91-45",
+      "cardNumber": "T91-45",
+      "playerName": "Ken Griffey Jr.",
+      "team": "Seattle Mariners",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-1991-topps-baseball-t91-46",
+      "cardNumber": "T91-46",
+      "playerName": "Christian Moore",
+      "team": "Angels",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-1991-topps-baseball-t91-47",
+      "cardNumber": "T91-47",
+      "playerName": "Miguel Cabrera",
+      "team": "Detroit Tigers",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-1991-topps-baseball-t91-48",
+      "cardNumber": "T91-48",
+      "playerName": "Mickey Mantle",
+      "team": "New York Yankees",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-1991-topps-baseball-t91-49",
+      "cardNumber": "T91-49",
+      "playerName": "Gunnar Henderson",
+      "team": "Baltimore Orioles",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-1991-topps-baseball-t91-50",
+      "cardNumber": "T91-50",
+      "playerName": "Paul Skenes",
+      "team": "Pittsburgh Pirates",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-1991-topps-baseball-t91-51",
+      "cardNumber": "T91-51",
+      "playerName": "Bubba Chandler",
+      "team": "Pittsburgh Pirates",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-1991-topps-baseball-t91-52",
+      "cardNumber": "T91-52",
+      "playerName": "Rickey Henderson",
+      "team": "Oakland Athletics",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-1991-topps-baseball-t91-53",
+      "cardNumber": "T91-53",
+      "playerName": "Matt Olson",
+      "team": "Atlanta Braves",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-1991-topps-baseball-t91-54",
+      "cardNumber": "T91-54",
+      "playerName": "Rafael Devers",
+      "team": "San Francisco Giants",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-1991-topps-baseball-t91-55",
+      "cardNumber": "T91-55",
+      "playerName": "Yoshinobu Yamamoto",
+      "team": "Los Angeles Dodgers",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-1991-topps-baseball-t91-56",
+      "cardNumber": "T91-56",
+      "playerName": "Jacob Melton",
+      "team": "Houston Astros",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-1991-topps-baseball-t91-57",
+      "cardNumber": "T91-57",
+      "playerName": "Otto Kemp",
+      "team": "Philadelphia Phillies",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-1991-topps-baseball-t91-58",
+      "cardNumber": "T91-58",
+      "playerName": "Corbin Carroll",
+      "team": "Arizona Diamondbacks",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-1991-topps-baseball-t91-59",
+      "cardNumber": "T91-59",
+      "playerName": "Adrian Beltr\u00e9",
+      "team": "Texas Rangers",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-1991-topps-baseball-t91-60",
+      "cardNumber": "T91-60",
+      "playerName": "Bryce Harper",
+      "team": "Philadelphia Phillies",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-1991-topps-baseball-t91-61",
+      "cardNumber": "T91-61",
+      "playerName": "Yanquiel Fern\u00e1ndez",
+      "team": "Colorado Rockies",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-1991-topps-baseball-t91-62",
+      "cardNumber": "T91-62",
+      "playerName": "Junior Caminero",
+      "team": "Tampa Bay Rays",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-1991-topps-baseball-t91-63",
+      "cardNumber": "T91-63",
+      "playerName": "Nolan McLean",
+      "team": "New York Mets",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-1991-topps-baseball-t91-64",
+      "cardNumber": "T91-64",
+      "playerName": "Pete Crow-Armstrong",
+      "team": "Chicago Cubs",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-1991-topps-baseball-t91-65",
+      "cardNumber": "T91-65",
+      "playerName": "Corey Seager",
+      "team": "Texas Rangers",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-1991-topps-baseball-t91-66",
+      "cardNumber": "T91-66",
+      "playerName": "David Wright",
+      "team": "New York Mets",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-1991-topps-baseball-t91-67",
+      "cardNumber": "T91-67",
+      "playerName": "Randy Johnson",
+      "team": "Arizona Diamondbacks",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-1991-topps-baseball-t91-68",
+      "cardNumber": "T91-68",
+      "playerName": "Don Mattingly",
+      "team": "New York Yankees",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-1991-topps-baseball-t91-69",
+      "cardNumber": "T91-69",
+      "playerName": "Jos\u00e9 Ram\u00edrez",
+      "team": "Cleveland Guardians",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-1991-topps-baseball-t91-70",
+      "cardNumber": "T91-70",
+      "playerName": "Alex Bregman",
+      "team": "Boston Red Sox",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-1991-topps-baseball-t91-71",
+      "cardNumber": "T91-71",
+      "playerName": "Roman Anthony",
+      "team": "Boston Red Sox",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-1991-topps-baseball-t91-72",
+      "cardNumber": "T91-72",
+      "playerName": "Mike Schmidt",
+      "team": "Philadelphia Phillies",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-1991-topps-baseball-t91-73",
+      "cardNumber": "T91-73",
+      "playerName": "Chase Burns",
+      "team": "Cincinnati Reds",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-1991-topps-baseball-t91-74",
+      "cardNumber": "T91-74",
+      "playerName": "Jacob Misiorowski",
+      "team": "Milwaukee Brewers",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-1991-topps-baseball-t91-75",
+      "cardNumber": "T91-75",
+      "playerName": "Pedro Martinez",
+      "team": "Boston Red Sox",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-1991-topps-baseball-t91-76",
+      "cardNumber": "T91-76",
+      "playerName": "Didier Fuentes",
+      "team": "Atlanta Braves",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-1991-topps-baseball-t91-77",
+      "cardNumber": "T91-77",
+      "playerName": "Jacob Wilson",
+      "team": "Athletics",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-1991-topps-baseball-t91-78",
+      "cardNumber": "T91-78",
+      "playerName": "Jackson Merrill",
+      "team": "San Diego Padres",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-1991-topps-baseball-t91-79",
+      "cardNumber": "T91-79",
+      "playerName": "Tarik Skubal",
+      "team": "Detroit Tigers",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-1991-topps-baseball-t91-80",
+      "cardNumber": "T91-80",
+      "playerName": "Matt Chapman",
+      "team": "San Francisco Giants",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-1991-topps-baseball-t91-81",
+      "cardNumber": "T91-81",
+      "playerName": "Barry Larkin",
+      "team": "Cincinnati Reds",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-1991-topps-baseball-t91-82",
+      "cardNumber": "T91-82",
+      "playerName": "Juan Soto",
+      "team": "New York Mets",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-1991-topps-baseball-t91-83",
+      "cardNumber": "T91-83",
+      "playerName": "Christian Yelich",
+      "team": "Milwaukee Brewers",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-1991-topps-baseball-t91-84",
+      "cardNumber": "T91-84",
+      "playerName": "Ronald Acu\u00f1a Jr.",
+      "team": "Atlanta Braves",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-1991-topps-baseball-t91-85",
+      "cardNumber": "T91-85",
+      "playerName": "Lawrence Butler",
+      "team": "Athletics",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-1991-topps-baseball-t91-86",
+      "cardNumber": "T91-86",
+      "playerName": "Cam Schlittler",
+      "team": "New York Yankees",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-1991-topps-baseball-t91-87",
+      "cardNumber": "T91-87",
+      "playerName": "Cal Ripken Jr.",
+      "team": "Baltimore Orioles",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-1991-topps-baseball-t91-88",
+      "cardNumber": "T91-88",
+      "playerName": "Cal Raleigh",
+      "team": "Seattle Mariners",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-1991-topps-baseball-t91-89",
+      "cardNumber": "T91-89",
+      "playerName": "Shota Imanaga",
+      "team": "Chicago Cubs",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-1991-topps-baseball-t91-90",
+      "cardNumber": "T91-90",
+      "playerName": "C.J. Kayfus",
+      "team": "Cleveland Guardians",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-1991-topps-baseball-t91-91",
+      "cardNumber": "T91-91",
+      "playerName": "Kyle Teel",
+      "team": "Chicago White Sox",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-1991-topps-baseball-t91-92",
+      "cardNumber": "T91-92",
+      "playerName": "Byron Buxton",
+      "team": "Minnesota Twins",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-1991-topps-baseball-t91-93",
+      "cardNumber": "T91-93",
+      "playerName": "Vladimir Guerrero",
+      "team": "Montr\u00e9al Expos",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-1991-topps-baseball-t91-94",
+      "cardNumber": "T91-94",
+      "playerName": "Kirby Puckett",
+      "team": "Minnesota Twins",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-1991-topps-baseball-t91-95",
+      "cardNumber": "T91-95",
+      "playerName": "Nolan Arenado",
+      "team": "St. Louis Cardinals",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-1991-topps-baseball-t91-96",
+      "cardNumber": "T91-96",
+      "playerName": "Kyle Tucker",
+      "team": "Chicago Cubs",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-1991-topps-baseball-t91-97",
+      "cardNumber": "T91-97",
+      "playerName": "Nolan Ryan",
+      "team": "Texas Rangers",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-1991-topps-baseball-t91-98",
+      "cardNumber": "T91-98",
+      "playerName": "Cole Young",
+      "team": "Seattle Mariners",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-1991-topps-baseball-t91-99",
+      "cardNumber": "T91-99",
+      "playerName": "Roberto Clemente",
+      "team": "Pittsburgh Pirates",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-1991-topps-baseball-t91-100",
+      "cardNumber": "T91-100",
+      "playerName": "Shohei Ohtani",
+      "team": "Los Angeles Dodgers",
+      "rarity": "Insert"
+    }
+  ]
+}

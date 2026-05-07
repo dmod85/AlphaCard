@@ -1,0 +1,132 @@
+{
+  "id": "2026-topps-series-1-2025-all-topps-team",
+  "name": "2026 Topps Series 1 - 2025 All-Topps Team",
+  "year": 2026,
+  "brand": "Topps",
+  "sport": "Baseball",
+  "baseParallels": [
+    {
+      "id": "base",
+      "name": "Base",
+      "odds": "1:1"
+    },
+    {
+      "id": "pink-foil",
+      "name": "Pink Foil"
+    },
+    {
+      "id": "blue-foil-150",
+      "name": "Blue Foil /150"
+    },
+    {
+      "id": "green-foil-99",
+      "name": "Green Foil /99"
+    },
+    {
+      "id": "gold-foil-50",
+      "name": "Gold Foil /50"
+    },
+    {
+      "id": "orange-foil-25",
+      "name": "Orange Foil /25"
+    },
+    {
+      "id": "black-foil-10",
+      "name": "Black Foil /10"
+    },
+    {
+      "id": "red-foil-5",
+      "name": "Red Foil /5"
+    },
+    {
+      "id": "foilfractor-1",
+      "name": "Foilfractor /1"
+    }
+  ],
+  "cards": [
+    {
+      "id": "2026-topps-series-1-2025-all-topps-team-att-1",
+      "cardNumber": "ATT-1",
+      "playerName": "Cal Raleigh",
+      "team": "Seattle Mariners",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-2025-all-topps-team-att-2",
+      "cardNumber": "ATT-2",
+      "playerName": "Nick Kurtz",
+      "team": "Athletics",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-2025-all-topps-team-att-3",
+      "cardNumber": "ATT-3",
+      "playerName": "Jazz Chisholm Jr.",
+      "team": "New York Yankees",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-2025-all-topps-team-att-4",
+      "cardNumber": "ATT-4",
+      "playerName": "Jos\u00e9 Ram\u00edrez",
+      "team": "Cleveland Guardians",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-2025-all-topps-team-att-5",
+      "cardNumber": "ATT-5",
+      "playerName": "Bobby Witt Jr.",
+      "team": "Kansas City Royals",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-2025-all-topps-team-att-6",
+      "cardNumber": "ATT-6",
+      "playerName": "Aaron Judge",
+      "team": "New York Yankees",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-2025-all-topps-team-att-7",
+      "cardNumber": "ATT-7",
+      "playerName": "Juan Soto",
+      "team": "New York Mets",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-2025-all-topps-team-att-8",
+      "cardNumber": "ATT-8",
+      "playerName": "Julio Rodr\u00edguez",
+      "team": "Seattle Mariners",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-2025-all-topps-team-att-9",
+      "cardNumber": "ATT-9",
+      "playerName": "Shohei Ohtani",
+      "team": "Los Angeles Dodgers",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-2025-all-topps-team-att-10",
+      "cardNumber": "ATT-10",
+      "playerName": "Paul Skenes",
+      "team": "Pittsburgh Pirates",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-2025-all-topps-team-att-11",
+      "cardNumber": "ATT-11",
+      "playerName": "Tarik Skubal",
+      "team": "Detroit Tigers",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-2025-all-topps-team-att-12",
+      "cardNumber": "ATT-12",
+      "playerName": "Aroldis Chapman",
+      "team": "Boston Red Sox",
+      "rarity": "Insert"
+    }
+  ]
+}

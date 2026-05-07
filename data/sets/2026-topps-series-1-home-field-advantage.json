@@ -1,0 +1,156 @@
+{
+  "id": "2026-topps-series-1-home-field-advantage",
+  "name": "2026 Topps Series 1 - Home Field Advantage",
+  "year": 2026,
+  "brand": "Topps",
+  "sport": "Baseball",
+  "baseParallels": [
+    {
+      "id": "base",
+      "name": "Base",
+      "odds": "1:1"
+    }
+  ],
+  "cards": [
+    {
+      "id": "2026-topps-series-1-home-field-advantage-ha-1",
+      "cardNumber": "HA-1",
+      "playerName": "Jac Caglianone",
+      "team": "Kansas City Royals",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-home-field-advantage-ha-2",
+      "cardNumber": "HA-2",
+      "playerName": "Roman Anthony",
+      "team": "Boston Red Sox",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-home-field-advantage-ha-3",
+      "cardNumber": "HA-3",
+      "playerName": "Aaron Judge",
+      "team": "New York Yankees",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-home-field-advantage-ha-4",
+      "cardNumber": "HA-4",
+      "playerName": "Kyle Teel",
+      "team": "Chicago White Sox",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-home-field-advantage-ha-5",
+      "cardNumber": "HA-5",
+      "playerName": "Shohei Ohtani",
+      "team": "Los Angeles Dodgers",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-home-field-advantage-ha-6",
+      "cardNumber": "HA-6",
+      "playerName": "Ronald Acu\u00f1a Jr.",
+      "team": "Atlanta Braves",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-home-field-advantage-ha-7",
+      "cardNumber": "HA-7",
+      "playerName": "Bobby Witt Jr.",
+      "team": "Kansas City Royals",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-home-field-advantage-ha-8",
+      "cardNumber": "HA-8",
+      "playerName": "Pete Crow-Armstrong",
+      "team": "Chicago Cubs",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-home-field-advantage-ha-9",
+      "cardNumber": "HA-9",
+      "playerName": "Bryce Harper",
+      "team": "Philadelphia Phillies",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-home-field-advantage-ha-10",
+      "cardNumber": "HA-10",
+      "playerName": "Christian Moore",
+      "team": "Angels",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-home-field-advantage-ha-11",
+      "cardNumber": "HA-11",
+      "playerName": "Bo Jackson",
+      "team": "Kansas City Royals",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-home-field-advantage-ha-12",
+      "cardNumber": "HA-12",
+      "playerName": "Honus Wagner",
+      "team": "Pittsburgh Pirates",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-home-field-advantage-ha-13",
+      "cardNumber": "HA-13",
+      "playerName": "Bubba Chandler",
+      "team": "Pittsburgh Pirates",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-home-field-advantage-ha-14",
+      "cardNumber": "HA-14",
+      "playerName": "Jacob Misiorowski",
+      "team": "Milwaukee Brewers",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-home-field-advantage-ha-15",
+      "cardNumber": "HA-15",
+      "playerName": "Samuel Basallo",
+      "team": "Baltimore Orioles",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-home-field-advantage-ha-16",
+      "cardNumber": "HA-16",
+      "playerName": "Chase Burns",
+      "team": "Cincinnati Reds",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-home-field-advantage-ha-17",
+      "cardNumber": "HA-17",
+      "playerName": "Nolan McLean",
+      "team": "New York Mets",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-home-field-advantage-ha-18",
+      "cardNumber": "HA-18",
+      "playerName": "Ken Griffey Jr.",
+      "team": "Seattle Mariners",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-home-field-advantage-ha-19",
+      "cardNumber": "HA-19",
+      "playerName": "Nolan Ryan",
+      "team": "California Angels",
+      "rarity": "Insert"
+    },
+    {
+      "id": "2026-topps-series-1-home-field-advantage-ha-20",
+      "cardNumber": "HA-20",
+      "playerName": "Colson Montgomery",
+      "team": "Chicago White Sox",
+      "rarity": "Insert"
+    }
+  ]
+}

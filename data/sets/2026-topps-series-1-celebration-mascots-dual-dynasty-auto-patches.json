@@ -1,0 +1,14 @@
+{
+  "id": "2026-topps-series-1-celebration-mascots-dual-dynasty-auto-patches",
+  "name": "2026 Topps Series 1 Celebration - Mascots Dual Dynasty Autographed Patches",
+  "year": 2026,
+  "brand": "Topps",
+  "sport": "Baseball",
+  "baseParallels": [
+    { "id": "base", "name": "Base", "odds": "1:1" }
+  ],
+  "cards": [
+    { "id": "cel-mddap-met", "cardNumber": "MDDAP-MET", "playerName": "Mr. Met / Mrs. Met", "team": "New York Mets", "rarity": "Autograph" },
+    { "id": "cel-mddap-mr", "cardNumber": "MDDAP-MR", "playerName": "Rosie Red / Mr. Red", "team": "Cincinnati Reds", "rarity": "Autograph" }
+  ]
+}
