@@ -18,6 +18,15 @@ function decodeXml(str: string): string {
     .replace(/&apos;/g, "'");
 }
 
+function escapeXml(str: string): string {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
+
 async function callEbayApi(xmlBody: string, callName: string): Promise<string> {
   const response = await fetch(EBAY_API_URL, {
     method: 'POST',
@@ -62,6 +71,7 @@ interface ActiveListing {
   pictureUrl?: string;
   quantity: number;
   quantityAvailable: number;
+  startTime: string;
 }
 
 function parseActiveListings(xml: string): ActiveListing[] {
@@ -84,16 +94,60 @@ function parseActiveListings(xml: string): ActiveListing[] {
     const pictureUrl = item.match(/<PictureURL>(.*?)<\/PictureURL>/)?.[1];
     const quantity = parseInt(item.match(/<Quantity>(.*?)<\/Quantity>/)?.[1] || '1');
     const quantityAvailable = parseInt(item.match(/<QuantityAvailable>(.*?)<\/QuantityAvailable>/)?.[1] || '1');
+    const startTime = item.match(/<StartTime>(.*?)<\/StartTime>/)?.[1] || '';
 
     if (itemId) {
-      listings.push({ itemId, title, price, url, pictureUrl, quantity, quantityAvailable });
+      listings.push({ itemId, title, price, url, pictureUrl, quantity, quantityAvailable, startTime });
     }
   }
 
   return listings;
 }
 
-// Generates the SEO-friendly HTML description matching the screenshot format
+// Optimizes a listing title for eBay SEO — year first, standardized abbreviations,
+// fluff removed, capped at eBay's 80-character limit.
+function buildSeoTitle(originalTitle: string): string {
+  const MAX_LENGTH = 80;
+
+  const FLUFF = /\b(WOW|L@@K|LOOK!*|AMAZING|GORGEOUS|BEAUTIFUL|MUST\s*SEE|FREE\s*SHIP(?:PING)?|FAST\s*SHIP(?:PING)?|HOT|FIRE)\b/gi;
+  let title = originalTitle.replace(FLUFF, '').replace(/\s{2,}/g, ' ').trim();
+
+  // Standardize common trading-card abbreviations
+  const abbrevMap: [RegExp, string][] = [
+    [/\bpsa\b/gi, 'PSA'],
+    [/\bbgs\b/gi, 'BGS'],
+    [/\bsgc\b/gi, 'SGC'],
+    [/\b(rookie\s*card|rookie)\b/gi, 'RC'],
+    [/\bauto(?:graph)?\b/gi, 'AUTO'],
+    [/\brefractor\b/gi, 'Refractor'],
+    [/\bholographic\b/gi, 'Holo'],
+    [/\bprisms?\b/gi, 'Prizm'],
+    [/\bparallel\b/gi, 'Parallel'],
+    [/\bshort\s*print\b/gi, 'SP'],
+    [/\bsuper\s*short\s*print\b/gi, 'SSP'],
+    [/\bpatch\b/gi, 'Patch'],
+    [/\bnumbered\b/gi, 'Numbered'],
+  ];
+  for (const [pattern, replacement] of abbrevMap) {
+    title = title.replace(pattern, replacement);
+  }
+
+  // Ensure year (19xx / 20xx) appears first
+  const yearMatch = title.match(/\b(19|20)\d{2}\b/);
+  if (yearMatch) {
+    const year = yearMatch[0];
+    title = `${year} ${title.replace(year, '').replace(/^\s*[-–—]\s*/, '').trim()}`.replace(/\s{2,}/g, ' ').trim();
+  }
+
+  // Truncate to eBay's 80-character hard limit without splitting words
+  if (title.length > MAX_LENGTH) {
+    const cut = title.lastIndexOf(' ', MAX_LENGTH);
+    title = title.substring(0, cut > MAX_LENGTH - 15 ? cut : MAX_LENGTH).trim();
+  }
+
+  return title;
+}
+
 function buildDescription(title: string): string {
   return `<div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.8;color:#222;max-width:700px">
   <p><b>Card Details:</b> &gt; ${title}.</p>
@@ -102,7 +156,7 @@ function buildDescription(title: string): string {
 </div>`;
 }
 
-function buildReviseItemRequest(itemId: string, description: string, token: string): string {
+function buildReviseItemRequest(itemId: string, seoTitle: string, description: string, token: string): string {
   return `<?xml version="1.0" encoding="utf-8"?>
 <ReviseItemRequest xmlns="urn:ebay:apis:eBLBaseComponents">
   <RequesterCredentials>
@@ -110,6 +164,7 @@ function buildReviseItemRequest(itemId: string, description: string, token: stri
   </RequesterCredentials>
   <Item>
     <ItemID>${itemId}</ItemID>
+    <Title>${escapeXml(seoTitle)}</Title>
     <Description><![CDATA[${description}]]></Description>
   </Item>
   <ErrorLanguage>en_US</ErrorLanguage>
@@ -154,17 +209,18 @@ export async function POST(request: NextRequest) {
     }
 
     const token = await getValidToken();
-    const results: Array<{ itemId: string; success: boolean; error?: string }> = [];
+    const results: Array<{ itemId: string; success: boolean; seoTitle?: string; error?: string }> = [];
 
     for (const item of items) {
       try {
+        const seoTitle = buildSeoTitle(item.title);
         const description = buildDescription(item.title);
-        const xml = buildReviseItemRequest(item.itemId, description, token);
+        const xml = buildReviseItemRequest(item.itemId, seoTitle, description, token);
         const response = await callEbayApi(xml, 'ReviseItem');
 
         const ack = response.match(/<Ack>(.*?)<\/Ack>/)?.[1];
         if (ack === 'Success' || ack === 'Warning') {
-          results.push({ itemId: item.itemId, success: true });
+          results.push({ itemId: item.itemId, success: true, seoTitle });
         } else {
           const error = response.match(/<LongMessage>(.*?)<\/LongMessage>/)?.[1]
             || response.match(/<ShortMessage>(.*?)<\/ShortMessage>/)?.[1]

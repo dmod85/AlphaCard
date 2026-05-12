@@ -1,7 +1,8 @@
 'use client';
 
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { createBrowserClient } from '@supabase/ssr';
 import { useNewLeadCount, useHunterRunStatus } from '../hooks/useRealtime';
 
 const NAV_ITEMS = [
@@ -15,8 +16,19 @@ const NAV_ITEMS = [
 
 export default function Navigation() {
   const pathname = usePathname();
+  const router = useRouter();
   const { count: newLeads, reset } = useNewLeadCount();
   const activeRun = useHunterRunStatus();
+
+  const supabase = createBrowserClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  );
+
+  async function handleSignOut() {
+    await supabase.auth.signOut();
+    router.push('/login');
+  }
 
   return (
     <nav className="w-56 bg-gray-950 border-r border-gray-800 min-h-screen p-4 flex flex-col">
@@ -73,11 +85,18 @@ export default function Navigation() {
       )}
 
       {/* Connection Status */}
-      <div className="mt-4 pt-4 border-t border-gray-800">
+      <div className="mt-4 pt-4 border-t border-gray-800 space-y-3">
         <div className="flex items-center gap-2">
           <div className="w-1.5 h-1.5 bg-green-500 rounded-full" />
           <span className="text-[10px] text-gray-600">Realtime connected</span>
         </div>
+        <button
+          onClick={handleSignOut}
+          className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs text-gray-500 hover:text-gray-300 hover:bg-gray-900 transition"
+        >
+          <span>↩</span>
+          <span>Sign out</span>
+        </button>
       </div>
     </nav>
   );
