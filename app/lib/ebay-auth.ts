@@ -2,9 +2,8 @@ import { supabaseAdmin } from './supabase-admin';
 
 const EBAY_SCOPES = [
   'https://api.ebay.com/oauth/api_scope',
-  // sell.inventory scopes added back once eBay approves the production app
-  // 'https://api.ebay.com/oauth/api_scope/sell.inventory',
-  // 'https://api.ebay.com/oauth/api_scope/sell.inventory.readonly',
+  'https://api.ebay.com/oauth/api_scope/sell.inventory.readonly',
+  'https://api.ebay.com/oauth/api_scope/sell.account.readonly',
 ].join(' ');
 
 // Evaluated lazily at call time so env vars are always fully loaded
