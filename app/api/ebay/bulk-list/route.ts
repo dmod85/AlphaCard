@@ -325,43 +325,46 @@ export async function POST(request: NextRequest) {
         // Handle top-level error
         if (results.length === 1 && results[0].messageId === 'all' && !results[0].success) {
           // All items in this batch failed
-          for (const item of batch) {
+          for (const itemGroup of batch) {
+            const itemIds = itemGroup.map((it: any) => it.id);
             await supabaseAdmin.from('ebay_listing_items').update({
               status: 'failed',
               error_message: results[0].error || 'eBay API error',
-            }).eq('id', item.id);
-            failedCount++;
+            }).in('id', itemIds);
+            failedCount += itemGroup.length;
           }
           continue;
         }
 
         // Map results back to items
-        for (const item of batch) {
-          const result = results.find(r => r.messageId === item.id);
+        for (const itemGroup of batch) {
+          const result = results.find(r => r.messageId === itemGroup[0].id);
+          const itemIds = itemGroup.map((it: any) => it.id);
 
           if (result?.success && result.itemId) {
             await supabaseAdmin.from('ebay_listing_items').update({
               status: 'listed',
               ebay_item_id: result.itemId,
               ebay_listing_url: `https://www.ebay.com/itm/${result.itemId}`,
-            }).eq('id', item.id);
-            listedCount++;
+            }).in('id', itemIds);
+            listedCount += itemGroup.length;
           } else {
             await supabaseAdmin.from('ebay_listing_items').update({
               status: 'failed',
               error_message: result?.error || 'No response from eBay for this item',
-            }).eq('id', item.id);
-            failedCount++;
+            }).in('id', itemIds);
+            failedCount += itemGroup.length;
           }
         }
       } catch (batchErr: any) {
         // Entire batch request failed
-        for (const item of batch) {
+        for (const itemGroup of batch) {
+          const itemIds = itemGroup.map((it: any) => it.id);
           await supabaseAdmin.from('ebay_listing_items').update({
             status: 'failed',
             error_message: batchErr.message || 'Network error calling eBay API',
-          }).eq('id', item.id);
-          failedCount++;
+          }).in('id', itemIds);
+          failedCount += itemGroup.length;
         }
       }
     }
