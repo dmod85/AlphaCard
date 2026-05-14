@@ -1,37 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getValidToken } from '@/app/lib/ebay-auth';
-
-const EBAY_API_URL = process.env.EBAY_ENVIRONMENT === 'PRODUCTION'
-  ? 'https://api.ebay.com/ws/api.dll'
-  : 'https://api.sandbox.ebay.com/ws/api.dll';
-
-const EBAY_APP_ID = process.env.EBAY_APP_ID!;
-const EBAY_DEV_ID = process.env.EBAY_DEV_ID!;
-const EBAY_CERT_ID = process.env.EBAY_CERT_ID!;
+import { getValidToken, isOAuthToken, getEbayApiHeaders, getEbayApiUrl } from '@/app/lib/ebay-auth';
 
 async function fetchDescription(itemId: string, token: string): Promise<string> {
+  const credentials = isOAuthToken(token)
+    ? ''
+    : `<RequesterCredentials><eBayAuthToken>${token}</eBayAuthToken></RequesterCredentials>`;
+
   const xml = `<?xml version="1.0" encoding="utf-8"?>
 <GetItemRequest xmlns="urn:ebay:apis:eBLBaseComponents">
-  <RequesterCredentials>
-    <eBayAuthToken>${token}</eBayAuthToken>
-  </RequesterCredentials>
+  ${credentials}
   <ItemID>${itemId}</ItemID>
   <OutputSelector>Description</OutputSelector>
   <ErrorLanguage>en_US</ErrorLanguage>
   <WarningLevel>High</WarningLevel>
 </GetItemRequest>`;
 
-  const res = await fetch(EBAY_API_URL, {
+  const res = await fetch(getEbayApiUrl(), {
     method: 'POST',
-    headers: {
-      'Content-Type': 'text/xml',
-      'X-EBAY-API-COMPATIBILITY-LEVEL': '1349',
-      'X-EBAY-API-DEV-NAME': EBAY_DEV_ID,
-      'X-EBAY-API-APP-NAME': EBAY_APP_ID,
-      'X-EBAY-API-CERT-NAME': EBAY_CERT_ID,
-      'X-EBAY-API-CALL-NAME': 'GetItem',
-      'X-EBAY-API-SITEID': '0',
-    },
+    headers: getEbayApiHeaders('GetItem', token),
     body: xml,
   });
 

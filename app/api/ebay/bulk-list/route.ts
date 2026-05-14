@@ -1,15 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/app/lib/supabase-admin';
-import { getValidToken } from '@/app/lib/ebay-auth';
+import { getValidToken, isOAuthToken, getEbayApiHeaders, getEbayApiUrl } from '@/app/lib/ebay-auth';
 
-// eBay Trading API config
-const EBAY_API_URL = process.env.EBAY_ENVIRONMENT === 'PRODUCTION'
-  ? 'https://api.ebay.com/ws/api.dll'
-  : 'https://api.sandbox.ebay.com/ws/api.dll';
-
-const EBAY_APP_ID = process.env.EBAY_APP_ID!;
-const EBAY_DEV_ID = process.env.EBAY_DEV_ID!;
-const EBAY_CERT_ID = process.env.EBAY_CERT_ID!;
+// eBay Trading API config — uses shared helpers from ebay-auth.ts
 
 // Category IDs for trading cards
 const CATEGORY_MAP: Record<string, string> = {
@@ -132,11 +125,13 @@ function escapeXml(str: string): string {
 }
 
 function buildAddItemsRequest(items: any[], token: string): string {
+  const credentials = isOAuthToken(token)
+    ? ''
+    : `<RequesterCredentials><eBayAuthToken>${token}</eBayAuthToken></RequesterCredentials>`;
+
   return `<?xml version="1.0" encoding="utf-8"?>
 <AddItemsRequest xmlns="urn:ebay:apis:eBLBaseComponents">
-  <RequesterCredentials>
-    <eBayAuthToken>${token}</eBayAuthToken>
-  </RequesterCredentials>
+  ${credentials}
   <ErrorLanguage>en_US</ErrorLanguage>
   <WarningLevel>High</WarningLevel>
   ${items.map(item => `<AddItemRequestContainer>
@@ -146,18 +141,10 @@ function buildAddItemsRequest(items: any[], token: string): string {
 </AddItemsRequest>`;
 }
 
-async function callEbayApi(xmlBody: string): Promise<string> {
-  const response = await fetch(EBAY_API_URL, {
+async function callEbayApi(xmlBody: string, token: string): Promise<string> {
+  const response = await fetch(getEbayApiUrl(), {
     method: 'POST',
-    headers: {
-      'Content-Type': 'text/xml',
-      'X-EBAY-API-COMPATIBILITY-LEVEL': '1349',
-      'X-EBAY-API-DEV-NAME': EBAY_DEV_ID,
-      'X-EBAY-API-APP-NAME': EBAY_APP_ID,
-      'X-EBAY-API-CERT-NAME': EBAY_CERT_ID,
-      'X-EBAY-API-CALL-NAME': 'AddItems',
-      'X-EBAY-API-SITEID': '0',
-    },
+    headers: getEbayApiHeaders('AddItems', token),
     body: xmlBody,
   });
   return response.text();
@@ -277,7 +264,7 @@ export async function POST(request: NextRequest) {
 
       try {
         const xmlRequest = buildAddItemsRequest(batch, ebayToken);
-        const xmlResponse = await callEbayApi(xmlRequest);
+        const xmlResponse = await callEbayApi(xmlRequest, ebayToken);
         const results = parseAddItemsResponse(xmlResponse);
 
         // Handle top-level error

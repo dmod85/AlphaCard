@@ -119,9 +119,13 @@ def start_user_consent_flow():
     })
 
     consent_url = f"{auth_url}/oauth2/authorize?{params}"
-    console.print("\n[cyan]Opening browser for eBay authorization...[/]")
-    console.print(f"[dim]URL: {consent_url}[/]")
+    console.print("\n[bold cyan]--- DEBUG INFO ---[/]")
+    console.print(f"App ID (Client ID): {app_id}")
+    console.print(f"Redirect URI (RuName): {redirect_uri}")
+    console.print(f"Full Authorization URL:\n[blue]{consent_url}[/]")
+    console.print("[bold cyan]------------------[/]\n")
 
+    console.print("[cyan]Opening browser for eBay authorization...[/]")
     webbrowser.open(consent_url)
 
     console.print("\n[yellow]After authorizing, you'll be redirected. Paste the full redirect URL here:[/]")

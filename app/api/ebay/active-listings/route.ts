@@ -1,13 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getValidToken } from '@/app/lib/ebay-auth';
-
-const EBAY_API_URL = process.env.EBAY_ENVIRONMENT === 'PRODUCTION'
-  ? 'https://api.ebay.com/ws/api.dll'
-  : 'https://api.sandbox.ebay.com/ws/api.dll';
-
-const EBAY_APP_ID = process.env.EBAY_APP_ID!;
-const EBAY_DEV_ID = process.env.EBAY_DEV_ID!;
-const EBAY_CERT_ID = process.env.EBAY_CERT_ID!;
+import { getValidToken, isOAuthToken, getEbayApiHeaders, getEbayApiUrl } from '@/app/lib/ebay-auth';
 
 function decodeXml(str: string): string {
   return str
@@ -27,29 +19,25 @@ function escapeXml(str: string): string {
     .replace(/'/g, '&apos;');
 }
 
-async function callEbayApi(xmlBody: string, callName: string): Promise<string> {
-  const response = await fetch(EBAY_API_URL, {
+async function callEbayApi(xmlBody: string, callName: string, token: string): Promise<string> {
+  const response = await fetch(getEbayApiUrl(), {
     method: 'POST',
-    headers: {
-      'Content-Type': 'text/xml',
-      'X-EBAY-API-COMPATIBILITY-LEVEL': '1349',
-      'X-EBAY-API-DEV-NAME': EBAY_DEV_ID,
-      'X-EBAY-API-APP-NAME': EBAY_APP_ID,
-      'X-EBAY-API-CERT-NAME': EBAY_CERT_ID,
-      'X-EBAY-API-CALL-NAME': callName,
-      'X-EBAY-API-SITEID': '0',
-    },
+    headers: getEbayApiHeaders(callName, token),
     body: xmlBody,
   });
   return response.text();
 }
 
 function buildGetMyeBaySellingRequest(page: number, token: string): string {
+  // Only include RequesterCredentials for legacy Auth'n'Auth tokens.
+  // OAuth2 tokens are sent via X-EBAY-API-IAF-TOKEN header instead.
+  const credentials = isOAuthToken(token)
+    ? ''
+    : `<RequesterCredentials><eBayAuthToken>${token}</eBayAuthToken></RequesterCredentials>`;
+
   return `<?xml version="1.0" encoding="utf-8"?>
 <GetMyeBaySellingRequest xmlns="urn:ebay:apis:eBLBaseComponents">
-  <RequesterCredentials>
-    <eBayAuthToken>${token}</eBayAuthToken>
-  </RequesterCredentials>
+  ${credentials}
   <ActiveList>
     <Include>true</Include>
     <Pagination>
@@ -157,11 +145,13 @@ function buildDescription(title: string): string {
 }
 
 function buildReviseItemRequest(itemId: string, seoTitle: string, description: string, token: string): string {
+  const credentials = isOAuthToken(token)
+    ? ''
+    : `<RequesterCredentials><eBayAuthToken>${token}</eBayAuthToken></RequesterCredentials>`;
+
   return `<?xml version="1.0" encoding="utf-8"?>
 <ReviseItemRequest xmlns="urn:ebay:apis:eBLBaseComponents">
-  <RequesterCredentials>
-    <eBayAuthToken>${token}</eBayAuthToken>
-  </RequesterCredentials>
+  ${credentials}
   <Item>
     <ItemID>${itemId}</ItemID>
     <Title>${escapeXml(seoTitle)}</Title>
@@ -177,13 +167,14 @@ export async function GET() {
   try {
     const token = await getValidToken();
     const xml = buildGetMyeBaySellingRequest(1, token);
-    const response = await callEbayApi(xml, 'GetMyeBaySelling');
+    const response = await callEbayApi(xml, 'GetMyeBaySelling', token);
 
     const ack = response.match(/<Ack>(.*?)<\/Ack>/)?.[1];
     if (ack === 'Failure') {
       const errorMsg = response.match(/<LongMessage>(.*?)<\/LongMessage>/)?.[1]
         || response.match(/<ShortMessage>(.*?)<\/ShortMessage>/)?.[1]
         || 'eBay API error';
+      console.error('[active-listings] eBay API failure:', decodeXml(errorMsg));
       return NextResponse.json({ error: decodeXml(errorMsg) }, { status: 500 });
     }
 
@@ -216,7 +207,7 @@ export async function POST(request: NextRequest) {
         const seoTitle = buildSeoTitle(item.title);
         const description = buildDescription(item.title);
         const xml = buildReviseItemRequest(item.itemId, seoTitle, description, token);
-        const response = await callEbayApi(xml, 'ReviseItem');
+        const response = await callEbayApi(xml, 'ReviseItem', token);
 
         const ack = response.match(/<Ack>(.*?)<\/Ack>/)?.[1];
         if (ack === 'Success' || ack === 'Warning') {
