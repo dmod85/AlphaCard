@@ -27,6 +27,7 @@ async function fetchDescription(itemId: string, token: string): Promise<string> 
   const raw =
     text.match(/<Description><!\[CDATA\[([\s\S]*?)\]\]><\/Description>/)?.[1] ??
     text.match(/<Description>([\s\S]*?)<\/Description>/)?.[1] ??
+    text.match(/<TextDescription>([\s\S]*?)<\/TextDescription>/)?.[1] ??
     '';
 
   // Strip HTML tags and collapse whitespace to a plain-text snippet

@@ -60,6 +60,7 @@ interface ActiveListing {
   quantity: number;
   quantityAvailable: number;
   startTime: string;
+  isSeoFriendly: boolean;
 }
 
 function parseActiveListings(xml: string): ActiveListing[] {
@@ -79,13 +80,17 @@ function parseActiveListings(xml: string): ActiveListing[] {
     const title = decodeXml(item.match(/<Title>(.*?)<\/Title>/)?.[1] || '');
     const price = parseFloat(item.match(/<CurrentPrice[^>]*>(.*?)<\/CurrentPrice>/)?.[1] || '0');
     const url = item.match(/<ViewItemURL>(.*?)<\/ViewItemURL>/)?.[1] || '';
-    const pictureUrl = item.match(/<PictureURL>(.*?)<\/PictureURL>/)?.[1];
+    const pictureUrl = item.match(/<GalleryURL>(.*?)<\/GalleryURL>/)?.[1] 
+      || item.match(/<PictureURL>(.*?)<\/PictureURL>/)?.[1];
     const quantity = parseInt(item.match(/<Quantity>(.*?)<\/Quantity>/)?.[1] || '1');
     const quantityAvailable = parseInt(item.match(/<QuantityAvailable>(.*?)<\/QuantityAvailable>/)?.[1] || '1');
     const startTime = item.match(/<StartTime>(.*?)<\/StartTime>/)?.[1] || '';
 
     if (itemId) {
-      listings.push({ itemId, title, price, url, pictureUrl, quantity, quantityAvailable, startTime });
+      // A title is SEO friendly if it starts with a year and doesn't change when optimized
+      const seoTitle = buildSeoTitle(title);
+      const isSeoFriendly = title === seoTitle;
+      listings.push({ itemId, title, price, url, pictureUrl, quantity, quantityAvailable, startTime, isSeoFriendly });
     }
   }
 

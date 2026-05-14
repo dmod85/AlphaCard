@@ -11,9 +11,10 @@ interface ActiveListing {
   quantity: number;
   quantityAvailable: number;
   startTime: string;
+  isSeoFriendly: boolean;
 }
 
-type SortKey = 'title' | 'price' | 'date';
+type SortKey = 'title' | 'price' | 'date' | 'seo';
 type SortDir = 'asc' | 'desc';
 type ItemStatus = 'rewriting' | 'done' | 'error';
 
@@ -45,20 +46,7 @@ export default function ActiveListingsPage() {
   const [sortDir, setSortDir] = useState<SortDir>('desc');
   const selectAllRef = useRef<HTMLInputElement>(null);
 
-  const fetchDescriptions = useCallback(async (ids: string[]) => {
-    if (ids.length === 0) return;
-    try {
-      const res = await fetch('/api/ebay/listing-descriptions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ itemIds: ids }),
-      });
-      const data = await res.json();
-      if (data.descriptions) setDescriptions(data.descriptions);
-    } catch {
-      // descriptions are non-critical, fail silently
-    }
-  }, []);
+  // fetchDescriptions removed as requested by user
 
   const fetchListings = useCallback(async () => {
     setLoading(true);
@@ -78,13 +66,12 @@ export default function ActiveListingsPage() {
       if (!res.ok) throw new Error(data.error || 'Failed to fetch listings');
       setListings(data.listings);
       setTotal(data.total);
-      fetchDescriptions(data.listings.map((l: ActiveListing) => l.itemId));
     } catch (err: any) {
       setError(err.message);
     } finally {
       setLoading(false);
     }
-  }, [fetchDescriptions]);
+  }, []);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -112,6 +99,7 @@ export default function ActiveListingsPage() {
       if (sortKey === 'title') cmp = a.title.localeCompare(b.title);
       else if (sortKey === 'price') cmp = a.price - b.price;
       else if (sortKey === 'date') cmp = new Date(a.startTime).getTime() - new Date(b.startTime).getTime();
+      else if (sortKey === 'seo') cmp = (a.isSeoFriendly ? 1 : 0) - (b.isSeoFriendly ? 0 : 1);
       return sortDir === 'asc' ? cmp : -cmp;
     });
   }, [listings, sortKey, sortDir]);
@@ -284,7 +272,12 @@ export default function ActiveListingsPage() {
                 >
                   Listed <SortIcon active={sortKey === 'date'} dir={sortDir} />
                 </th>
-                <th className="px-4 py-3 text-center text-gray-400 font-medium w-28">Item ID</th>
+                <th
+                  className="px-4 py-3 text-center text-gray-400 font-medium w-24 cursor-pointer select-none hover:text-gray-200 transition"
+                  onClick={() => handleSort('seo')}
+                >
+                  SEO <SortIcon active={sortKey === 'seo'} dir={sortDir} />
+                </th>
                 <th className="px-4 py-3 text-center text-gray-400 font-medium w-24">Status</th>
               </tr>
             </thead>
@@ -319,18 +312,13 @@ export default function ActiveListingsPage() {
                       )}
                     </td>
                     <td className="px-4 py-3 max-w-xs">
-                      <span className="text-gray-200 line-clamp-1 leading-snug">{listing.title}</span>
-                      {desc === undefined ? (
-                        <span className="text-gray-600 text-xs italic">Loading description...</span>
-                      ) : desc ? (
-                        <span className="text-gray-500 text-xs line-clamp-1">{desc}</span>
-                      ) : null}
+                      <span className="text-gray-200 line-clamp-2 leading-snug">{listing.title}</span>
                     </td>
                     <td className="px-4 py-3 text-right text-green-400 font-medium tabular-nums">
                       ${listing.price.toFixed(2)}
                     </td>
                     <td className="px-4 py-3 text-gray-400 text-xs whitespace-nowrap">{listedDate}</td>
-                    <td className="px-4 py-3 text-center" onClick={e => e.stopPropagation()}>
+                    <td className="px-4 py-3 text-center">
                       <a
                         href={listing.url}
                         target="_blank"
@@ -341,18 +329,41 @@ export default function ActiveListingsPage() {
                       </a>
                     </td>
                     <td className="px-4 py-3 text-center">
-                      {!state && <span className="text-gray-700 text-xs">—</span>}
+                      {listing.isSeoFriendly ? (
+                        <span className="px-2 py-0.5 bg-green-500/10 text-green-400 border border-green-500/20 rounded-full text-[10px] font-bold uppercase tracking-wider">
+                          Good
+                        </span>
+                      ) : (
+                        <span className="px-2 py-0.5 bg-yellow-500/10 text-yellow-400 border border-yellow-500/20 rounded-full text-[10px] font-bold uppercase tracking-wider">
+                          Fix Me
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-center">
+                      {!state && !listing.isSeoFriendly && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelected(new Set([listing.itemId]));
+                            setTimeout(rewriteDescriptions, 10);
+                          }}
+                          className="text-[10px] bg-gray-700 hover:bg-blue-600 text-gray-300 hover:text-white px-2 py-1 rounded transition font-bold uppercase"
+                        >
+                          Optimize
+                        </button>
+                      )}
+                      {!state && listing.isSeoFriendly && <span className="text-gray-700 text-xs">—</span>}
                       {state?.status === 'rewriting' && (
                         <div className="flex items-center justify-center gap-1.5">
                           <div className="w-3 h-3 border border-gray-600 border-t-blue-400 rounded-full animate-spin" />
-                          <span className="text-blue-400 text-xs">Rewriting</span>
+                          <span className="text-blue-400 text-[10px] font-bold uppercase">Rewriting</span>
                         </div>
                       )}
                       {state?.status === 'done' && (
-                        <span className="px-2 py-0.5 bg-green-500/10 text-green-400 rounded-full text-xs font-medium">Updated</span>
-                      )}
+                        <span className="px-2 py-0.5 bg-green-500/10 text-green-400 rounded-full text-[10px] font-bold uppercase">Updated</span>
+                      ) /* ... existing logic ... */ }
                       {state?.status === 'error' && (
-                        <span className="px-2 py-0.5 bg-red-500/10 text-red-400 rounded-full text-xs font-medium cursor-help" title={state.error}>
+                        <span className="px-2 py-0.5 bg-red-500/10 text-red-400 rounded-full text-[10px] font-bold uppercase cursor-help" title={state.error}>
                           Error
                         </span>
                       )}
