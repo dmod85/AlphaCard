@@ -50,11 +50,29 @@ function buildItemXml(items: any[]): string {
       ${specifics.map(s => `<NameValueList><Name>${escapeXml(s.name)}</Name><Value>${escapeXml(s.value)}</Value></NameValueList>`).join('\n      ')}
     </ItemSpecifics>` : '';
 
-  // Description
-  const description = 'Cards ship securely from the United States. Please message with any questions.';
-
   // --- VARIATION LOGIC ---
   const isVariation = items.length > 1;
+
+  // Description
+  let description = 'Cards ship securely from the United States. Please message with any questions.';
+  if (!isVariation) {
+    const item = items[0];
+    const descParts: string[] = [];
+    if (item.player_name) descParts.push(item.player_name);
+    if (item.card_year && item.card_set) descParts.push(`${item.card_year} ${item.card_set}`);
+    else if (item.card_year) descParts.push(String(item.card_year));
+    else if (item.card_set) descParts.push(item.card_set);
+    if (item.card_number) descParts.push(`Card #${item.card_number}`);
+    if (item.condition === 'graded' && item.grader) {
+      descParts.push(`Graded ${item.grader} ${item.grade || ''}`.trim());
+      if (item.cert_number) descParts.push(`Cert #${item.cert_number}`);
+    } else {
+      descParts.push('Near Mint or Better (NM+) condition.');
+    }
+    descParts.push('Ships from the United States. Please message with any questions.');
+    description = descParts.join(' | ');
+  }
+
   let variationsXml = '';
   let startPriceXml = `<StartPrice>${parent.price.toFixed(2)}</StartPrice>`;
   let quantityXml = `<Quantity>${parent.quantity || 1}</Quantity>`;
@@ -120,6 +138,7 @@ function buildItemXml(items: any[]): string {
       ${quantityXml}
       <ListingType>FixedPriceItem</ListingType>
       <ListingDuration>GTC</ListingDuration>
+      <BestOfferDetails><BestOfferEnabled>true</BestOfferEnabled></BestOfferDetails>
       <Location>United States</Location>
       <Country>US</Country>
       <Currency>USD</Currency>
@@ -140,73 +159,6 @@ function buildItemXml(items: any[]): string {
     </Item>`;
 }
 
-// Build item specifics
-const specifics: { name: string; value: string }[] = [];
-if (item.sport) specifics.push({ name: 'Sport', value: item.sport.toUpperCase() });
-if (item.player_name) specifics.push({ name: 'Player/Athlete', value: item.player_name });
-if (item.card_year) specifics.push({ name: 'Year Manufactured', value: String(item.card_year) });
-if (item.card_set) specifics.push({ name: 'Set', value: item.card_set });
-if (item.card_number) specifics.push({ name: 'Card Number', value: item.card_number });
-
-const itemSpecificsXml = specifics.length > 0 ? `
-    <ItemSpecifics>
-      ${specifics.map(s => `<NameValueList><Name>${escapeXml(s.name)}</Name><Value>${escapeXml(s.value)}</Value></NameValueList>`).join('\n      ')}
-    </ItemSpecifics>` : '';
-
-// Build description (required by eBay)
-const descParts: string[] = [];
-if (item.player_name) descParts.push(item.player_name);
-if (item.card_year && item.card_set) descParts.push(`${item.card_year} ${item.card_set}`);
-else if (item.card_year) descParts.push(String(item.card_year));
-else if (item.card_set) descParts.push(item.card_set);
-if (item.card_number) descParts.push(`Card #${item.card_number}`);
-if (item.condition === 'graded' && item.grader) {
-  descParts.push(`Graded ${item.grader} ${item.grade || ''}`.trim());
-  if (item.cert_number) descParts.push(`Cert #${item.cert_number}`);
-} else {
-  descParts.push('Near Mint or Better (NM+) condition.');
-}
-descParts.push('Ships from the United States. Please message with any questions.');
-const description = descParts.join(' | ');
-
-// Build picture URLs
-const pictureXml = item.image_urls && item.image_urls.length > 0
-  ? `<PictureDetails>${item.image_urls.map((url: string) => `<PictureURL>${escapeXml(url)}</PictureURL>`).join('')}</PictureDetails>`
-  : '';
-
-return `
-    <Item>
-      <Title>${escapeXml(title)}</Title>
-      <Description><![CDATA[${description}]]></Description>
-      <PrimaryCategory><CategoryID>${categoryId}</CategoryID></PrimaryCategory>
-      <ConditionID>${conditionId}</ConditionID>
-      ${conditionDescriptors}
-      <StartPrice>${item.price.toFixed(2)}</StartPrice>
-      <Quantity>${item.quantity || 1}</Quantity>
-      <ListingType>FixedPriceItem</ListingType>
-      <ListingDuration>GTC</ListingDuration>
-      <BestOfferDetails><BestOfferEnabled>true</BestOfferEnabled></BestOfferDetails>
-      <Location>United States</Location>
-      <Country>US</Country>
-      <Currency>USD</Currency>
-      <DispatchTimeMax>3</DispatchTimeMax>
-      <ShippingDetails>
-        <ShippingType>Flat</ShippingType>
-        <ShippingServiceOptions>
-          <ShippingServicePriority>1</ShippingServicePriority>
-          <ShippingService>USPSMedia</ShippingService>
-          <ShippingServiceCost>0.00</ShippingServiceCost>
-          <FreeShipping>true</FreeShipping>
-        </ShippingServiceOptions>
-      </ShippingDetails>
-      <ReturnPolicy>
-        <ReturnsAcceptedOption>ReturnsNotAccepted</ReturnsAcceptedOption>
-      </ReturnPolicy>
-      ${itemSpecificsXml}
-      ${pictureXml}
-    </Item>`;
-}
-
 function escapeXml(str: string): string {
   return String(str)
     .replace(/&/g, '&amp;')
@@ -216,22 +168,7 @@ function escapeXml(str: string): string {
     .replace(/'/g, '&apos;');
 }
 
-function buildAddItemsRequest(items: any[], token: string): string {
-  const credentials = isOAuthToken(token)
-    ? ''
-    : `<RequesterCredentials><eBayAuthToken>${token}</eBayAuthToken></RequesterCredentials>`;
 
-  return `<?xml version="1.0" encoding="utf-8"?>
-<AddItemsRequest xmlns="urn:ebay:apis:eBLBaseComponents">
-  ${credentials}
-  <ErrorLanguage>en_US</ErrorLanguage>
-  <WarningLevel>High</WarningLevel>
-  ${items.map(item => `<AddItemRequestContainer>
-    <MessageID>${item.id}</MessageID>
-    ${buildItemXml(item)}
-  </AddItemRequestContainer>`).join('\n')}
-</AddItemsRequest>`;
-}
 
 async function callEbayApi(xmlBody: string, token: string): Promise<string> {
   const response = await fetch(getEbayApiUrl(), {
