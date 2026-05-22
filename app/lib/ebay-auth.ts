@@ -1,10 +1,16 @@
 /**
- * eBay Auth — simplified with auto-refresh.
+ * eBay Auth — Supabase-backed token storage with auto-refresh.
  *
- * Uses EBAY_OAUTH_TOKEN from .env as initial token.
- * When expired, automatically refreshes using EBAY_REFRESH_TOKEN.
- * OAuth2 tokens are passed via the X-EBAY-API-IAF-TOKEN header.
+ * Token resolution priority:
+ * 1. In-memory cache (fastest, avoids DB on every call)
+ * 2. Supabase ebay_tokens (id='default') — non-expired access_token
+ * 3. Refresh via refresh_token from Supabase row or EBAY_REFRESH_TOKEN env
+ * 4. Fallback to EBAY_OAUTH_TOKEN env (may be expired)
+ *
+ * Run the Auth'n'Auth flow at /ebay-connect to populate the DB.
  */
+
+import { supabaseAdmin } from './supabase-admin';
 
 const EBAY_SCOPES = [
   'https://api.ebay.com/oauth/api_scope',
@@ -38,17 +44,29 @@ export function isOAuthToken(token: string): boolean {
   return token.startsWith('v^');
 }
 
-/**
- * Refresh the access token using the refresh token.
- * Returns a fresh access token or null on failure.
- */
-async function refreshAccessToken(): Promise<string | null> {
-  const refreshToken = process.env.EBAY_REFRESH_TOKEN?.trim();
-  if (!refreshToken) {
-    console.error('[ebay-auth] No EBAY_REFRESH_TOKEN set — cannot auto-refresh.');
+/** Load the token row from Supabase, or null if not found / DB unavailable. */
+async function getTokenRow(): Promise<{
+  access_token: string;
+  refresh_token: string;
+  expires_at: string;
+} | null> {
+  try {
+    const { data } = await supabaseAdmin
+      .from('ebay_tokens')
+      .select('access_token, refresh_token, expires_at')
+      .eq('id', 'default')
+      .single();
+    return data ?? null;
+  } catch {
     return null;
   }
+}
 
+/**
+ * Refresh the access token using the given refresh token.
+ * Writes the new access_token + expires_at back to Supabase on success.
+ */
+async function refreshAccessToken(refreshToken: string): Promise<string | null> {
   console.log('[ebay-auth] Refreshing access token...');
   try {
     const res = await fetch(tokenUrl(), {
@@ -71,11 +89,18 @@ async function refreshAccessToken(): Promise<string | null> {
     }
 
     const data = await res.json() as { access_token: string; expires_in: number };
-    console.log(`[ebay-auth] Token refreshed successfully (expires in ${data.expires_in}s)`);
+    console.log(`[ebay-auth] Token refreshed (expires in ${data.expires_in}s)`);
 
-    // Cache in memory
+    // Update in-memory cache
     cachedToken = data.access_token;
     cachedTokenExpiry = Date.now() + (data.expires_in - 300) * 1000; // 5 min buffer
+
+    // Persist updated access_token back to Supabase
+    const expiresAt = new Date(Date.now() + data.expires_in * 1000).toISOString();
+    await supabaseAdmin
+      .from('ebay_tokens')
+      .update({ access_token: data.access_token, expires_at: expiresAt, updated_at: new Date().toISOString() })
+      .eq('id', 'default');
 
     return data.access_token;
   } catch (err) {
@@ -87,21 +112,42 @@ async function refreshAccessToken(): Promise<string | null> {
 /**
  * Returns a valid eBay auth token.
  * 1. Returns cached in-memory token if still valid
- * 2. Tries to refresh using EBAY_REFRESH_TOKEN
- * 3. Falls back to EBAY_OAUTH_TOKEN from .env
- * 4. Throws EBAY_AUTH_REQUIRED if nothing available
+ * 2. Checks Supabase for a non-expired access_token
+ * 3. Refreshes using refresh_token from Supabase, then EBAY_REFRESH_TOKEN env
+ * 4. Falls back to EBAY_OAUTH_TOKEN from .env (may be expired)
+ * 5. Throws EBAY_AUTH_REQUIRED if nothing is available
  */
 export async function getValidToken(): Promise<string> {
-  // 1. Check in-memory cache
+  // 1. In-memory cache
   if (cachedToken && Date.now() < cachedTokenExpiry) {
     return cachedToken;
   }
 
-  // 2. Try refresh
-  const refreshed = await refreshAccessToken();
-  if (refreshed) return refreshed;
+  // 2. Supabase row
+  const row = await getTokenRow();
+  if (row) {
+    const expiresAt = new Date(row.expires_at).getTime();
+    if (expiresAt > Date.now() + 60_000) {
+      // Access token still valid — populate in-memory cache and return
+      cachedToken = row.access_token;
+      cachedTokenExpiry = expiresAt - 300_000;
+      return row.access_token;
+    }
+    // Expired — try refreshing with the stored refresh token
+    if (row.refresh_token) {
+      const refreshed = await refreshAccessToken(row.refresh_token);
+      if (refreshed) return refreshed;
+    }
+  }
 
-  // 3. Fall back to env token (may be expired but worth trying)
+  // 3. Env-var refresh token fallback
+  const envRefresh = process.env.EBAY_REFRESH_TOKEN?.trim();
+  if (envRefresh) {
+    const refreshed = await refreshAccessToken(envRefresh);
+    if (refreshed) return refreshed;
+  }
+
+  // 4. Last-resort static token from env (may be expired)
   const envToken = process.env.EBAY_OAUTH_TOKEN?.trim().replace(/^'|'$/g, '');
   if (envToken) {
     console.log('[ebay-auth] Using EBAY_OAUTH_TOKEN from .env (may be expired)');
