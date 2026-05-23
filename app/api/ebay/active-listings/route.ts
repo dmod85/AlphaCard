@@ -167,26 +167,40 @@ function buildReviseItemRequest(itemId: string, seoTitle: string, description: s
 </ReviseItemRequest>`;
 }
 
-// GET — fetch active listings
+// GET — fetch active listings (all pages)
 export async function GET() {
   try {
     const token = await getValidToken();
-    const xml = buildGetMyeBaySellingRequest(1, token);
-    const response = await callEbayApi(xml, 'GetMyeBaySelling', token);
 
-    const ack = response.match(/<Ack>(.*?)<\/Ack>/)?.[1];
+    // Fetch page 1 to determine total page count
+    const firstXml = buildGetMyeBaySellingRequest(1, token);
+    const firstResponse = await callEbayApi(firstXml, 'GetMyeBaySelling', token);
+
+    const ack = firstResponse.match(/<Ack>(.*?)<\/Ack>/)?.[1];
     if (ack === 'Failure') {
-      const errorMsg = response.match(/<LongMessage>(.*?)<\/LongMessage>/)?.[1]
-        || response.match(/<ShortMessage>(.*?)<\/ShortMessage>/)?.[1]
+      const errorMsg = firstResponse.match(/<LongMessage>(.*?)<\/LongMessage>/)?.[1]
+        || firstResponse.match(/<ShortMessage>(.*?)<\/ShortMessage>/)?.[1]
         || 'eBay API error';
       console.error('[active-listings] eBay API failure:', decodeXml(errorMsg));
       return NextResponse.json({ error: decodeXml(errorMsg) }, { status: 500 });
     }
 
-    const listings = parseActiveListings(response);
-    const total = parseInt(response.match(/<TotalNumberOfEntries>(.*?)<\/TotalNumberOfEntries>/)?.[1] || '0');
+    const total = parseInt(firstResponse.match(/<TotalNumberOfEntries>(.*?)<\/TotalNumberOfEntries>/)?.[1] || '0');
+    const totalPages = parseInt(firstResponse.match(/<TotalNumberOfPages>(.*?)<\/TotalNumberOfPages>/)?.[1] || '1');
+    const allListings = parseActiveListings(firstResponse);
 
-    return NextResponse.json({ listings, total });
+    // Fetch remaining pages in parallel
+    if (totalPages > 1) {
+      const pageNums = Array.from({ length: totalPages - 1 }, (_, i) => i + 2);
+      const pageResponses = await Promise.all(
+        pageNums.map(page => callEbayApi(buildGetMyeBaySellingRequest(page, token), 'GetMyeBaySelling', token))
+      );
+      for (const pageResponse of pageResponses) {
+        allListings.push(...parseActiveListings(pageResponse));
+      }
+    }
+
+    return NextResponse.json({ listings: allListings, total });
   } catch (err: any) {
     if (err.message === 'EBAY_AUTH_REQUIRED') {
       return NextResponse.json({ error: 'EBAY_AUTH_REQUIRED' }, { status: 401 });

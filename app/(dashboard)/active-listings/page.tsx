@@ -109,6 +109,13 @@ export default function ActiveListingsPage() {
     else setSelected(new Set(listings.map(l => l.itemId)));
   };
 
+  const selectNeedsOptimization = () => {
+    const unoptimized = listings.filter(l => !l.isSeoFriendly).map(l => l.itemId);
+    setSelected(new Set(unoptimized));
+  };
+
+  const unoptimizedCount = listings.filter(l => !l.isSeoFriendly).length;
+
   const toggleItem = (itemId: string) => {
     setSelected(prev => {
       const next = new Set(prev);
@@ -178,6 +185,15 @@ export default function ActiveListingsPage() {
           >
             Refresh
           </button>
+          {!loading && unoptimizedCount > 0 && (
+            <button
+              onClick={selectNeedsOptimization}
+              disabled={rewriting}
+              className="px-3 py-1.5 text-sm bg-gray-800 text-yellow-400 border border-yellow-500/30 rounded-lg hover:bg-yellow-500/10 transition disabled:opacity-50"
+            >
+              Select needs optimization ({unoptimizedCount})
+            </button>
+          )}
           <button
             onClick={rewriteDescriptions}
             disabled={selected.size === 0 || rewriting || loading}
