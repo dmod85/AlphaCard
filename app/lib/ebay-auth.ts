@@ -34,9 +34,12 @@ function tokenUrl(): string {
 }
 
 function basicAuth(): string {
-  return Buffer.from(
-    `${process.env.EBAY_APP_ID!.trim()}:${process.env.EBAY_CERT_ID!.trim()}`
-  ).toString('base64');
+  const appId = process.env.EBAY_APP_ID?.trim();
+  const certId = process.env.EBAY_CERT_ID?.trim();
+  if (!appId || !certId) {
+    throw new Error('Missing required env vars: EBAY_APP_ID or EBAY_CERT_ID');
+  }
+  return Buffer.from(`${appId}:${certId}`).toString('base64');
 }
 
 /** Returns true when the token is an OAuth2 user token (v^1.1#...) */
@@ -162,12 +165,19 @@ export async function getValidToken(): Promise<string> {
  * OAuth2 tokens use X-EBAY-API-IAF-TOKEN header.
  */
 export function getEbayApiHeaders(callName: string, token: string): Record<string, string> {
+  const devId = process.env.EBAY_DEV_ID?.trim();
+  const appId = process.env.EBAY_APP_ID?.trim();
+  const certId = process.env.EBAY_CERT_ID?.trim();
+  if (!devId || !appId || !certId) {
+    const missing = ['EBAY_DEV_ID', 'EBAY_APP_ID', 'EBAY_CERT_ID'].filter(k => !process.env[k]?.trim()).join(', ');
+    throw new Error(`Missing required eBay env vars: ${missing}`);
+  }
   const headers: Record<string, string> = {
     'Content-Type': 'text/xml',
     'X-EBAY-API-COMPATIBILITY-LEVEL': '1349',
-    'X-EBAY-API-DEV-NAME': process.env.EBAY_DEV_ID!.trim(),
-    'X-EBAY-API-APP-NAME': process.env.EBAY_APP_ID!.trim(),
-    'X-EBAY-API-CERT-NAME': process.env.EBAY_CERT_ID!.trim(),
+    'X-EBAY-API-DEV-NAME': devId,
+    'X-EBAY-API-APP-NAME': appId,
+    'X-EBAY-API-CERT-NAME': certId,
     'X-EBAY-API-CALL-NAME': callName,
     'X-EBAY-API-SITEID': '0',
   };
