@@ -23,6 +23,12 @@ const EBAY_SCOPES = [
 let cachedToken: string | null = null;
 let cachedTokenExpiry: number = 0;
 
+/** Call this when eBay rejects a token so the next request forces a fresh fetch. */
+export function clearTokenCache(): void {
+  cachedToken = null;
+  cachedTokenExpiry = 0;
+}
+
 function isProd(): boolean {
   return process.env.EBAY_ENVIRONMENT?.trim() === 'PRODUCTION';
 }

@@ -1,5 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getValidToken, isOAuthToken, getEbayApiHeaders, getEbayApiUrl } from '@/app/lib/ebay-auth';
+import { getValidToken, isOAuthToken, getEbayApiHeaders, getEbayApiUrl, clearTokenCache } from '@/app/lib/ebay-auth';
+
+// eBay Trading API error codes that indicate an invalid/expired token
+const EBAY_AUTH_ERROR_CODES = ['21917053', '21916984', '21917055'];
+
+function isEbayAuthError(xml: string): boolean {
+  return EBAY_AUTH_ERROR_CODES.some(code => xml.includes(`<ErrorCode>${code}</ErrorCode>`))
+    || /validation of the authentication token/i.test(xml);
+}
 
 function decodeXml(str: string): string {
   return str
@@ -182,6 +190,10 @@ export async function GET() {
         || firstResponse.match(/<ShortMessage>(.*?)<\/ShortMessage>/)?.[1]
         || 'eBay API error';
       console.error('[active-listings] eBay API failure:', decodeXml(errorMsg));
+      if (isEbayAuthError(firstResponse)) {
+        clearTokenCache();
+        return NextResponse.json({ error: 'EBAY_AUTH_REQUIRED' }, { status: 401 });
+      }
       return NextResponse.json({ error: decodeXml(errorMsg) }, { status: 500 });
     }
 
