@@ -23,7 +23,13 @@ async function fetchDescription(itemId: string, token: string): Promise<string> 
 
   const text = await res.text();
 
-  // Description may be in CDATA or plain text
+    // If eBay returned a failure, throw so the item is excluded from results
+    const ack = text.match(/<Ack>(.*?)<\/Ack>/)?.[1];
+    if (ack === 'Failure') {
+      throw new Error('eBay API failure for item ' + itemId);
+    }
+
+    // Description may be in CDATA or plain text
   const raw =
     text.match(/<Description><!\[CDATA\[([\s\S]*?)\]\]><\/Description>/)?.[1] ??
     text.match(/<Description>([\s\S]*?)<\/Description>/)?.[1] ??
