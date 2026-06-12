@@ -105,6 +105,36 @@ function parseActiveListings(xml: string): ActiveListing[] {
   return listings;
 }
 
+const WORLD_CUP_COUNTRIES = [
+  'Argentina', 'Brazil', 'England', 'France', 'Germany', 'Italy', 'Spain', 'Portugal',
+  'Netherlands', 'Belgium', 'Croatia', 'Uruguay', 'USA', 'Mexico', 'Japan', 'South Korea',
+] as const;
+
+const WORLD_CUP_PLAYER_COUNTRY_HINTS: Array<{ pattern: RegExp; country: typeof WORLD_CUP_COUNTRIES[number] }> = [
+  { pattern: /\bharry\s+kane\b/i, country: 'England' },
+  { pattern: /\bjude\s+bellingham\b/i, country: 'England' },
+  { pattern: /\bbukayo\s+saka\b/i, country: 'England' },
+  { pattern: /\bphil\s+foden\b/i, country: 'England' },
+  { pattern: /\blionel\s+messi\b/i, country: 'Argentina' },
+  { pattern: /\bkylian\s+mbappe\b/i, country: 'France' },
+  { pattern: /\bcristiano\s+ronaldo\b/i, country: 'Portugal' },
+  { pattern: /\bvinicius\s+jr\b/i, country: 'Brazil' },
+  { pattern: /\bvinicius\s+junior\b/i, country: 'Brazil' },
+  { pattern: /\bpedri\b/i, country: 'Spain' },
+  { pattern: /\bluka\s+modric\b/i, country: 'Croatia' },
+];
+
+function hasWorldCupCountry(title: string): boolean {
+  return WORLD_CUP_COUNTRIES.some(country => new RegExp(`\\b${country.replace(/\s+/g, '\\s+')}\\b`, 'i').test(title));
+}
+
+function inferWorldCupCountry(title: string): string | null {
+  for (const hint of WORLD_CUP_PLAYER_COUNTRY_HINTS) {
+    if (hint.pattern.test(title)) return hint.country;
+  }
+  return null;
+}
+
 // Optimizes a listing title for eBay SEO — year first, standardized abbreviations,
 // fluff removed, capped at eBay's 80-character limit.
 function buildSeoTitle(originalTitle: string): string {
@@ -131,6 +161,18 @@ function buildSeoTitle(originalTitle: string): string {
   ];
   for (const [pattern, replacement] of abbrevMap) {
     title = title.replace(pattern, replacement);
+  }
+
+  // Keep FIFA in all caps and normalize World Cup casing.
+  title = title.replace(/\bfifa\b/gi, 'FIFA');
+  title = title.replace(/\bworld\s+cup\b/gi, 'World Cup');
+
+  // For World Cup cards, append the national team when it can be inferred.
+  if (/\bworld\s+cup\b/i.test(title) && !hasWorldCupCountry(title)) {
+    const country = inferWorldCupCountry(title);
+    if (country) {
+      title = `${title} ${country}`.replace(/\s{2,}/g, ' ').trim();
+    }
   }
 
   // Ensure year (19xx / 20xx) appears first
