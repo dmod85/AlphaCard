@@ -42,11 +42,28 @@ export default function ActiveListingsPage() {
   const [summary, setSummary] = useState<{ done: number; failed: number } | null>(null);
   const [needsAuth, setNeedsAuth] = useState(false);
   const [descriptions, setDescriptions] = useState<Record<string, string>>({});
+  const [loadingDescriptions, setLoadingDescriptions] = useState(false);
   const [sortKey, setSortKey] = useState<SortKey>('date');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
   const selectAllRef = useRef<HTMLInputElement>(null);
 
-  // fetchDescriptions removed as requested by user
+  const fetchDescriptions = useCallback(async (itemIds: string[]) => {
+    if (itemIds.length === 0) return;
+    setLoadingDescriptions(true);
+    try {
+      const res = await fetch('/api/ebay/listing-descriptions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ itemIds }),
+      });
+      const data = await res.json();
+      if (data.descriptions) setDescriptions(data.descriptions);
+    } catch {
+      // non-critical
+    } finally {
+      setLoadingDescriptions(false);
+    }
+  }, []);
 
   const fetchListings = useCallback(async () => {
     setLoading(true);
@@ -66,6 +83,7 @@ export default function ActiveListingsPage() {
       if (!res.ok) throw new Error(data.error || 'Failed to fetch listings');
       setListings(data.listings);
       setTotal(data.total);
+      fetchDescriptions(data.listings.map((l: ActiveListing) => l.itemId));
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -110,11 +128,13 @@ export default function ActiveListingsPage() {
   };
 
   const selectNeedsOptimization = () => {
-    const unoptimized = listings.filter(l => !l.isSeoFriendly).map(l => l.itemId);
+    const unoptimized = listings
+      .filter(l => !l.isSeoFriendly || descriptions[l.itemId] === '')
+      .map(l => l.itemId);
     setSelected(new Set(unoptimized));
   };
 
-  const unoptimizedCount = listings.filter(l => !l.isSeoFriendly).length;
+  const unoptimizedCount = listings.filter(l => !l.isSeoFriendly || descriptions[l.itemId] === '').length;
 
   const toggleItem = (itemId: string) => {
     setSelected(prev => {
@@ -148,11 +168,23 @@ export default function ActiveListingsPage() {
 
       const updates: Record<string, ItemState> = {};
       let done = 0, failed = 0;
+      const titleUpdates: Record<string, { title: string; isSeoFriendly: boolean }> = {};
       for (const result of (data.results || [])) {
-        if (result.success) { updates[result.itemId] = { status: 'done' }; done++; }
-        else { updates[result.itemId] = { status: 'error', error: result.error }; failed++; }
+        if (result.success) {
+          updates[result.itemId] = { status: 'done' };
+          if (result.seoTitle) titleUpdates[result.itemId] = { title: result.seoTitle, isSeoFriendly: true };
+          done++;
+        } else {
+          updates[result.itemId] = { status: 'error', error: result.error };
+          failed++;
+        }
       }
       setItemStates(prev => ({ ...prev, ...updates }));
+      if (Object.keys(titleUpdates).length > 0) {
+        setListings(prev => prev.map(l =>
+          titleUpdates[l.itemId] ? { ...l, ...titleUpdates[l.itemId] } : l
+        ));
+      }
       setSummary({ done, failed });
     } catch {
       const errorUpdates: Record<string, ItemState> = {};
@@ -345,18 +377,27 @@ export default function ActiveListingsPage() {
                       </a>
                     </td>
                     <td className="px-4 py-3 text-center">
-                      {listing.isSeoFriendly ? (
-                        <span className="px-2 py-0.5 bg-green-500/10 text-green-400 border border-green-500/20 rounded-full text-[10px] font-bold uppercase tracking-wider">
-                          Good
-                        </span>
-                      ) : (
-                        <span className="px-2 py-0.5 bg-yellow-500/10 text-yellow-400 border border-yellow-500/20 rounded-full text-[10px] font-bold uppercase tracking-wider">
-                          Fix Me
-                        </span>
-                      )}
+                      <div className="flex flex-col items-center gap-1">
+                        {listing.isSeoFriendly ? (
+                          <span className="px-2 py-0.5 bg-green-500/10 text-green-400 border border-green-500/20 rounded-full text-[10px] font-bold uppercase tracking-wider">
+                            Good
+                          </span>
+                        ) : (
+                          <span className="px-2 py-0.5 bg-yellow-500/10 text-yellow-400 border border-yellow-500/20 rounded-full text-[10px] font-bold uppercase tracking-wider">
+                            Fix Me
+                          </span>
+                        )}
+                        {loadingDescriptions
+                          ? null
+                          : descriptions[listing.itemId] === '' && (
+                              <span className="px-2 py-0.5 bg-red-500/10 text-red-400 border border-red-500/20 rounded-full text-[10px] font-bold uppercase tracking-wider">
+                                No Desc
+                              </span>
+                            )}
+                      </div>
                     </td>
                     <td className="px-4 py-3 text-center">
-                      {!state && !listing.isSeoFriendly && (
+                      {!state && (!listing.isSeoFriendly || descriptions[listing.itemId] === '') && (
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
@@ -368,7 +409,7 @@ export default function ActiveListingsPage() {
                           Optimize
                         </button>
                       )}
-                      {!state && listing.isSeoFriendly && <span className="text-gray-700 text-xs">—</span>}
+                      {!state && listing.isSeoFriendly && descriptions[listing.itemId] !== '' && <span className="text-gray-700 text-xs">—</span>}
                       {state?.status === 'rewriting' && (
                         <div className="flex items-center justify-center gap-1.5">
                           <div className="w-3 h-3 border border-gray-600 border-t-blue-400 rounded-full animate-spin" />
