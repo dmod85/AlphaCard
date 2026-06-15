@@ -12,6 +12,7 @@ interface ActiveListing {
   quantityAvailable: number;
   startTime: string;
   isSeoFriendly: boolean;
+  sku?: string;
 }
 
 type SortKey = 'title' | 'price' | 'date' | 'seo';
@@ -21,6 +22,7 @@ type ItemStatus = 'rewriting' | 'done' | 'error';
 interface ItemState {
   status: ItemStatus;
   error?: string;
+  generatedSku?: string;
 }
 
 function SortIcon({ active, dir }: { active: boolean; dir: SortDir }) {
@@ -149,8 +151,13 @@ export default function ActiveListingsPage() {
       const updates: Record<string, ItemState> = {};
       let done = 0, failed = 0;
       for (const result of (data.results || [])) {
-        if (result.success) { updates[result.itemId] = { status: 'done' }; done++; }
-        else { updates[result.itemId] = { status: 'error', error: result.error }; failed++; }
+        if (result.success) {
+          updates[result.itemId] = { status: 'done', generatedSku: result.childSku };
+          done++;
+        } else {
+          updates[result.itemId] = { status: 'error', error: result.error };
+          failed++;
+        }
       }
       setItemStates(prev => ({ ...prev, ...updates }));
       setSummary({ done, failed });
@@ -329,6 +336,16 @@ export default function ActiveListingsPage() {
                     </td>
                     <td className="px-4 py-3 max-w-xs">
                       <span className="text-gray-200 line-clamp-2 leading-snug">{listing.title}</span>
+                      {(() => {
+                        const displaySku = itemStates[listing.itemId]?.generatedSku || listing.sku;
+                        if (!displaySku) return null;
+                        const isNew = !!itemStates[listing.itemId]?.generatedSku;
+                        return (
+                          <span className={`block text-[10px] font-mono mt-0.5 ${isNew ? 'text-green-400' : 'text-gray-500'}`}>
+                            {displaySku}
+                          </span>
+                        );
+                      })()}
                     </td>
                     <td className="px-4 py-3 text-right text-green-400 font-medium tabular-nums">
                       ${listing.price.toFixed(2)}

@@ -69,6 +69,15 @@ interface ActiveListing {
   quantityAvailable: number;
   startTime: string;
   isSeoFriendly: boolean;
+  sku?: string;
+}
+
+interface ItemSpecifics {
+  year?: string;
+  set?: string;
+  cardNumber?: string;
+  parallel?: string;
+  sport?: string;
 }
 
 function parseActiveListings(xml: string): ActiveListing[] {
@@ -93,12 +102,12 @@ function parseActiveListings(xml: string): ActiveListing[] {
     const quantity = parseInt(item.match(/<Quantity>(.*?)<\/Quantity>/)?.[1] || '1');
     const quantityAvailable = parseInt(item.match(/<QuantityAvailable>(.*?)<\/QuantityAvailable>/)?.[1] || '1');
     const startTime = item.match(/<StartTime>(.*?)<\/StartTime>/)?.[1] || '';
+    const sku = item.match(/<SKU>(.*?)<\/SKU>/)?.[1] || undefined;
 
     if (itemId) {
-      // A title is SEO friendly if it starts with a year and doesn't change when optimized
       const seoTitle = buildSeoTitle(title);
       const isSeoFriendly = title === seoTitle;
-      listings.push({ itemId, title, price, url, pictureUrl, quantity, quantityAvailable, startTime, isSeoFriendly });
+      listings.push({ itemId, title, price, url, pictureUrl, quantity, quantityAvailable, startTime, isSeoFriendly, sku });
     }
   }
 
@@ -199,18 +208,80 @@ function buildDescription(title: string): string {
 </div>`;
 }
 
-function buildReviseItemRequest(itemId: string, seoTitle: string, description: string, token: string): string {
+function buildGetItemRequest(itemId: string, token: string): string {
+  const credentials = isOAuthToken(token)
+    ? ''
+    : `<RequesterCredentials><eBayAuthToken>${token}</eBayAuthToken></RequesterCredentials>`;
+  return `<?xml version="1.0" encoding="utf-8"?>
+<GetItemRequest xmlns="urn:ebay:apis:eBLBaseComponents">
+  ${credentials}
+  <ItemID>${itemId}</ItemID>
+  <IncludeItemSpecifics>true</IncludeItemSpecifics>
+  <ErrorLanguage>en_US</ErrorLanguage>
+  <WarningLevel>High</WarningLevel>
+</GetItemRequest>`;
+}
+
+function parseItemSpecifics(xml: string): ItemSpecifics {
+  const result: ItemSpecifics = {};
+  const nvRegex = /<NameValueList>([\s\S]*?)<\/NameValueList>/g;
+  let m;
+  while ((m = nvRegex.exec(xml)) !== null) {
+    const block = m[1];
+    const name = (block.match(/<Name>(.*?)<\/Name>/)?.[1] || '').toLowerCase().trim();
+    const value = decodeXml((block.match(/<Value>(.*?)<\/Value>/)?.[1] || '').trim());
+    if (name === 'set') result.set = value;
+    else if (name === 'year manufactured') result.year = value;
+    else if (name === 'card number') result.cardNumber = value;
+    else if (name === 'parallel/variety') result.parallel = value;
+    else if (name === 'sport') result.sport = value;
+  }
+  return result;
+}
+
+// Builds the Parent SKU: [YY]-[SETNAMEWITHNOSEPARATORS]
+// e.g. "2025 Panini Prizm FIFA Club World Cup" + Sport "Soccer" → "25-PANINIPRIZMFIFACLUBWORLDCUPSOCCER"
+function buildParentSku(specifics: ItemSpecifics, titleYear?: string): string | null {
+  const year = specifics.year || titleYear;
+  const set = specifics.set;
+  if (!year || !set) return null;
+
+  const twoDigit = year.slice(-2);
+  const setNoYear = set.replace(new RegExp(`^${year}\\s+`, 'i'), '').trim();
+  const setClean = setNoYear.toUpperCase().replace(/[^A-Z0-9]/g, '');
+
+  if (specifics.sport) {
+    const sportClean = specifics.sport.toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if (!setClean.includes(sportClean)) {
+      return `${twoDigit}-${setClean}${sportClean}`;
+    }
+  }
+
+  return `${twoDigit}-${setClean}`;
+}
+
+// Builds the Child SKU: [ParentSKU]-[CARDNUMBER]-[PARALLEL]
+// e.g. "25-PANINIPRIZMFIFACLUBWORLDCUPSOCCER-3-ENFUEGO"
+// eBay Custom Label max is 50 characters.
+function buildChildSku(parentSku: string, cardNumber: string, parallel: string): string {
+  const num = cardNumber.replace(/^#/, '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+  const par = parallel.trim().toUpperCase().replace(/[^A-Z0-9]/g, '') || 'BASE';
+  return `${parentSku}-${num}-${par}`.slice(0, 50);
+}
+
+function buildReviseItemRequest(itemId: string, seoTitle: string, description: string, token: string, sku?: string): string {
   const credentials = isOAuthToken(token)
     ? ''
     : `<RequesterCredentials><eBayAuthToken>${token}</eBayAuthToken></RequesterCredentials>`;
 
+  const skuElement = sku ? `\n    <SKU>${escapeXml(sku)}</SKU>` : '';
   return `<?xml version="1.0" encoding="utf-8"?>
 <ReviseItemRequest xmlns="urn:ebay:apis:eBLBaseComponents">
   ${credentials}
   <Item>
     <ItemID>${itemId}</ItemID>
     <Title>${escapeXml(seoTitle)}</Title>
-    <Description><![CDATA[${description}]]></Description>
+    <Description><![CDATA[${description}]]></Description>${skuElement}
   </Item>
   <ErrorLanguage>en_US</ErrorLanguage>
   <WarningLevel>High</WarningLevel>
@@ -263,7 +334,7 @@ export async function GET() {
   }
 }
 
-// POST — rewrite descriptions for selected items
+// POST — rewrite descriptions for selected items and assign Child SKU as Custom Label
 export async function POST(request: NextRequest) {
   try {
     const { items } = await request.json() as { items: Array<{ itemId: string; title: string }> };
@@ -273,18 +344,48 @@ export async function POST(request: NextRequest) {
     }
 
     const token = await getValidToken();
-    const results: Array<{ itemId: string; success: boolean; seoTitle?: string; error?: string }> = [];
+
+    // Fetch item specifics for all items in parallel to build SKUs
+    const specificsMap = new Map<string, ItemSpecifics>();
+    await Promise.all(
+      items.map(async (item) => {
+        try {
+          const xml = buildGetItemRequest(item.itemId, token);
+          const response = await callEbayApi(xml, 'GetItem', token);
+          specificsMap.set(item.itemId, parseItemSpecifics(response));
+        } catch {
+          specificsMap.set(item.itemId, {});
+        }
+      })
+    );
+
+    const results: Array<{
+      itemId: string;
+      success: boolean;
+      seoTitle?: string;
+      parentSku?: string;
+      childSku?: string;
+      error?: string;
+    }> = [];
 
     for (const item of items) {
       try {
         const seoTitle = buildSeoTitle(item.title);
         const description = buildDescription(item.title);
-        const xml = buildReviseItemRequest(item.itemId, seoTitle, description, token);
+
+        const titleYear = item.title.match(/\b((19|20)\d{2})\b/)?.[1];
+        const specifics = specificsMap.get(item.itemId) || {};
+        const parentSku = buildParentSku(specifics, titleYear) ?? undefined;
+        const childSku = parentSku && specifics.cardNumber != null
+          ? buildChildSku(parentSku, specifics.cardNumber, specifics.parallel || 'BASE')
+          : undefined;
+
+        const xml = buildReviseItemRequest(item.itemId, seoTitle, description, token, childSku);
         const response = await callEbayApi(xml, 'ReviseItem', token);
 
         const ack = response.match(/<Ack>(.*?)<\/Ack>/)?.[1];
         if (ack === 'Success' || ack === 'Warning') {
-          results.push({ itemId: item.itemId, success: true, seoTitle });
+          results.push({ itemId: item.itemId, success: true, seoTitle, parentSku, childSku });
         } else {
           const error = response.match(/<LongMessage>(.*?)<\/LongMessage>/)?.[1]
             || response.match(/<ShortMessage>(.*?)<\/ShortMessage>/)?.[1]
