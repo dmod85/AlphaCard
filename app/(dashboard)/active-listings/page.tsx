@@ -17,6 +17,7 @@ interface ActiveListing {
 
 type SortKey = 'title' | 'price' | 'date' | 'seo';
 type SortDir = 'asc' | 'desc';
+type FilterMode = 'all' | 'dupes';
 type ItemStatus = 'rewriting' | 'done' | 'error';
 
 interface ItemState {
@@ -46,6 +47,7 @@ export default function ActiveListingsPage() {
   const [descriptions, setDescriptions] = useState<Record<string, string>>({});
   const [sortKey, setSortKey] = useState<SortKey>('date');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
+  const [filterMode, setFilterMode] = useState<FilterMode>('all');
   const selectAllRef = useRef<HTMLInputElement>(null);
 
   // fetchDescriptions removed as requested by user
@@ -95,8 +97,27 @@ export default function ActiveListingsPage() {
     else { setSortKey(key); setSortDir('asc'); }
   };
 
+  // Detect duplicate titles (case-insensitive, punctuation-stripped)
+  const duplicateItemIds = useMemo(() => {
+    const normalizeTitle = (t: string) =>
+      t.toLowerCase().replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ').trim();
+    const seen = new Map<string, string[]>();
+    for (const l of listings) {
+      const key = normalizeTitle(l.title);
+      seen.set(key, [...(seen.get(key) ?? []), l.itemId]);
+    }
+    const dupeIds = new Set<string>();
+    for (const ids of seen.values()) {
+      if (ids.length > 1) ids.forEach(id => dupeIds.add(id));
+    }
+    return dupeIds;
+  }, [listings]);
+
   const sortedListings = useMemo(() => {
-    return [...listings].sort((a, b) => {
+    const base = filterMode === 'dupes'
+      ? listings.filter(l => duplicateItemIds.has(l.itemId))
+      : listings;
+    return [...base].sort((a, b) => {
       let cmp = 0;
       if (sortKey === 'title') cmp = a.title.localeCompare(b.title);
       else if (sortKey === 'price') cmp = a.price - b.price;
@@ -104,7 +125,7 @@ export default function ActiveListingsPage() {
       else if (sortKey === 'seo') cmp = (a.isSeoFriendly ? 1 : 0) - (b.isSeoFriendly ? 0 : 1);
       return sortDir === 'asc' ? cmp : -cmp;
     });
-  }, [listings, sortKey, sortDir]);
+  }, [listings, sortKey, sortDir, filterMode, duplicateItemIds]);
 
   const toggleAll = () => {
     if (selected.size === listings.length) setSelected(new Set());
@@ -231,6 +252,33 @@ export default function ActiveListingsPage() {
         </div>
       )}
 
+      {/* Duplicate listings banner */}
+      {!loading && duplicateItemIds.size > 0 && (
+        <div className="mb-4 p-3 bg-amber-500/10 border border-amber-500/30 rounded-lg flex items-center justify-between">
+          <div className="flex items-center gap-2.5">
+            <span className="text-amber-400 text-base leading-none">⚠</span>
+            <div>
+              <span className="text-amber-300 font-semibold text-sm">
+                {duplicateItemIds.size} duplicate listing{duplicateItemIds.size !== 1 ? 's' : ''} detected
+              </span>
+              <span className="text-amber-400/60 text-xs ml-2">
+                — titles that appear more than once
+              </span>
+            </div>
+          </div>
+          <button
+            onClick={() => setFilterMode(m => m === 'dupes' ? 'all' : 'dupes')}
+            className={`px-3 py-1 text-xs font-semibold rounded-lg border transition ${
+              filterMode === 'dupes'
+                ? 'bg-amber-500/20 border-amber-500/50 text-amber-300 hover:bg-amber-500/30'
+                : 'bg-gray-800 border-amber-500/30 text-amber-400 hover:bg-amber-500/10'
+            }`}
+          >
+            {filterMode === 'dupes' ? 'Show all' : 'Show duplicates only'}
+          </button>
+        </div>
+      )}
+
       {/* Summary banner */}
       {summary && (
         <div className="mb-4 p-3 bg-gray-800 border border-gray-700 rounded-lg flex items-center gap-4 text-sm">
@@ -309,6 +357,7 @@ export default function ActiveListingsPage() {
                 const state = itemStates[listing.itemId];
                 const isSelected = selected.has(listing.itemId);
                 const desc = descriptions[listing.itemId];
+                const isDuplicate = duplicateItemIds.has(listing.itemId);
                 const listedDate = listing.startTime
                   ? new Date(listing.startTime).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
                   : '—';
@@ -316,7 +365,10 @@ export default function ActiveListingsPage() {
                 return (
                   <tr
                     key={listing.itemId}
-                    className={`border-b border-gray-700/40 hover:bg-gray-700/30 transition cursor-pointer ${isSelected ? 'bg-green-500/5' : ''}`}
+                    className={`border-b border-gray-700/40 hover:bg-gray-700/30 transition cursor-pointer ${
+                      isSelected ? 'bg-green-500/5' : isDuplicate ? 'bg-amber-500/5' : ''
+                    }`}
+                    style={isDuplicate ? { boxShadow: 'inset 3px 0 0 rgba(245,158,11,0.6)' } : undefined}
                     onClick={() => toggleItem(listing.itemId)}
                   >
                     <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
@@ -335,7 +387,17 @@ export default function ActiveListingsPage() {
                       )}
                     </td>
                     <td className="px-4 py-3 max-w-xs">
-                      <span className="text-gray-200 line-clamp-2 leading-snug">{listing.title}</span>
+                      <div className="flex items-start gap-2">
+                        <span className="text-gray-200 line-clamp-2 leading-snug flex-1">{listing.title}</span>
+                        {isDuplicate && (
+                          <span
+                            title="This title appears in multiple listings"
+                            className="shrink-0 mt-0.5 px-1.5 py-0.5 bg-amber-500/15 text-amber-400 border border-amber-500/30 rounded text-[9px] font-bold uppercase tracking-wider cursor-default"
+                          >
+                            Dupe
+                          </span>
+                        )}
+                      </div>
                       {(() => {
                         const displaySku = itemStates[listing.itemId]?.generatedSku || listing.sku;
                         if (!displaySku) return null;
