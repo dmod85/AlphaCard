@@ -37,8 +37,6 @@ async function callEbayApi(xmlBody: string, callName: string, token: string): Pr
 }
 
 function buildGetMyeBaySellingRequest(page: number, token: string): string {
-  // Only include RequesterCredentials for legacy Auth'n'Auth tokens.
-  // OAuth2 tokens are sent via X-EBAY-API-IAF-TOKEN header instead.
   const credentials = isOAuthToken(token)
     ? ''
     : `<RequesterCredentials><eBayAuthToken>${token}</eBayAuthToken></RequesterCredentials>`;
@@ -74,10 +72,12 @@ interface ActiveListing {
 
 interface ItemSpecifics {
   year?: string;
+  brand?: string;
   set?: string;
   cardNumber?: string;
   parallel?: string;
   sport?: string;
+  player?: string;
 }
 
 function parseActiveListings(xml: string): ActiveListing[] {
@@ -97,7 +97,7 @@ function parseActiveListings(xml: string): ActiveListing[] {
     const title = decodeXml(item.match(/<Title>(.*?)<\/Title>/)?.[1] || '');
     const price = parseFloat(item.match(/<CurrentPrice[^>]*>(.*?)<\/CurrentPrice>/)?.[1] || '0');
     const url = item.match(/<ViewItemURL>(.*?)<\/ViewItemURL>/)?.[1] || '';
-    const pictureUrl = item.match(/<GalleryURL>(.*?)<\/GalleryURL>/)?.[1] 
+    const pictureUrl = item.match(/<GalleryURL>(.*?)<\/GalleryURL>/)?.[1]
       || item.match(/<PictureURL>(.*?)<\/PictureURL>/)?.[1];
     const quantity = parseInt(item.match(/<Quantity>(.*?)<\/Quantity>/)?.[1] || '1');
     const quantityAvailable = parseInt(item.match(/<QuantityAvailable>(.*?)<\/QuantityAvailable>/)?.[1] || '1');
@@ -105,7 +105,8 @@ function parseActiveListings(xml: string): ActiveListing[] {
     const sku = item.match(/<SKU>(.*?)<\/SKU>/)?.[1] || undefined;
 
     if (itemId) {
-      const seoTitle = buildSeoTitle(title);
+      // Pass an empty object to buildSeoTitle just for the initial list check
+      const seoTitle = buildSeoTitle(title, {});
       const isSeoFriendly = title === seoTitle;
       listings.push({ itemId, title, price, url, pictureUrl, quantity, quantityAvailable, startTime, isSeoFriendly, sku });
     }
@@ -144,54 +145,81 @@ function inferWorldCupCountry(title: string): string | null {
   return null;
 }
 
-// Optimizes a listing title for eBay SEO — year first, standardized abbreviations,
-// fluff removed, capped at eBay's 80-character limit.
-function buildSeoTitle(originalTitle: string): string {
+function extractBrandFromTitle(title: string): string | undefined {
+  const brands = ['Topps', 'Panini', 'Upper Deck', 'Bowman', 'Leaf', 'Fleer', 'Donruss', 'Score', 'O-Pee-Chee', 'Futera'];
+  for (const b of brands) {
+    if (new RegExp(`\\b${b}\\b`, 'i').test(title)) {
+      return b;
+    }
+  }
+  return undefined;
+}
+
+// Enforces Visual Uniformity (Title Case) and strict SEO ordering
+function buildSeoTitle(originalTitle: string, specifics: ItemSpecifics): string {
   const MAX_LENGTH = 80;
 
-  const FLUFF = /\b(WOW|L@@K|LOOK!*|AMAZING|GORGEOUS|BEAUTIFUL|MUST\s*SEE|FREE\s*SHIP(?:PING)?|FAST\s*SHIP(?:PING)?|HOT|FIRE)\b/gi;
+  // 1. Remove spammy fluff
+  const FLUFF = /\b(WOW|L@@K|LOOK!*|AMAZING|GORGEOUS|BEAUTIFUL|MUST\s*SEE|FREE\s*SHIP(?:PING)?|FAST\s*SHIP(?:PING)?|HOT|FIRE|INVEST|GEM|MINT)\b/gi;
   let title = originalTitle.replace(FLUFF, '').replace(/\s{2,}/g, ' ').trim();
 
-  // Standardize common trading-card abbreviations
+  // 2. Convert to Title Case to visually normalize EVERYTHING
+  title = title.toLowerCase().split(/\s+/).map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
+
+  // 3. Standardize common trading-card abbreviations (Force Upper Case)
   const abbrevMap: [RegExp, string][] = [
     [/\bpsa\b/gi, 'PSA'],
     [/\bbgs\b/gi, 'BGS'],
     [/\bsgc\b/gi, 'SGC'],
+    [/\bcgc\b/gi, 'CGC'],
     [/\b(rookie\s*card|rookie)\b/gi, 'RC'],
-    [/\bauto(?:graph)?\b/gi, 'AUTO'],
+    [/\bauto(?:graph)?(?:ed)?\b/gi, 'Auto'],
     [/\brefractor\b/gi, 'Refractor'],
     [/\bholographic\b/gi, 'Holo'],
     [/\bprisms?\b/gi, 'Prizm'],
     [/\bparallel\b/gi, 'Parallel'],
     [/\bshort\s*print\b/gi, 'SP'],
     [/\bsuper\s*short\s*print\b/gi, 'SSP'],
-    [/\bpatch\b/gi, 'Patch'],
-    [/\bnumbered\b/gi, 'Numbered'],
+    [/\bfifa\b/gi, 'FIFA'],
+    [/\bmlb\b/gi, 'MLB'],
+    [/\bnba\b/gi, 'NBA'],
+    [/\bnfl\b/gi, 'NFL'],
+    [/\bnhl\b/gi, 'NHL'],
+    [/\bufc\b/gi, 'UFC'],
+    [/\bwwe\b/gi, 'WWE'],
   ];
   for (const [pattern, replacement] of abbrevMap) {
     title = title.replace(pattern, replacement);
   }
 
-  // Keep FIFA in all caps and normalize World Cup casing.
-  title = title.replace(/\bfifa\b/gi, 'FIFA');
-  title = title.replace(/\bworld\s+cup\b/gi, 'World Cup');
+  title = title.replace(/\bWorld\s+Cup\b/gi, 'World Cup');
 
-  // For World Cup cards, append the national team when it can be inferred.
-  if (/\bworld\s+cup\b/i.test(title) && !hasWorldCupCountry(title)) {
+  if (/\bWorld\s+Cup\b/i.test(title) && !hasWorldCupCountry(title)) {
     const country = inferWorldCupCountry(title);
     if (country) {
-      title = `${title} ${country}`.replace(/\s{2,}/g, ' ').trim();
+      title = `${title} ${country}`;
     }
   }
 
-  // Ensure year (19xx / 20xx) appears first
-  const yearMatch = title.match(/\b(19|20)\d{2}\b/);
-  if (yearMatch) {
-    const year = yearMatch[0];
-    title = `${year} ${title.replace(year, '').replace(/^\s*[-–—]\s*/, '').trim()}`.replace(/\s{2,}/g, ' ').trim();
+  // 4. Force Year to front
+  const yearStr = specifics?.year?.match(/\b(19|20)\d{2}\b/)?.[0] || title.match(/\b(19|20)\d{2}\b/)?.[0];
+  if (yearStr) {
+    title = title.replace(new RegExp(`\\b${yearStr}\\b`, 'g'), '').replace(/^\s*[-–—]\s*/, '').trim();
+    title = `${yearStr} ${title}`;
   }
 
-  // Truncate to eBay's 80-character hard limit without splitting words
+  // 5. Ensure Card Number is at the end if we have it in item specifics and it's missing
+  if (specifics?.cardNumber) {
+    const cardNum = specifics.cardNumber.trim().toUpperCase();
+    const numPattern = new RegExp(`\\b#?\\s*${cardNum.replace(/[^A-Z0-9]/g, '')}\\b`, 'i');
+    if (!numPattern.test(title)) {
+      title = `${title} #${cardNum}`;
+    }
+  }
+
+  title = title.replace(/\s{2,}/g, ' ').trim();
+
+  // 6. Truncate to eBay's 80-character hard limit without splitting words
   if (title.length > MAX_LENGTH) {
     const cut = title.lastIndexOf(' ', MAX_LENGTH);
     title = title.substring(0, cut > MAX_LENGTH - 15 ? cut : MAX_LENGTH).trim();
@@ -230,43 +258,52 @@ function parseItemSpecifics(xml: string): ItemSpecifics {
     const block = m[1];
     const name = (block.match(/<Name>(.*?)<\/Name>/)?.[1] || '').toLowerCase().trim();
     const value = decodeXml((block.match(/<Value>(.*?)<\/Value>/)?.[1] || '').trim());
+
     if (name === 'set') result.set = value;
-    else if (name === 'year manufactured') result.year = value;
+    else if (name === 'year manufactured' || name === 'season') result.year = value;
     else if (name === 'card number') result.cardNumber = value;
     else if (name === 'parallel/variety') result.parallel = value;
     else if (name === 'sport') result.sport = value;
+    else if (name === 'manufacturer' || name === 'brand') result.brand = value;
+    else if (name === 'player/athlete' || name === 'player') result.player = value;
   }
   return result;
 }
 
-// Builds the Parent SKU: [YY]-[SETNAMEWITHNOSEPARATORS]
-// e.g. "2025 Panini Prizm FIFA Club World Cup" + Sport "Soccer" → "25-PANINIPRIZMFIFACLUBWORLDCUPSOCCER"
-function buildParentSku(specifics: ItemSpecifics, titleYear?: string): string | null {
+// Format: YY-BRAND-SET_NAME-SPORT (e.g. 26-TOPPS-SERIES_1-BASEBALL)
+function buildParentSku(specifics: ItemSpecifics, titleYear?: string, titleBrand?: string): string | null {
   const year = specifics.year || titleYear;
-  const set = specifics.set;
-  if (!year || !set) return null;
+  const brand = specifics.brand || titleBrand || 'UNKNOWN';
+  const set = specifics.set || 'UNKNOWN';
+  const sport = specifics.sport || 'UNKNOWN';
+
+  if (!year) return null;
 
   const twoDigit = year.slice(-2);
-  const setNoYear = set.replace(new RegExp(`^${year}\\s+`, 'i'), '').trim();
-  const setClean = setNoYear.toUpperCase().replace(/[^A-Z0-9]/g, '');
 
-  if (specifics.sport) {
-    const sportClean = specifics.sport.toUpperCase().replace(/[^A-Z0-9]/g, '');
-    if (!setClean.includes(sportClean)) {
-      return `${twoDigit}-${setClean}${sportClean}`;
-    }
-  }
+  const cleanBrand = brand.toUpperCase().replace(/\s+/g, '_').replace(/[^A-Z0-9_]/g, '');
 
-  return `${twoDigit}-${setClean}`;
+  let cleanSet = set.replace(new RegExp(`^${year}\\s*`, 'i'), '').trim();
+  cleanSet = cleanSet.replace(new RegExp(`^${brand}\\s*`, 'i'), '').trim();
+  cleanSet = cleanSet.toUpperCase().replace(/\s+/g, '_').replace(/[^A-Z0-9_]/g, '');
+
+  const cleanSport = sport.toUpperCase().replace(/\s+/g, '_').replace(/[^A-Z0-9_]/g, '');
+
+  return `${twoDigit}-${cleanBrand}-${cleanSet}-${cleanSport}`;
 }
 
-// Builds the Child SKU: [ParentSKU]-[CARDNUMBER]-[PARALLEL]
-// e.g. "25-PANINIPRIZMFIFACLUBWORLDCUPSOCCER-3-ENFUEGO"
-// eBay Custom Label max is 50 characters.
-function buildChildSku(parentSku: string, cardNumber: string, parallel: string): string {
+// Format: [ParentSKU]-[CARDNUMBER]
+function buildChildSku(parentSku: string, cardNumber: string, parallel?: string): string {
   const num = cardNumber.replace(/^#/, '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
-  const par = parallel.trim().toUpperCase().replace(/[^A-Z0-9]/g, '') || 'BASE';
-  return `${parentSku}-${num}-${par}`.slice(0, 50);
+  let sku = `${parentSku}-${num}`;
+
+  // Only append parallel if it's a distinct variation to avoid colliding with base card SKU
+  if (parallel && parallel.toUpperCase() !== 'BASE') {
+    const par = parallel.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+    sku = `${sku}-${par}`;
+  }
+
+  return sku.slice(0, 50); // eBay limit safety
 }
 
 function buildReviseItemRequest(itemId: string, seoTitle: string, description: string, token: string, sku?: string): string {
@@ -293,7 +330,6 @@ export async function GET() {
   try {
     const token = await getValidToken();
 
-    // Fetch page 1 to determine total page count
     const firstXml = buildGetMyeBaySellingRequest(1, token);
     const firstResponse = await callEbayApi(firstXml, 'GetMyeBaySelling', token);
 
@@ -314,7 +350,6 @@ export async function GET() {
     const totalPages = parseInt(firstResponse.match(/<TotalNumberOfPages>(.*?)<\/TotalNumberOfPages>/)?.[1] || '1');
     const allListings = parseActiveListings(firstResponse);
 
-    // Fetch remaining pages in parallel
     if (totalPages > 1) {
       const pageNums = Array.from({ length: totalPages - 1 }, (_, i) => i + 2);
       const pageResponses = await Promise.all(
@@ -334,7 +369,7 @@ export async function GET() {
   }
 }
 
-// POST — rewrite descriptions for selected items and assign Child SKU as Custom Label
+// POST — rewrite titles/descriptions and assign Child SKU as Custom Label
 export async function POST(request: NextRequest) {
   try {
     const { items } = await request.json() as { items: Array<{ itemId: string; title: string }> };
@@ -345,7 +380,6 @@ export async function POST(request: NextRequest) {
 
     const token = await getValidToken();
 
-    // Fetch item specifics for all items in parallel to build SKUs
     const specificsMap = new Map<string, ItemSpecifics>();
     await Promise.all(
       items.map(async (item) => {
@@ -370,14 +404,18 @@ export async function POST(request: NextRequest) {
 
     for (const item of items) {
       try {
-        const seoTitle = buildSeoTitle(item.title);
+        const specifics = specificsMap.get(item.itemId) || {};
+
+        // Pass item specifics down to structurally govern the Title Convention
+        const seoTitle = buildSeoTitle(item.title, specifics);
         const description = buildDescription(item.title);
 
         const titleYear = item.title.match(/\b((19|20)\d{2})\b/)?.[1];
-        const specifics = specificsMap.get(item.itemId) || {};
-        const parentSku = buildParentSku(specifics, titleYear) ?? undefined;
+        const titleBrand = extractBrandFromTitle(item.title);
+
+        const parentSku = buildParentSku(specifics, titleYear, titleBrand) ?? undefined;
         const childSku = parentSku && specifics.cardNumber != null
-          ? buildChildSku(parentSku, specifics.cardNumber, specifics.parallel || 'BASE')
+          ? buildChildSku(parentSku, specifics.cardNumber, specifics.parallel)
           : undefined;
 
         const xml = buildReviseItemRequest(item.itemId, seoTitle, description, token, childSku);
