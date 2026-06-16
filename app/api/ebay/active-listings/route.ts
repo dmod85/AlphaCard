@@ -166,13 +166,14 @@ function buildSeoTitle(originalTitle: string, specifics: ItemSpecifics): string 
   // 2. Convert to Title Case to visually normalize EVERYTHING
   title = title.toLowerCase().split(/\s+/).map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
 
-  // 3. Standardize common trading-card abbreviations (Force Upper Case)
+  // 3. Standardize common trading-card abbreviations (Force Upper Case & Remove Parens)
   const abbrevMap: [RegExp, string][] = [
     [/\bpsa\b/gi, 'PSA'],
     [/\bbgs\b/gi, 'BGS'],
     [/\bsgc\b/gi, 'SGC'],
     [/\bcgc\b/gi, 'CGC'],
-    [/\b(rookie\s*card|rookie)\b/gi, 'RC'],
+    // This specifically targets (rc), rc, (RC), (Rookie), etc., and strips parentheses
+    [/\(?\b(?:rookie\s*card|rookie|rc)\b\)?/gi, 'RC'],
     [/\bauto(?:graph)?(?:ed)?\b/gi, 'Auto'],
     [/\brefractor\b/gi, 'Refractor'],
     [/\bholographic\b/gi, 'Holo'],
@@ -201,14 +202,17 @@ function buildSeoTitle(originalTitle: string, specifics: ItemSpecifics): string 
     }
   }
 
-  // 4. Force Year to front
+  // 4. Force uppercase on any token that looks like a card number (e.g., #bcp-95 -> #BCP-95)
+  title = title.split(' ').map(word => word.startsWith('#') ? word.toUpperCase() : word).join(' ');
+
+  // 5. Force Year to front
   const yearStr = specifics?.year?.match(/\b(19|20)\d{2}\b/)?.[0] || title.match(/\b(19|20)\d{2}\b/)?.[0];
   if (yearStr) {
     title = title.replace(new RegExp(`\\b${yearStr}\\b`, 'g'), '').replace(/^\s*[-–—]\s*/, '').trim();
     title = `${yearStr} ${title}`;
   }
 
-  // 5. Ensure Card Number is at the end if we have it in item specifics and it's missing
+  // 6. Ensure Card Number is at the end if we have it in item specifics and it's missing
   if (specifics?.cardNumber) {
     const cardNum = specifics.cardNumber.trim().toUpperCase();
     const numPattern = new RegExp(`\\b#?\\s*${cardNum.replace(/[^A-Z0-9]/g, '')}\\b`, 'i');
@@ -219,7 +223,7 @@ function buildSeoTitle(originalTitle: string, specifics: ItemSpecifics): string 
 
   title = title.replace(/\s{2,}/g, ' ').trim();
 
-  // 6. Truncate to eBay's 80-character hard limit without splitting words
+  // 7. Truncate to eBay's 80-character hard limit without splitting words
   if (title.length > MAX_LENGTH) {
     const cut = title.lastIndexOf(' ', MAX_LENGTH);
     title = title.substring(0, cut > MAX_LENGTH - 15 ? cut : MAX_LENGTH).trim();
