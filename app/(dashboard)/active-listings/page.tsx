@@ -107,9 +107,9 @@ export default function ActiveListingsPage() {
       seen.set(key, [...(seen.get(key) ?? []), l.itemId]);
     }
     const dupeIds = new Set<string>();
-    for (const ids of seen.values()) {
+    Array.from(seen.values()).forEach(ids => {
       if (ids.length > 1) ids.forEach(id => dupeIds.add(id));
-    }
+    });
     return dupeIds;
   }, [listings]);
 
