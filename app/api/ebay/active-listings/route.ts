@@ -172,8 +172,10 @@ function buildSeoTitle(originalTitle: string, specifics: ItemSpecifics): string 
     [/\bbgs\b/gi, 'BGS'],
     [/\bsgc\b/gi, 'SGC'],
     [/\bcgc\b/gi, 'CGC'],
-    // This specifically targets (rc), rc, (RC), (Rookie), etc., and strips parentheses
-    [/\(?\b(?:rookie\s*card|rookie|rc)\b\)?/gi, 'RC'],
+    // Step 1: Replace two-word form "rookie card" (with optional parens) first
+    [/\(?\brookie\s+card\b\)?/gi, 'RC'],
+    // Step 2: Replace remaining standalone "rookie" or "rc" (with optional parens)
+    [/\(?\b(?:rookie|rc)\b\)?/gi, 'RC'],
     [/\bauto(?:graph)?(?:ed)?\b/gi, 'Auto'],
     [/\brefractor\b/gi, 'Refractor'],
     [/\bholographic\b/gi, 'Holo'],
@@ -188,10 +190,20 @@ function buildSeoTitle(originalTitle: string, specifics: ItemSpecifics): string 
     [/\bnhl\b/gi, 'NHL'],
     [/\bufc\b/gi, 'UFC'],
     [/\bwwe\b/gi, 'WWE'],
+    [/\buefa\b/gi, 'UEFA'],
+    [/\bwnba\b/gi, 'WNBA'],
+    [/\bnwsl\b/gi, 'NWSL'],
+    [/\busfl\b/gi, 'USFL'],
+    [/\bxfl\b/gi, 'XFL'],
+    [/\bmls\b/gi, 'MLS'],
   ];
   for (const [pattern, replacement] of abbrevMap) {
     title = title.replace(pattern, replacement);
   }
+
+  // Deduplicate consecutive RC tokens (e.g. "RC RC" -> "RC") that can arise
+  // when a title contains both "Rookie Card" and a standalone "RC"
+  title = title.replace(/\bRC(?:\s+RC)+\b/g, 'RC');
 
   title = title.replace(/\bWorld\s+Cup\b/gi, 'World Cup');
 
