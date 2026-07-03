@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-// eBay Finding API — searches active (Buy It Now) listings for price comparison.
+// eBay Finding API - searches active (Buy It Now) listings for price comparison.
 // Docs: https://developer.ebay.com/devzone/finding/CallRef/findItemsByKeywords.html
 
 interface ComparableListing {
