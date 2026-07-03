@@ -15,6 +15,26 @@ interface ActiveListing {
   sku?: string;
 }
 
+interface ComparableListing {
+  itemId: string;
+  title: string;
+  price: number;
+  url: string;
+  pictureUrl?: string;
+  condition?: string;
+}
+
+interface ComparableData {
+  comparables: ComparableListing[];
+  minPrice: number | null;
+  maxPrice: number | null;
+  avgPrice: number | null;
+  medianPrice: number | null;
+  count: number;
+}
+
+type ComparableState = { status: 'loading' } | { status: 'error'; message: string } | { status: 'done'; data: ComparableData };
+
 type SortKey = 'title' | 'price' | 'date' | 'seo';
 type SortDir = 'asc' | 'desc';
 type FilterMode = 'all' | 'dupes';
@@ -49,8 +69,36 @@ export default function ActiveListingsPage() {
   const [sortDir, setSortDir] = useState<SortDir>('desc');
   const [filterMode, setFilterMode] = useState<FilterMode>('all');
   const selectAllRef = useRef<HTMLInputElement>(null);
+  const [comparables, setComparables] = useState<Record<string, ComparableState>>({});
+  const [openComparable, setOpenComparable] = useState<string | null>(null);
 
   // fetchDescriptions removed as requested by user
+
+  const fetchComparablePrice = useCallback(async (itemId: string, title: string) => {
+    setComparables(prev => ({ ...prev, [itemId]: { status: 'loading' } }));
+    try {
+      const res = await fetch(
+        `/api/ebay/comparable-prices?${new URLSearchParams({ title, itemId })}`
+      );
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed');
+      setComparables(prev => ({ ...prev, [itemId]: { status: 'done', data } }));
+    } catch (err: any) {
+      setComparables(prev => ({ ...prev, [itemId]: { status: 'error', message: err.message } }));
+    }
+  }, []);
+
+  const toggleComparableView = useCallback((itemId: string, title: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (openComparable === itemId) {
+      setOpenComparable(null);
+      return;
+    }
+    setOpenComparable(itemId);
+    if (!comparables[itemId] || comparables[itemId].status === 'error') {
+      fetchComparablePrice(itemId, title);
+    }
+  }, [openComparable, comparables, fetchComparablePrice]);
 
   const fetchListings = useCallback(async () => {
     setLoading(true);
@@ -350,6 +398,7 @@ export default function ActiveListingsPage() {
                   SEO <SortIcon active={sortKey === 'seo'} dir={sortDir} />
                 </th>
                 <th className="px-4 py-3 text-center text-gray-400 font-medium w-24">Status</th>
+                <th className="px-4 py-3 text-center text-gray-400 font-medium w-28">Market</th>
               </tr>
             </thead>
             <tbody>
@@ -456,12 +505,153 @@ export default function ActiveListingsPage() {
                       )}
                       {state?.status === 'done' && (
                         <span className="px-2 py-0.5 bg-green-500/10 text-green-400 rounded-full text-[10px] font-bold uppercase">Updated</span>
-                      ) /* ... existing logic ... */ }
+                      )}
                       {state?.status === 'error' && (
                         <span className="px-2 py-0.5 bg-red-500/10 text-red-400 rounded-full text-[10px] font-bold uppercase cursor-help" title={state.error}>
                           Error
                         </span>
                       )}
+                    </td>
+                    {/* Market comparison cell */}
+                    <td className="px-4 py-3 text-center relative" onClick={e => e.stopPropagation()}>
+                      {(() => {
+                        const cmp = comparables[listing.itemId];
+                        const isOpen = openComparable === listing.itemId;
+
+                        // Derive badge color when data is available
+                        let badge: React.ReactNode = null;
+                        if (cmp?.status === 'done' && cmp.data.medianPrice !== null) {
+                          const diff = listing.price - cmp.data.medianPrice;
+                          const pct = (diff / cmp.data.medianPrice) * 100;
+                          const absPct = Math.abs(pct).toFixed(0);
+                          if (pct > 5) {
+                            badge = <span className="ml-1 text-red-400 text-[9px] font-bold">▲{absPct}%</span>;
+                          } else if (pct < -5) {
+                            badge = <span className="ml-1 text-green-400 text-[9px] font-bold">▼{absPct}%</span>;
+                          } else {
+                            badge = <span className="ml-1 text-gray-400 text-[9px]">≈mkt</span>;
+                          }
+                        }
+
+                        return (
+                          <>
+                            <button
+                              onClick={(e) => toggleComparableView(listing.itemId, listing.title, e)}
+                              className={`inline-flex items-center gap-0.5 px-2 py-1 rounded text-[10px] font-bold uppercase transition ${
+                                isOpen
+                                  ? 'bg-blue-600 text-white'
+                                  : 'bg-gray-700 hover:bg-gray-600 text-gray-300'
+                              }`}
+                            >
+                              {cmp?.status === 'loading' ? (
+                                <span className="flex items-center gap-1">
+                                  <span className="w-2.5 h-2.5 border border-gray-500 border-t-blue-400 rounded-full animate-spin" />
+                                  …
+                                </span>
+                              ) : (
+                                <>Compare{badge}</>
+                              )}
+                            </button>
+
+                            {/* Popover */}
+                            {isOpen && cmp?.status === 'done' && (
+                              <div
+                                className="absolute right-0 top-full mt-1 z-50 w-80 bg-gray-900 border border-gray-700 rounded-xl shadow-2xl p-3 text-left"
+                                onClick={e => e.stopPropagation()}
+                              >
+                                <div className="flex items-center justify-between mb-2">
+                                  <span className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold">Similar Active Listings ({cmp.data.count})</span>
+                                  <button onClick={() => setOpenComparable(null)} className="text-gray-600 hover:text-gray-300 text-xs">✕</button>
+                                </div>
+
+                                {/* Stats row */}
+                                {cmp.data.count > 0 ? (
+                                  <>
+                                    <div className="grid grid-cols-3 gap-2 mb-3">
+                                      {[
+                                        { label: 'Min', val: cmp.data.minPrice },
+                                        { label: 'Median', val: cmp.data.medianPrice },
+                                        { label: 'Avg', val: cmp.data.avgPrice },
+                                      ].map(({ label, val }) => {
+                                        const myPrice = listing.price;
+                                        const diff = val !== null ? myPrice - val : null;
+                                        const color = diff === null ? 'text-gray-400'
+                                          : diff > 0.005 ? 'text-red-400'
+                                          : diff < -0.005 ? 'text-green-400'
+                                          : 'text-gray-300';
+                                        return (
+                                          <div key={label} className="bg-gray-800 rounded-lg p-2 text-center">
+                                            <div className="text-[9px] text-gray-500 uppercase tracking-wider mb-0.5">{label}</div>
+                                            <div className={`text-sm font-bold tabular-nums ${color}`}>
+                                              {val !== null ? `$${val.toFixed(2)}` : '—'}
+                                            </div>
+                                            {diff !== null && (
+                                              <div className={`text-[9px] mt-0.5 ${color}`}>
+                                                {diff > 0 ? `+$${diff.toFixed(2)} you` : diff < 0 ? `-$${Math.abs(diff).toFixed(2)} you` : 'at market'}
+                                              </div>
+                                            )}
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+
+                                    {/* Your price indicator */}
+                                    {cmp.data.medianPrice !== null && (() => {
+                                      const pct = ((listing.price - cmp.data.medianPrice) / cmp.data.medianPrice) * 100;
+                                      const isHigh = pct > 5;
+                                      const isLow = pct < -5;
+                                      return (
+                                        <div className={`mb-3 p-2 rounded-lg text-xs flex items-center gap-2 ${
+                                          isHigh ? 'bg-red-500/10 border border-red-500/20 text-red-300'
+                                          : isLow ? 'bg-green-500/10 border border-green-500/20 text-green-300'
+                                          : 'bg-gray-800 border border-gray-700 text-gray-400'
+                                        }`}>
+                                          <span className="text-base">{isHigh ? '⚠️' : isLow ? '✅' : '➡️'}</span>
+                                          <span>
+                                            Your price <strong className="font-bold">${listing.price.toFixed(2)}</strong> is{' '}
+                                            {isHigh ? `${pct.toFixed(0)}% above median — consider lowering`
+                                              : isLow ? `${Math.abs(pct).toFixed(0)}% below median — room to increase`
+                                              : 'near the market median'}
+                                          </span>
+                                        </div>
+                                      );
+                                    })()}
+
+                                    {/* Comparable list */}
+                                    <div className="space-y-1.5 max-h-48 overflow-y-auto pr-0.5">
+                                      {cmp.data.comparables.map(c => (
+                                        <a
+                                          key={c.itemId}
+                                          href={c.url}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-gray-800 transition group"
+                                        >
+                                          {c.pictureUrl ? (
+                                            <img src={c.pictureUrl} alt="" className="w-8 h-8 rounded object-cover bg-gray-800 shrink-0" />
+                                          ) : (
+                                            <div className="w-8 h-8 rounded bg-gray-800 shrink-0" />
+                                          )}
+                                          <span className="text-[10px] text-gray-400 group-hover:text-gray-200 transition line-clamp-2 flex-1 leading-snug">{c.title}</span>
+                                          <span className="text-[11px] font-bold tabular-nums text-green-400 shrink-0">${c.price.toFixed(2)}</span>
+                                        </a>
+                                      ))}
+                                    </div>
+                                  </>
+                                ) : (
+                                  <p className="text-xs text-gray-500 py-3 text-center">No comparable listings found.</p>
+                                )}
+                              </div>
+                            )}
+
+                            {isOpen && cmp?.status === 'error' && (
+                              <div className="absolute right-0 top-full mt-1 z-50 w-64 bg-gray-900 border border-red-500/30 rounded-xl shadow-2xl p-3 text-xs text-red-400">
+                                Failed to load: {(cmp as any).message}
+                              </div>
+                            )}
+                          </>
+                        );
+                      })()}
                     </td>
                   </tr>
                 );
