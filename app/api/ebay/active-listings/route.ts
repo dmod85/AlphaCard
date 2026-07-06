@@ -36,25 +36,28 @@ async function callEbayApi(xmlBody: string, callName: string, token: string): Pr
   return response.text();
 }
 
-function buildGetMyeBaySellingRequest(page: number, token: string): string {
+function buildGetSellerListRequest(page: number, token: string): string {
   const credentials = isOAuthToken(token)
     ? ''
     : `<RequesterCredentials><eBayAuthToken>${token}</eBayAuthToken></RequesterCredentials>`;
 
+  const now = new Date();
+  const future = new Date();
+  future.setDate(future.getDate() + 120);
+
   return `<?xml version="1.0" encoding="utf-8"?>
-<GetMyeBaySellingRequest xmlns="urn:ebay:apis:eBLBaseComponents">
+<GetSellerListRequest xmlns="urn:ebay:apis:eBLBaseComponents">
   ${credentials}
-  <ActiveList>
-    <Include>true</Include>
-    <Pagination>
-      <EntriesPerPage>200</EntriesPerPage>
-      <PageNumber>${page}</PageNumber>
-    </Pagination>
-    <Sort>EndTime</Sort>
-  </ActiveList>
+  <Pagination>
+    <EntriesPerPage>200</EntriesPerPage>
+    <PageNumber>${page}</PageNumber>
+  </Pagination>
+  <DetailLevel>ItemReturnDescription</DetailLevel>
+  <EndTimeFrom>${now.toISOString()}</EndTimeFrom>
+  <EndTimeTo>${future.toISOString()}</EndTimeTo>
   <ErrorLanguage>en_US</ErrorLanguage>
   <WarningLevel>High</WarningLevel>
-</GetMyeBaySellingRequest>`;
+</GetSellerListRequest>`;
 }
 
 interface ActiveListing {
@@ -103,11 +106,17 @@ function parseActiveListings(xml: string): ActiveListing[] {
     const quantityAvailable = parseInt(item.match(/<QuantityAvailable>(.*?)<\/QuantityAvailable>/)?.[1] || '1');
     const startTime = item.match(/<StartTime>(.*?)<\/StartTime>/)?.[1] || '';
     const sku = item.match(/<SKU>(.*?)<\/SKU>/)?.[1] || undefined;
+    const rawDescription = decodeXml(item.match(/<Description>([\s\S]*?)<\/Description>/)?.[1] || '');
 
     if (itemId) {
       // Pass an empty object to buildSeoTitle just for the initial list check
       const seoTitle = buildSeoTitle(title, {});
-      const isSeoFriendly = title === seoTitle;
+      const expectedDesc = buildDescription(title);
+      
+      const normalizeDesc = (d: string) => d.replace(/[\s\r\n]+/g, ' ').trim();
+      const isDescFriendly = normalizeDesc(rawDescription) === normalizeDesc(expectedDesc);
+      
+      const isSeoFriendly = title === seoTitle && isDescFriendly;
       listings.push({ itemId, title, price, url, pictureUrl, quantity, quantityAvailable, startTime, isSeoFriendly, sku });
     }
   }
@@ -346,8 +355,8 @@ export async function GET() {
   try {
     const token = await getValidToken();
 
-    const firstXml = buildGetMyeBaySellingRequest(1, token);
-    const firstResponse = await callEbayApi(firstXml, 'GetMyeBaySelling', token);
+    const firstXml = buildGetSellerListRequest(1, token);
+    const firstResponse = await callEbayApi(firstXml, 'GetSellerList', token);
 
     const ack = firstResponse.match(/<Ack>(.*?)<\/Ack>/)?.[1];
     if (ack === 'Failure') {
@@ -369,7 +378,7 @@ export async function GET() {
     if (totalPages > 1) {
       const pageNums = Array.from({ length: totalPages - 1 }, (_, i) => i + 2);
       const pageResponses = await Promise.all(
-        pageNums.map(page => callEbayApi(buildGetMyeBaySellingRequest(page, token), 'GetMyeBaySelling', token))
+        pageNums.map(page => callEbayApi(buildGetSellerListRequest(page, token), 'GetSellerList', token))
       );
       for (const pageResponse of pageResponses) {
         allListings.push(...parseActiveListings(pageResponse));
