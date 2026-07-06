@@ -1,4 +1,4 @@
-﻿import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { getValidToken } from '@/app/lib/ebay-auth';
 
 // eBay Browse API - replaces the deprecated Finding API (shut down 2024).
@@ -121,49 +121,50 @@ function median(sorted: number[]): number {
 }
 
 /**
- * Fetches sold/completed listing prices from eBay's public search page.
- * eBay's Marketplace Insights API is private-access only, so we use the
- * same data eBay surfaces publicly via their "Sold Items" filter.
- * Runs server-side only â€” no client involvement.
+ * Fetches sold listing prices via the eBay Marketplace Insights API.
+ * Requires the buy.marketplace.insights scope on the OAuth token.
+ * Docs: https://developer.ebay.com/api-docs/buy/marketplace_insights/resources/item_summary/methods/search
  */
-async function fetchSoldPrices(query: string): Promise<number[]> {
+async function fetchSoldPrices(query: string, token: string): Promise<number[]> {
+  const isProd = process.env.EBAY_ENVIRONMENT?.trim() === 'PRODUCTION';
+  const baseUrl = isProd
+    ? 'https://api.ebay.com/buy/marketplace_insights/v1_beta'
+    : 'https://api.sandbox.ebay.com/buy/marketplace_insights/v1_beta';
+
+  // Look back 90 days for a meaningful recent sold sample
+  const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000)
+    .toISOString()
+    .replace(/\.\d{3}Z$/, 'Z');
+
   const params = new URLSearchParams({
-    _nkw: query,
-    LH_Sold: '1',      // Sold items only
-    LH_Complete: '1',  // Completed listings
-    LH_BIN: '1',       // Fixed price (Buy It Now) â€” avoids auction anomalies
-    _sop: '13',        // Sort: recently sold first
-    _ipg: '10',        // 10 results â€” enough for a reliable median
+    q: query,
+    filter: `lastSoldDate:[${ninetyDaysAgo}..]`,
+    sort: 'lastSoldDate',
+    limit: '10',
   });
 
   try {
-    const res = await fetch(`https://www.ebay.com/sch/i.html?${params.toString()}`, {
+    const res = await fetch(`${baseUrl}/item_summary/search?${params.toString()}`, {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.9',
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+        'X-EBAY-C-MARKETPLACE-ID': 'EBAY_US',
       },
       signal: AbortSignal.timeout(8000),
     });
 
     if (!res.ok) {
-      console.error('[comparable-prices] Sold page error:', res.status);
+      const text = await res.text();
+      console.error('[comparable-prices] Marketplace Insights API error:', res.status, text);
       return [];
     }
 
-    const html = await res.text();
+    const data = await res.json();
+    const items: any[] = data?.itemSummaries ?? [];
 
-    // eBay renders sold prices with class="POSITIVE" (green text).
-    // Matches: <span class="POSITIVE">$1.25</span>
-    //      or: <span class="POSITIVE">US $1.25</span>
-    const priceRegex = /class="POSITIVE"[^>]*>(?:US\s*)?\$([\d,]+\.?\d*)/g;
-    const prices: number[] = [];
-    let match: RegExpExecArray | null;
-
-    while ((match = priceRegex.exec(html)) !== null) {
-      const price = parseFloat(match[1].replace(/,/g, ''));
-      if (price > 0) prices.push(price);
-    }
+    const prices = items
+      .map((item: any) => parseFloat(item.lastSoldPrice?.value ?? '0'))
+      .filter((p: number) => p > 0);
 
     console.log(`[comparable-prices] Sold prices for "${query}":`, prices);
     return prices;
@@ -209,7 +210,7 @@ export async function GET(request: NextRequest) {
           'X-EBAY-C-ENDUSERCTX': 'affiliateCampaignId=<ePNCampaignId>,affiliateReferenceId=<referenceId>',
         },
       }),
-      fetchSoldPrices(query),
+      fetchSoldPrices(query, token),
     ]);
 
     if (!activeRes.ok) {
