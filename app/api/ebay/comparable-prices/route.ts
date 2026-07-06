@@ -122,14 +122,15 @@ function median(sorted: number[]): number {
 
 /**
  * Fetches sold listing prices via the eBay Marketplace Insights API.
- * Scope: buy.marketplace.insights (confirmed available on this app).
+ * buy.marketplace.insights is only granted in production — returns empty in sandbox.
  * Docs: https://developer.ebay.com/api-docs/buy/marketplace_insights/resources/item_summary/methods/search
  */
 async function fetchSoldPrices(query: string, token: string): Promise<number[]> {
   const isProd = process.env.EBAY_ENVIRONMENT?.trim() === 'PRODUCTION';
-  const baseUrl = isProd
-    ? 'https://api.ebay.com/buy/marketplace_insights/v1_beta'
-    : 'https://api.sandbox.ebay.com/buy/marketplace_insights/v1_beta';
+  // Scope not available in sandbox — skip silently
+  if (!isProd) return [];
+
+  const baseUrl = 'https://api.ebay.com/buy/marketplace_insights/v1_beta';
 
   // Look back 90 days for a meaningful recent sold sample
   const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000)

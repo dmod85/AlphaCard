@@ -5,7 +5,10 @@ const EBAY_SCOPES = [
   'https://api.ebay.com/oauth/api_scope/sell.inventory',
   'https://api.ebay.com/oauth/api_scope/sell.fulfillment',
   'https://api.ebay.com/oauth/api_scope/sell.marketing',
-  'https://api.ebay.com/oauth/api_scope/buy.marketplace.insights',
+  // buy.marketplace.insights is only available in production (not sandbox)
+  ...(process.env.EBAY_ENVIRONMENT?.trim() === 'PRODUCTION'
+    ? ['https://api.ebay.com/oauth/api_scope/buy.marketplace.insights']
+    : []),
 ].join(' ');
 
 export async function GET() {
