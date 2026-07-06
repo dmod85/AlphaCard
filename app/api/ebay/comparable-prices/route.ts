@@ -122,7 +122,7 @@ function median(sorted: number[]): number {
 
 /**
  * Fetches sold listing prices via the eBay Marketplace Insights API.
- * Requires the buy.marketplace.insights scope on the OAuth token.
+ * Scope: buy.marketplace.insights (confirmed available on this app).
  * Docs: https://developer.ebay.com/api-docs/buy/marketplace_insights/resources/item_summary/methods/search
  */
 async function fetchSoldPrices(query: string, token: string): Promise<number[]> {
