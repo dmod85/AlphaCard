@@ -39,7 +39,7 @@ export async function POST(request: NextRequest) {
     },
     body: new URLSearchParams({
       grant_type: 'authorization_code',
-      code: code.trim(),
+      code: decodeURIComponent(code.trim()),
       redirect_uri: ruName,
     }),
   });
