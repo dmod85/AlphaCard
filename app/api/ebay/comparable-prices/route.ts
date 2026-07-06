@@ -74,7 +74,7 @@ function buildSearchQuery(title: string): string {
   } else {
     // Fallback: look for a run of 2-3 consecutive Title-Case words that aren't
     // a known brand, year, or league — likely the athlete name.
-    const titleCaseRuns = [...cleaned.matchAll(/\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,2})\b/g)];
+    const titleCaseRuns = Array.from(cleaned.matchAll(/\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,2})\b/g));
     for (const m of titleCaseRuns) {
       const candidate = m[1];
       const isKnownToken =
