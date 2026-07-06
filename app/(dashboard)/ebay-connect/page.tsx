@@ -10,18 +10,8 @@ export default function EbayConnectPage() {
   const [errorMsg, setErrorMsg] = useState('');
 
   const handleSubmit = async () => {
-    let trimmed = code.trim();
+    const trimmed = code.trim();
     if (!trimmed) return;
-
-    // If the user pasted the full redirect URL instead of just the code,
-    // extract the code parameter automatically.
-    try {
-      const urlObj = new URL(trimmed);
-      const codeParam = urlObj.searchParams.get('code');
-      if (codeParam) trimmed = codeParam;
-    } catch {
-      // Not a URL — use as-is (it's already just the code value)
-    }
 
     setStatus('loading');
     setErrorMsg('');

@@ -17,10 +17,6 @@ const EBAY_SCOPES = [
   'https://api.ebay.com/oauth/api_scope/sell.inventory',
   'https://api.ebay.com/oauth/api_scope/sell.fulfillment',
   'https://api.ebay.com/oauth/api_scope/sell.marketing',
-  // buy.marketplace.insights is only available in production (not sandbox)
-  ...(process.env.EBAY_ENVIRONMENT?.trim() === 'PRODUCTION'
-    ? ['https://api.ebay.com/oauth/api_scope/buy.marketplace.insights']
-    : []),
 ].join(' ');
 
 /** In-memory cache so we don't refresh on every single API call */
