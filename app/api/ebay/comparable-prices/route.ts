@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getValidToken } from '@/app/lib/ebay-auth';
 
-// eBay Finding API - searches active (Buy It Now) listings for price comparison.
-// Docs: https://developer.ebay.com/devzone/finding/CallRef/findItemsByKeywords.html
+// eBay Browse API - replaces the deprecated Finding API (shut down 2024).
+// Docs: https://developer.ebay.com/api-docs/buy/browse/resources/item_summary/methods/search
 
 interface ComparableListing {
   itemId: string;
@@ -21,11 +22,11 @@ interface ComparablePricesResult {
   count: number;
 }
 
-function getFindingApiUrl(): string {
+function getBrowseApiBaseUrl(): string {
   const isProd = process.env.EBAY_ENVIRONMENT?.trim() === 'PRODUCTION';
   return isProd
-    ? 'https://svcs.ebay.com/services/search/FindingService/v1'
-    : 'https://svcs.sandbox.ebay.com/services/search/FindingService/v1';
+    ? 'https://api.ebay.com/buy/browse/v1'
+    : 'https://api.sandbox.ebay.com/buy/browse/v1';
 }
 
 function buildSearchQuery(title: string): string {
@@ -33,6 +34,7 @@ function buildSearchQuery(title: string): string {
     .replace(/\b(WOW|L@@K|LOOK|AMAZING|HOT|FIRE|FREE\s*SHIP(?:PING)?|FAST\s*SHIP(?:PING)?|MINT|NM|GEM)\b/gi, '')
     .replace(/\s{2,}/g, ' ')
     .trim();
+  // Use first 8 words for a focused query
   return cleaned.split(/\s+/).slice(0, 8).join(' ');
 }
 
@@ -53,56 +55,62 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Missing title parameter' }, { status: 400 });
   }
 
-  const appId = process.env.EBAY_APP_ID?.trim();
-  if (!appId) {
-    return NextResponse.json({ error: 'Missing EBAY_APP_ID env var' }, { status: 500 });
+  let token: string;
+  try {
+    token = await getValidToken();
+  } catch {
+    return NextResponse.json({ error: 'EBAY_AUTH_REQUIRED' }, { status: 401 });
   }
 
   const query = buildSearchQuery(title);
 
   const params = new URLSearchParams({
-    'OPERATION-NAME': 'findItemsByKeywords',
-    'SERVICE-VERSION': '1.0.0',
-    'SECURITY-APPNAME': appId,
-    'RESPONSE-DATA-FORMAT': 'JSON',
-    'REST-PAYLOAD': '',
-    keywords: query,
-    'itemFilter(0).name': 'ListingType',
-    'itemFilter(0).value': 'FixedPrice',
-    'outputSelector(0)': 'PictureURLSuperSize',
-    'paginationInput.entriesPerPage': '10',
-    'paginationInput.pageNumber': '1',
-    sortOrder: 'PricePlusShippingLowest',
+    q: query,
+    filter: 'buyingOptions:{FIXED_PRICE}',
+    sort: 'price',
+    limit: '10',
   });
 
   try {
-    const url = `${getFindingApiUrl()}?${params.toString()}`;
+    const url = `${getBrowseApiBaseUrl()}/item_summary/search?${params.toString()}`;
     const res = await fetch(url, {
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+        // Required marketplace context header for Browse API
+        'X-EBAY-C-MARKETPLACE-ID': 'EBAY_US',
+        'X-EBAY-C-ENDUSERCTX': 'affiliateCampaignId=<ePNCampaignId>,affiliateReferenceId=<referenceId>',
+      },
     });
 
     if (!res.ok) {
       const text = await res.text();
-      console.error('[comparable-prices] Finding API error:', res.status, text);
-      return NextResponse.json({ error: `eBay Finding API error: ${res.status}` }, { status: 500 });
+      console.error('[comparable-prices] Browse API error:', res.status, text);
+      return NextResponse.json(
+        { error: `eBay Browse API error: ${res.status}` },
+        { status: 500 }
+      );
     }
 
     const data = await res.json();
-    const searchResult = data?.findItemsByKeywordsResponse?.[0]?.searchResult?.[0];
-    const rawItems: any[] = searchResult?.item ?? [];
+    const rawItems: any[] = data?.itemSummaries ?? [];
 
     const comparables: ComparableListing[] = [];
 
     for (const item of rawItems) {
-      const id = item.itemId?.[0] ?? '';
-      if (id === itemId) continue;
+      const id: string = item.itemId ?? '';
+      // Skip the listing being compared
+      if (id === itemId || id.endsWith(`|${itemId}`)) continue;
 
-      const itemTitle = item.title?.[0] ?? '';
-      const priceStr = item.sellingStatus?.[0]?.currentPrice?.[0]?.['__value__'] ?? '0';
+      const itemTitle: string = item.title ?? '';
+      const priceStr: string = item.price?.value ?? '0';
       const price = parseFloat(priceStr);
-      const itemUrl = item.viewItemURL?.[0] ?? '';
-      const pictureUrl = item.galleryURL?.[0] ?? item.pictureURLSuperSize?.[0] ?? undefined;
-      const condition = item.condition?.[0]?.conditionDisplayName?.[0] ?? undefined;
+      const itemUrl: string = item.itemWebUrl ?? '';
+      const pictureUrl: string | undefined =
+        item.thumbnailImages?.[0]?.imageUrl ??
+        item.image?.imageUrl ??
+        undefined;
+      const condition: string | undefined = item.condition ?? undefined;
 
       if (price > 0) {
         comparables.push({ itemId: id, title: itemTitle, price, url: itemUrl, pictureUrl, condition });
@@ -123,6 +131,9 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(result);
   } catch (err: any) {
     console.error('[comparable-prices] Fetch error:', err);
-    return NextResponse.json({ error: err.message || 'Failed to fetch comparable prices' }, { status: 500 });
+    return NextResponse.json(
+      { error: err.message || 'Failed to fetch comparable prices' },
+      { status: 500 }
+    );
   }
 }
