@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server';
+﻿import { NextRequest, NextResponse } from 'next/server';
 import { getValidToken } from '@/app/lib/ebay-auth';
 
 // eBay Browse API - replaces the deprecated Finding API (shut down 2024).
@@ -20,6 +20,11 @@ interface ComparablePricesResult {
   avgPrice: number | null;
   medianPrice: number | null;
   count: number;
+  // Sold data & Hybrid Pricing Formula outputs
+  medianSold: number | null;
+  soldCount: number;
+  suggestedLiquidityPrice: number | null;
+  suggestedFairMarketPrice: number | null;
 }
 
 function getBrowseApiBaseUrl(): string {
@@ -73,7 +78,7 @@ function buildSearchQuery(title: string): string {
     subsetName = cardNumMatch[2]?.trim() || undefined;
   } else {
     // Fallback: look for a run of 2-3 consecutive Title-Case words that aren't
-    // a known brand, year, or league — likely the athlete name.
+    // a known brand, year, or league â€” likely the athlete name.
     const titleCaseRuns = Array.from(cleaned.matchAll(/\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,2})\b/g));
     for (const m of titleCaseRuns) {
       const candidate = m[1];
@@ -89,7 +94,7 @@ function buildSearchQuery(title: string): string {
   }
 
   // 5. Build the query: year + brand + league + player name + subset name.
-  //    Player name is the required anchor — subset name adds specificity but
+  //    Player name is the required anchor â€” subset name adds specificity but
   //    cannot be the sole match reason (eBay query terms are AND conditions,
   //    so results must satisfy both player AND subset).
   const parts: string[] = [];
@@ -115,6 +120,59 @@ function median(sorted: number[]): number {
     : (sorted[mid - 1] + sorted[mid]) / 2;
 }
 
+/**
+ * Fetches sold/completed listing prices from eBay's public search page.
+ * eBay's Marketplace Insights API is private-access only, so we use the
+ * same data eBay surfaces publicly via their "Sold Items" filter.
+ * Runs server-side only â€” no client involvement.
+ */
+async function fetchSoldPrices(query: string): Promise<number[]> {
+  const params = new URLSearchParams({
+    _nkw: query,
+    LH_Sold: '1',      // Sold items only
+    LH_Complete: '1',  // Completed listings
+    LH_BIN: '1',       // Fixed price (Buy It Now) â€” avoids auction anomalies
+    _sop: '13',        // Sort: recently sold first
+    _ipg: '10',        // 10 results â€” enough for a reliable median
+  });
+
+  try {
+    const res = await fetch(`https://www.ebay.com/sch/i.html?${params.toString()}`, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9',
+      },
+      signal: AbortSignal.timeout(8000),
+    });
+
+    if (!res.ok) {
+      console.error('[comparable-prices] Sold page error:', res.status);
+      return [];
+    }
+
+    const html = await res.text();
+
+    // eBay renders sold prices with class="POSITIVE" (green text).
+    // Matches: <span class="POSITIVE">$1.25</span>
+    //      or: <span class="POSITIVE">US $1.25</span>
+    const priceRegex = /class="POSITIVE"[^>]*>(?:US\s*)?\$([\d,]+\.?\d*)/g;
+    const prices: number[] = [];
+    let match: RegExpExecArray | null;
+
+    while ((match = priceRegex.exec(html)) !== null) {
+      const price = parseFloat(match[1].replace(/,/g, ''));
+      if (price > 0) prices.push(price);
+    }
+
+    console.log(`[comparable-prices] Sold prices for "${query}":`, prices);
+    return prices;
+  } catch (err) {
+    console.error('[comparable-prices] Sold fetch error:', err);
+    return [];
+  }
+}
+
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const title = searchParams.get('title');
@@ -133,7 +191,7 @@ export async function GET(request: NextRequest) {
 
   const query = buildSearchQuery(title);
 
-  const params = new URLSearchParams({
+  const activeParams = new URLSearchParams({
     q: query,
     filter: 'buyingOptions:{FIXED_PRICE}',
     sort: 'price',
@@ -141,34 +199,35 @@ export async function GET(request: NextRequest) {
   });
 
   try {
-    const url = `${getBrowseApiBaseUrl()}/item_summary/search?${params.toString()}`;
-    const res = await fetch(url, {
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json',
-        // Required marketplace context header for Browse API
-        'X-EBAY-C-MARKETPLACE-ID': 'EBAY_US',
-        'X-EBAY-C-ENDUSERCTX': 'affiliateCampaignId=<ePNCampaignId>,affiliateReferenceId=<referenceId>',
-      },
-    });
+    // Fetch active listings and sold listings in parallel â€” no added latency.
+    const [activeRes, soldPricesRaw] = await Promise.all([
+      fetch(`${getBrowseApiBaseUrl()}/item_summary/search?${activeParams.toString()}`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+          'X-EBAY-C-MARKETPLACE-ID': 'EBAY_US',
+          'X-EBAY-C-ENDUSERCTX': 'affiliateCampaignId=<ePNCampaignId>,affiliateReferenceId=<referenceId>',
+        },
+      }),
+      fetchSoldPrices(query),
+    ]);
 
-    if (!res.ok) {
-      const text = await res.text();
-      console.error('[comparable-prices] Browse API error:', res.status, text);
+    if (!activeRes.ok) {
+      const text = await activeRes.text();
+      console.error('[comparable-prices] Browse API error:', activeRes.status, text);
       return NextResponse.json(
-        { error: `eBay Browse API error: ${res.status}` },
+        { error: `eBay Browse API error: ${activeRes.status}` },
         { status: 500 }
       );
     }
 
-    const data = await res.json();
+    const data = await activeRes.json();
     const rawItems: any[] = data?.itemSummaries ?? [];
 
     const comparables: ComparableListing[] = [];
 
     for (const item of rawItems) {
       const id: string = item.itemId ?? '';
-      // Skip the listing being compared
       if (id === itemId || id.endsWith(`|${itemId}`)) continue;
 
       const itemTitle: string = item.title ?? '';
@@ -186,15 +245,41 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    // Active listing price stats
     const prices = comparables.map(c => c.price).sort((a, b) => a - b);
+    const minActive = prices.length > 0 ? prices[0] : null;
+    const medianActive = prices.length > 0 ? median(prices) : null;
+
+    // Sold listing price stats â€” use median to filter out one-off highs/lows
+    const soldPrices = soldPricesRaw.sort((a, b) => a - b);
+    const medianSold = soldPrices.length > 0 ? median(soldPrices) : null;
+
+    // â”€â”€ Hybrid Pricing Formula â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // Liquidity Formula: min(Median Sold, Min Active) - $0.01
+    //   Guarantees cheapest option without severely undercutting market value.
+    const suggestedLiquidityPrice =
+      medianSold !== null && minActive !== null
+        ? Math.max(0.01, parseFloat((Math.min(medianSold, minActive) - 0.01).toFixed(2)))
+        : null;
+
+    // Fair Market Formula: (Median Sold + Median Active) / 2
+    //   Anchors price between proven buyer willingness and current market ask.
+    const suggestedFairMarketPrice =
+      medianSold !== null && medianActive !== null
+        ? parseFloat(((medianSold + medianActive) / 2).toFixed(2))
+        : null;
 
     const result: ComparablePricesResult = {
       comparables,
       count: comparables.length,
-      minPrice: prices.length > 0 ? prices[0] : null,
+      minPrice: minActive,
       maxPrice: prices.length > 0 ? prices[prices.length - 1] : null,
       avgPrice: prices.length > 0 ? prices.reduce((s, p) => s + p, 0) / prices.length : null,
-      medianPrice: prices.length > 0 ? median(prices) : null,
+      medianPrice: medianActive,
+      medianSold,
+      soldCount: soldPrices.length,
+      suggestedLiquidityPrice,
+      suggestedFairMarketPrice,
     };
 
     return NextResponse.json(result);

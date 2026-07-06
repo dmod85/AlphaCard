@@ -31,6 +31,10 @@ interface ComparableData {
   avgPrice: number | null;
   medianPrice: number | null;
   count: number;
+  medianSold: number | null;
+  soldCount: number;
+  suggestedLiquidityPrice: number | null;
+  suggestedFairMarketPrice: number | null;
 }
 
 type ComparableState = { status: 'loading' } | { status: 'error'; message: string } | { status: 'done'; data: ComparableData };
@@ -616,6 +620,36 @@ export default function ActiveListingsPage() {
                                         </div>
                                       );
                                     })()}
+
+                                     {/* Suggested Price */}
+                                     {(cmp.data.suggestedLiquidityPrice !== null || cmp.data.suggestedFairMarketPrice !== null) && (
+                                       <div className="mb-3">
+                                         <div className="flex items-center gap-1.5 mb-1.5">
+                                           <span className="text-[9px] text-gray-500 uppercase tracking-wider font-semibold">Suggested Price</span>
+                                           {cmp.data.soldCount > 0 && cmp.data.medianSold !== null && (
+                                             <span className="text-[9px] text-gray-600">
+                                               · {cmp.data.soldCount} sold · median ${cmp.data.medianSold.toFixed(2)}
+                                             </span>
+                                           )}
+                                         </div>
+                                         <div className="grid grid-cols-2 gap-2">
+                                           {cmp.data.suggestedLiquidityPrice !== null && (
+                                             <div className="bg-green-500/10 border border-green-500/20 rounded-lg p-2 text-center">
+                                               <div className="text-[9px] text-green-400/70 uppercase tracking-wider mb-0.5">🏃 Liquidity</div>
+                                               <div className="text-sm font-bold tabular-nums text-green-400">${cmp.data.suggestedLiquidityPrice.toFixed(2)}</div>
+                                               <div className="text-[9px] text-green-400/50 mt-0.5">Move it fast</div>
+                                             </div>
+                                           )}
+                                           {cmp.data.suggestedFairMarketPrice !== null && (
+                                             <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-2 text-center">
+                                               <div className="text-[9px] text-blue-400/70 uppercase tracking-wider mb-0.5">💰 Fair Market</div>
+                                               <div className="text-sm font-bold tabular-nums text-blue-400">${cmp.data.suggestedFairMarketPrice.toFixed(2)}</div>
+                                               <div className="text-[9px] text-blue-400/50 mt-0.5">Maximize ROI</div>
+                                             </div>
+                                           )}
+                                         </div>
+                                       </div>
+                                     )}
 
                                     {/* Comparable list */}
                                     <div className="space-y-1.5 max-h-48 overflow-y-auto pr-0.5">
