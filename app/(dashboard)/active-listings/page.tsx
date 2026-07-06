@@ -548,9 +548,9 @@ export default function ActiveListingsPage() {
 
                         // Derive badge color when data is available
                         let badge: React.ReactNode = null;
-                        if (cmp?.status === 'done' && cmp.data.avgPrice !== null) {
-                          const diff = listing.price - cmp.data.avgPrice;
-                          const pct = (diff / cmp.data.avgPrice) * 100;
+                        if (cmp?.status === 'done' && cmp.data.medianPrice !== null) {
+                          const diff = listing.price - cmp.data.medianPrice;
+                          const pct = (diff / cmp.data.medianPrice) * 100;
                           const absPct = Math.abs(pct).toFixed(0);
                           if (pct > 5) {
                             badge = <span className="ml-1 text-red-400 text-[9px] font-bold">▲{absPct}%</span>;
@@ -599,7 +599,7 @@ export default function ActiveListingsPage() {
                                       {[
                                         { label: 'Min', val: cmp.data.minPrice },
                                         { label: 'Median', val: cmp.data.medianPrice },
-                                        { label: 'Mean', val: cmp.data.avgPrice },
+                                        { label: 'Avg', val: cmp.data.avgPrice },
                                       ].map(({ label, val }) => {
                                         const myPrice = listing.price;
                                         const diff = val !== null ? myPrice - val : null;
@@ -624,8 +624,8 @@ export default function ActiveListingsPage() {
                                     </div>
 
                                     {/* Your price indicator */}
-                                    {cmp.data.avgPrice !== null && (() => {
-                                      const pct = ((listing.price - cmp.data.avgPrice) / cmp.data.avgPrice) * 100;
+                                    {cmp.data.medianPrice !== null && (() => {
+                                      const pct = ((listing.price - cmp.data.medianPrice) / cmp.data.medianPrice) * 100;
                                       const isHigh = pct > 5;
                                       const isLow = pct < -5;
                                       return (
@@ -637,9 +637,9 @@ export default function ActiveListingsPage() {
                                           <span className="text-base">{isHigh ? '⚠️' : isLow ? '✅' : '➡️'}</span>
                                           <span>
                                             Your price <strong className="font-bold">${listing.price.toFixed(2)}</strong> is{' '}
-                                            {isHigh ? `${pct.toFixed(0)}% above mean — consider lowering`
-                                              : isLow ? `${Math.abs(pct).toFixed(0)}% below mean — room to increase`
-                                              : 'near the market mean'}
+                                            {isHigh ? `${pct.toFixed(0)}% above median — consider lowering`
+                                              : isLow ? `${Math.abs(pct).toFixed(0)}% below median — room to increase`
+                                              : 'near the market median'}
                                           </span>
                                         </div>
                                       );
