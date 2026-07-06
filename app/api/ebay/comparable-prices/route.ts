@@ -29,13 +29,82 @@ function getBrowseApiBaseUrl(): string {
     : 'https://api.sandbox.ebay.com/buy/browse/v1';
 }
 
+// Known brands for extraction
+const KNOWN_BRANDS = [
+  'Topps', 'Panini', 'Upper Deck', 'Bowman', 'Leaf', 'Fleer', 'Donruss', 'Score',
+  'Stadium Club', 'Prizm', 'Select', 'Obsidian', 'Immaculate', 'National Treasures',
+  'Finest', 'Chrome', 'Heritage', 'Allen & Ginter', 'Mosaic', 'Optic', 'Absolute',
+  'Certified', 'Contenders', 'Classics', 'Flawless', 'Gold Standard', 'Spectra',
+  'Revolution', 'Noir', 'Status', 'Elements', 'Inception', 'Majestic',
+];
+
 function buildSearchQuery(title: string): string {
   const cleaned = title
     .replace(/\b(WOW|L@@K|LOOK|AMAZING|HOT|FIRE|FREE\s*SHIP(?:PING)?|FAST\s*SHIP(?:PING)?|MINT|NM|GEM)\b/gi, '')
     .replace(/\s{2,}/g, ' ')
     .trim();
-  // Use first 8 words for a focused query
-  return cleaned.split(/\s+/).slice(0, 8).join(' ');
+
+  // 1. Extract year
+  const year = cleaned.match(/\b(19|20)\d{2}\b/)?.[0];
+
+  // 2. Extract brand (longest match wins to prefer e.g. "Stadium Club" over "Topps")
+  let brand: string | undefined;
+  let brandLen = 0;
+  for (const b of KNOWN_BRANDS) {
+    if (new RegExp(`\\b${b}\\b`, 'i').test(cleaned) && b.length > brandLen) {
+      brand = b;
+      brandLen = b.length;
+    }
+  }
+
+  // 3. Extract league/sport acronym (UFC, MLB, NBA, NFL, NHL, FIFA, MLS, etc.)
+  const league = cleaned.match(/\b(UFC|NBA|NFL|NHL|MLB|FIFA|MLS|NWSL|WNBA|WWE|XFL|USFL)\b/i)?.[0]?.toUpperCase();
+
+  // 4. Extract player name and the subset/parallel name that follows it.
+  //    Card titles follow the pattern: "#CARDNUM PlayerName Subset Name"
+  //    e.g. "#SF-7 Tom Aspinall Special Forces"
+  //    Player name = text immediately after the card number.
+  //    Subset name = everything after the player name (up to 3 words).
+  let playerName: string | undefined;
+  let subsetName: string | undefined;
+  const cardNumMatch = cleaned.match(/#[A-Z0-9-]+\s+([A-Z][a-zA-Z'-]+(?:\s+[A-Z][a-zA-Z'-]+){1,2})((?:\s+[A-Z][a-zA-Z'-]+){0,3})?/);
+  if (cardNumMatch) {
+    playerName = cardNumMatch[1];
+    subsetName = cardNumMatch[2]?.trim() || undefined;
+  } else {
+    // Fallback: look for a run of 2-3 consecutive Title-Case words that aren't
+    // a known brand, year, or league — likely the athlete name.
+    const titleCaseRuns = [...cleaned.matchAll(/\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,2})\b/g)];
+    for (const m of titleCaseRuns) {
+      const candidate = m[1];
+      const isKnownToken =
+        (brand && candidate.toLowerCase().includes(brand.toLowerCase())) ||
+        (league && candidate.toLowerCase().includes(league.toLowerCase())) ||
+        /^\d{4}$/.test(candidate);
+      if (!isKnownToken && candidate.split(' ').length >= 2) {
+        playerName = candidate;
+        break;
+      }
+    }
+  }
+
+  // 5. Build the query: year + brand + league + player name + subset name.
+  //    Player name is the required anchor — subset name adds specificity but
+  //    cannot be the sole match reason (eBay query terms are AND conditions,
+  //    so results must satisfy both player AND subset).
+  const parts: string[] = [];
+  if (year) parts.push(year);
+  if (brand) parts.push(brand);
+  if (league) parts.push(league);
+  if (playerName) parts.push(playerName);
+  if (subsetName) parts.push(subsetName);
+
+  // Fallback to first 8 words if we couldn't build a meaningful query
+  if (parts.length < 2) {
+    return cleaned.split(/\s+/).slice(0, 8).join(' ');
+  }
+
+  return parts.join(' ');
 }
 
 function median(sorted: number[]): number {
