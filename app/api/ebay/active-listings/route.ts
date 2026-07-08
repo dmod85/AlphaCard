@@ -226,23 +226,103 @@ function buildSeoTitle(originalTitle: string, specifics: ItemSpecifics): string 
   // 4. Force uppercase on any token that looks like a card number (e.g., #bcp-95 -> #BCP-95)
   title = title.split(' ').map(word => word.startsWith('#') ? word.toUpperCase() : word).join(' ');
 
-  // 5. Force Year to front
-  const yearStr = specifics?.year?.match(/\b(19|20)\d{2}\b/)?.[0] || title.match(/\b(19|20)\d{2}\b/)?.[0];
-  if (yearStr) {
-    title = title.replace(new RegExp(`\\b${yearStr}\\b`, 'g'), '').replace(/^\s*[-–—]\s*/, '').trim();
-    title = `${yearStr} ${title}`;
+  // 5. Extract and Reorder components
+  // Player
+  let playerStr = specifics?.player || '';
+  if (playerStr) {
+    playerStr = playerStr.toLowerCase().split(/\s+/).map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
+    const safePlayer = playerStr.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    title = title.replace(new RegExp(safePlayer, 'gi'), '').replace(/\s{2,}/g, ' ').trim();
   }
 
-  // 6. Ensure Card Number is at the end if we have it in item specifics and it's missing
-  if (specifics?.cardNumber) {
-    const cardNum = specifics.cardNumber.trim().toUpperCase();
-    const numPattern = new RegExp(`\\b#?\\s*${cardNum.replace(/[^A-Z0-9]/g, '')}\\b`, 'i');
-    if (!numPattern.test(title)) {
-      title = `${title} #${cardNum}`;
+  // Year
+  const yearStr = specifics?.year?.match(/\b(19|20)\d{2}\b/)?.[0] || title.match(/\b(19|20)\d{2}\b/)?.[0] || '';
+  if (yearStr) {
+    title = title.replace(new RegExp(`\\b${yearStr}\\b`, 'g'), '').replace(/\s{2,}/g, ' ').trim();
+  }
+
+  // Card Number
+  let cardNumStr = specifics?.cardNumber ? specifics.cardNumber.trim().toUpperCase() : '';
+  let extractedCardNum = '';
+  if (cardNumStr) {
+    const safeNum = cardNumStr.replace(/[^A-Z0-9]/g, '');
+    const numPattern = new RegExp(`\\b#?\\s*${safeNum}\\b`, 'i');
+    if (numPattern.test(title)) {
+      title = title.replace(numPattern, '').trim();
+    }
+    extractedCardNum = cardNumStr.startsWith('#') ? cardNumStr : `#${cardNumStr}`;
+  } else {
+    const hashMatch = title.match(/\B#[A-Z0-9-]+\b/i);
+    if (hashMatch) {
+      extractedCardNum = hashMatch[0].toUpperCase();
+      title = title.replace(hashMatch[0], '').trim();
     }
   }
 
-  title = title.replace(/\s{2,}/g, ' ').trim();
+  // Attributes (RC, AUTO, RPA, SP, SSP, Serial /99)
+  const attributes: string[] = [];
+  const attrRegex = /\b(RC|AUTO|RPA|SP|SSP)\b/gi;
+  let attrMatch;
+  while ((attrMatch = attrRegex.exec(title)) !== null) {
+    attributes.push(attrMatch[1].toUpperCase());
+  }
+  title = title.replace(attrRegex, '').replace(/\s{2,}/g, ' ').trim();
+
+  const serialRegex = /\b\d{1,5}\/\d{1,5}\b|\/\d{1,5}\b/g;
+  let serialMatch;
+  while ((serialMatch = serialRegex.exec(title)) !== null) {
+    attributes.push(serialMatch[0]);
+  }
+  title = title.replace(serialRegex, '').replace(/\s{2,}/g, ' ').trim();
+
+  // Grade
+  const grades: string[] = [];
+  const gradeRegex = /\b(PSA|BGS|SGC|CGC)\s*(10|9\.5|9|8\.5|8|7|6|5|4|3|2|1\.5|1)\b/gi;
+  let gradeMatch;
+  while ((gradeMatch = gradeRegex.exec(title)) !== null) {
+    grades.push(`${gradeMatch[1].toUpperCase()} ${gradeMatch[2]}`);
+  }
+  title = title.replace(gradeRegex, '').replace(/\s{2,}/g, ' ').trim();
+
+  // Brand & Set
+  let extractedBrandSet = '';
+  const brand = specifics?.brand || extractBrandFromTitle(originalTitle);
+  const set = specifics?.set;
+  if (brand) {
+    const safeBrand = brand.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const brandRegex = new RegExp(`\\b${safeBrand}\\b`, 'gi');
+    if (brandRegex.test(title)) {
+      extractedBrandSet += brand + ' ';
+      title = title.replace(brandRegex, '').replace(/\s{2,}/g, ' ').trim();
+    }
+  }
+  if (set) {
+    const safeSet = set.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const setRegex = new RegExp(`\\b${safeSet}\\b`, 'gi');
+    if (setRegex.test(title)) {
+      extractedBrandSet += set + ' ';
+      title = title.replace(setRegex, '').replace(/\s{2,}/g, ' ').trim();
+    }
+  }
+  extractedBrandSet = extractedBrandSet.trim();
+  if (extractedBrandSet) {
+    extractedBrandSet = extractedBrandSet.toLowerCase().split(/\s+/).map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
+  }
+
+  // Clean up title (which is now Insert/Parallel/Color + Team info)
+  title = title.replace(/\s{2,}/g, ' ').replace(/^[-–—,]\s*/, '').replace(/\s*[-–—,]$/, '').replace(/\s*,\s*/g, ' ').trim();
+
+  // Reconstruct: [Year] [Brand & Set] [Player Name] [Card #] [Insert/Parallel/Color] [Attributes] [Grade]
+  let finalParts = [];
+  if (yearStr) finalParts.push(yearStr);
+  if (extractedBrandSet) finalParts.push(extractedBrandSet);
+  if (playerStr) finalParts.push(playerStr);
+  if (extractedCardNum) finalParts.push(extractedCardNum);
+  if (title) finalParts.push(title); // Insert/Parallel/Color
+  if (attributes.length > 0) finalParts.push(attributes.join(' '));
+  if (grades.length > 0) finalParts.push(grades.join(' '));
+
+  title = finalParts.join(' ').replace(/\s{2,}/g, ' ').trim();
 
   // 7. Truncate to eBay's 80-character hard limit without splitting words
   if (title.length > MAX_LENGTH) {

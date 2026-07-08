@@ -240,10 +240,12 @@ export default function ActiveListingsPage() {
       const data = await res.json();
 
       const updates: Record<string, ItemState> = {};
+      const successfulIds = new Set<string>();
       let done = 0, failed = 0;
       for (const result of (data.results || [])) {
         if (result.success) {
           updates[result.itemId] = { status: 'done', generatedSku: result.childSku };
+          successfulIds.add(result.itemId);
           done++;
         } else {
           updates[result.itemId] = { status: 'error', error: result.error };
@@ -251,6 +253,11 @@ export default function ActiveListingsPage() {
         }
       }
       setItemStates(prev => ({ ...prev, ...updates }));
+      if (successfulIds.size > 0) {
+        setListings(prev => prev.map(l => 
+          successfulIds.has(l.itemId) ? { ...l, isSeoFriendly: true } : l
+        ));
+      }
       setSummary({ done, failed });
     } catch {
       const errorUpdates: Record<string, ItemState> = {};
@@ -413,6 +420,7 @@ export default function ActiveListingsPage() {
                 >
                   Listed <SortIcon active={sortKey === 'date'} dir={sortDir} />
                 </th>
+                <th className="px-4 py-3 text-center text-gray-400 font-medium w-24">Item ID</th>
                 <th
                   className="px-4 py-3 text-center text-gray-400 font-medium w-24 cursor-pointer select-none hover:text-gray-200 transition"
                   onClick={() => handleSort('seo')}
