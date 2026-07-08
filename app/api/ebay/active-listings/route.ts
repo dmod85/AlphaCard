@@ -227,12 +227,9 @@ function buildSeoTitle(originalTitle: string, specifics: ItemSpecifics): string 
   title = title.split(' ').map(word => word.startsWith('#') ? word.toUpperCase() : word).join(' ');
 
   // 5. Extract and Reorder components
-  // Player
   let playerStr = specifics?.player || '';
   if (playerStr) {
     playerStr = playerStr.toLowerCase().split(/\s+/).map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
-    const safePlayer = playerStr.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    title = title.replace(new RegExp(safePlayer, 'gi'), '').replace(/\s{2,}/g, ' ').trim();
   }
 
   // Year
@@ -241,21 +238,82 @@ function buildSeoTitle(originalTitle: string, specifics: ItemSpecifics): string 
     title = title.replace(new RegExp(`\\b${yearStr}\\b`, 'g'), '').replace(/\s{2,}/g, ' ').trim();
   }
 
+  let leftPart = '';
+  let rightPart = title;
+
+  // Split title by Player Name to isolate Brand/Set (left) from Parallel/Color (right)
+  if (playerStr) {
+    // Try to handle slight accent differences by removing accents for matching if needed, 
+    // but a safe regex is usually fine for most English cards
+    const safePlayer = playerStr.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const playerRegex = new RegExp(`\\b${safePlayer}\\b`, 'i');
+    const match = playerRegex.exec(rightPart);
+    if (match) {
+      leftPart = rightPart.substring(0, match.index).trim();
+      rightPart = rightPart.substring(match.index + match[0].length).trim();
+    }
+  }
+
+  // Clean up leftPart
+  leftPart = leftPart.replace(/^[-–—,]\s*/, '').replace(/\s*[-–—,]$/, '').trim();
+  if (leftPart) {
+     leftPart = leftPart.toLowerCase().split(/\s+/).map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
+  }
+
+  // Refine leftPart to ONLY contain Brand & Set, moving any Insert/Parallel info prepended before player into rightPart
+  if (leftPart) {
+      const brand = specifics?.brand || extractBrandFromTitle(originalTitle);
+      let set = specifics?.set || '';
+      
+      if (brand && set.toLowerCase().includes(brand.toLowerCase())) {
+          set = set.replace(new RegExp(`\\b${brand.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'gi'), '').trim();
+      }
+      
+      let matchedBrandSet = '';
+      let remainingLeft = leftPart;
+      
+      if (brand) {
+        const safeBrand = brand.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const brandRegex = new RegExp(`\\b${safeBrand}\\b`, 'gi');
+        const match = remainingLeft.match(brandRegex);
+        if (match) {
+           matchedBrandSet += match[0] + ' ';
+           remainingLeft = remainingLeft.replace(brandRegex, ' ').trim();
+        }
+      }
+      if (set) {
+        const safeSet = set.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const setRegex = new RegExp(`\\b${safeSet}\\b`, 'gi');
+        const match = remainingLeft.match(setRegex);
+        if (match) {
+           matchedBrandSet += match[0] + ' ';
+           remainingLeft = remainingLeft.replace(setRegex, ' ').trim();
+        }
+      }
+      
+      if (matchedBrandSet) {
+          leftPart = matchedBrandSet.trim();
+          if (remainingLeft) {
+              rightPart = remainingLeft + ' ' + rightPart;
+          }
+      }
+  }
+
   // Card Number
   let cardNumStr = specifics?.cardNumber ? specifics.cardNumber.trim().toUpperCase() : '';
   let extractedCardNum = '';
   if (cardNumStr) {
     const safeNum = cardNumStr.replace(/[^A-Z0-9]/g, '');
-    const numPattern = new RegExp(`\\b#?\\s*${safeNum}\\b`, 'i');
-    if (numPattern.test(title)) {
-      title = title.replace(numPattern, '').trim();
+    const numPattern = new RegExp(`(?:^|\\s)#?\\s*${safeNum}\\b`, 'i');
+    if (numPattern.test(rightPart)) {
+      rightPart = rightPart.replace(numPattern, ' ').trim();
     }
     extractedCardNum = cardNumStr.startsWith('#') ? cardNumStr : `#${cardNumStr}`;
   } else {
-    const hashMatch = title.match(/\B#[A-Z0-9-]+\b/i);
+    const hashMatch = rightPart.match(/(?:^|\s)#[A-Z0-9-]+\b/i);
     if (hashMatch) {
-      extractedCardNum = hashMatch[0].toUpperCase();
-      title = title.replace(hashMatch[0], '').trim();
+      extractedCardNum = hashMatch[0].trim().toUpperCase();
+      rightPart = rightPart.replace(hashMatch[0], ' ').trim();
     }
   }
 
@@ -263,62 +321,37 @@ function buildSeoTitle(originalTitle: string, specifics: ItemSpecifics): string 
   const attributes: string[] = [];
   const attrRegex = /\b(RC|AUTO|RPA|SP|SSP)\b/gi;
   let attrMatch;
-  while ((attrMatch = attrRegex.exec(title)) !== null) {
+  while ((attrMatch = attrRegex.exec(rightPart)) !== null) {
     attributes.push(attrMatch[1].toUpperCase());
   }
-  title = title.replace(attrRegex, '').replace(/\s{2,}/g, ' ').trim();
+  rightPart = rightPart.replace(attrRegex, ' ').replace(/\s{2,}/g, ' ').trim();
 
-  const serialRegex = /\b\d{1,5}\/\d{1,5}\b|\/\d{1,5}\b/g;
+  const serialRegex = /(?:^|\s)(\d{1,5}\/\d{1,5}|\/\d{1,5})\b/g;
   let serialMatch;
-  while ((serialMatch = serialRegex.exec(title)) !== null) {
-    attributes.push(serialMatch[0]);
+  while ((serialMatch = serialRegex.exec(rightPart)) !== null) {
+    attributes.push(serialMatch[1]);
   }
-  title = title.replace(serialRegex, '').replace(/\s{2,}/g, ' ').trim();
+  rightPart = rightPart.replace(serialRegex, ' ').replace(/\s{2,}/g, ' ').trim();
 
   // Grade
   const grades: string[] = [];
   const gradeRegex = /\b(PSA|BGS|SGC|CGC)\s*(10|9\.5|9|8\.5|8|7|6|5|4|3|2|1\.5|1)\b/gi;
   let gradeMatch;
-  while ((gradeMatch = gradeRegex.exec(title)) !== null) {
+  while ((gradeMatch = gradeRegex.exec(rightPart)) !== null) {
     grades.push(`${gradeMatch[1].toUpperCase()} ${gradeMatch[2]}`);
   }
-  title = title.replace(gradeRegex, '').replace(/\s{2,}/g, ' ').trim();
+  rightPart = rightPart.replace(gradeRegex, ' ').replace(/\s{2,}/g, ' ').trim();
 
-  // Brand & Set
-  let extractedBrandSet = '';
-  const brand = specifics?.brand || extractBrandFromTitle(originalTitle);
-  const set = specifics?.set;
-  if (brand) {
-    const safeBrand = brand.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const brandRegex = new RegExp(`\\b${safeBrand}\\b`, 'gi');
-    if (brandRegex.test(title)) {
-      extractedBrandSet += brand + ' ';
-      title = title.replace(brandRegex, '').replace(/\s{2,}/g, ' ').trim();
-    }
-  }
-  if (set) {
-    const safeSet = set.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const setRegex = new RegExp(`\\b${safeSet}\\b`, 'gi');
-    if (setRegex.test(title)) {
-      extractedBrandSet += set + ' ';
-      title = title.replace(setRegex, '').replace(/\s{2,}/g, ' ').trim();
-    }
-  }
-  extractedBrandSet = extractedBrandSet.trim();
-  if (extractedBrandSet) {
-    extractedBrandSet = extractedBrandSet.toLowerCase().split(/\s+/).map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
-  }
-
-  // Clean up title (which is now Insert/Parallel/Color + Team info)
-  title = title.replace(/\s{2,}/g, ' ').replace(/^[-–—,]\s*/, '').replace(/\s*[-–—,]$/, '').replace(/\s*,\s*/g, ' ').trim();
+  // Clean up title (which is now strictly Insert/Parallel/Color + Team info)
+  rightPart = rightPart.replace(/\s{2,}/g, ' ').replace(/^[-–—,]\s*/, '').replace(/\s*[-–—,]$/, '').replace(/\s*,\s*/g, ' ').trim();
 
   // Reconstruct: [Year] [Brand & Set] [Player Name] [Card #] [Insert/Parallel/Color] [Attributes] [Grade]
   let finalParts = [];
   if (yearStr) finalParts.push(yearStr);
-  if (extractedBrandSet) finalParts.push(extractedBrandSet);
+  if (leftPart) finalParts.push(leftPart); // Brand & Set
   if (playerStr) finalParts.push(playerStr);
   if (extractedCardNum) finalParts.push(extractedCardNum);
-  if (title) finalParts.push(title); // Insert/Parallel/Color
+  if (rightPart) finalParts.push(rightPart); // Insert/Parallel/Color
   if (attributes.length > 0) finalParts.push(attributes.join(' '));
   if (grades.length > 0) finalParts.push(grades.join(' '));
 
