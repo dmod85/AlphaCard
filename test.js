@@ -1,17 +1,16 @@
-const title = "2025 Panini - Hailey Van Lith #24 - Donruss WNBA - Net Marvels RC";
+const title = "2026 Topps Series 1 Freddie Freeman #GH-7 2025 Greatest Hits #GH-7 #GH-7";
 const specifics = {
-  year: "2025",
-  brand: "Panini",
-  set: "2025 Donruss WNBA", // Set contains year!
-  player: "Hailey Van Lith",
-  cardNumber: "24"
+  year: "2026",
+  brand: "Topps",
+  set: "Series 1",
+  player: "Freddie Freeman",
+  cardNumber: "GH-7"
 };
 
 function hasWorldCupCountry(title) { return false; }
 function inferWorldCupCountry(title) { return null; }
-function extractBrandFromTitle(title) { return "Panini"; }
+function extractBrandFromTitle(title) { return "Topps"; }
 
-// Paste buildSeoTitle here
 function buildSeoTitle(originalTitle, specifics) {
   const MAX_LENGTH = 80;
 
@@ -23,27 +22,10 @@ function buildSeoTitle(originalTitle, specifics) {
   const abbrevMap = [
     [/\bpsa\b/gi, 'PSA'], [/\bbgs\b/gi, 'BGS'], [/\bsgc\b/gi, 'SGC'], [/\bcgc\b/gi, 'CGC'],
     [/\(?\brookie\s+card\b\)?/gi, 'RC'], [/\(?\b(?:rookie|rc)\b\)?/gi, 'RC'],
-    [/\bauto(?:graph)?(?:ed)?\b/gi, 'Auto'], [/\brefractor\b/gi, 'Refractor'],
-    [/\bholographic\b/gi, 'Holo'], [/\bprisms?\b/gi, 'Prizm'],
-    [/\bparallel\b/gi, 'Parallel'], [/\bshort\s*print\b/gi, 'SP'],
-    [/\bsuper\s*short\s*print\b/gi, 'SSP'], [/\bfifa\b/gi, 'FIFA'],
-    [/\bmlb\b/gi, 'MLB'], [/\bnba\b/gi, 'NBA'], [/\bnfl\b/gi, 'NFL'],
-    [/\bnhl\b/gi, 'NHL'], [/\bufc\b/gi, 'UFC'], [/\bwwe\b/gi, 'WWE'],
-    [/\buefa\b/gi, 'UEFA'], [/\bwnba\b/gi, 'WNBA'], [/\bnwsl\b/gi, 'NWSL'],
-    [/\busfl\b/gi, 'USFL'], [/\bxfl\b/gi, 'XFL'], [/\bmls\b/gi, 'MLS'],
   ];
   for (const [pattern, replacement] of abbrevMap) {
     title = title.replace(pattern, replacement);
   }
-
-  title = title.replace(/\bRC(?:\s+RC)+\b/g, 'RC');
-  title = title.replace(/\bWorld\s+Cup\b/gi, 'World Cup');
-
-  if (/\bWorld\s+Cup\b/i.test(title) && !hasWorldCupCountry(title)) {
-    const country = inferWorldCupCountry(title);
-    if (country) { title = `${title} ${country}`; }
-  }
-  title = title.split(' ').map(word => word.startsWith('#') ? word.toUpperCase() : word).join(' ');
 
   let playerStr = specifics?.player || '';
   if (playerStr) {
@@ -107,9 +89,6 @@ function buildSeoTitle(originalTitle, specifics) {
           finalBrandSet += match[0] + ' ';
       } else {
           let forcedSet = set.toLowerCase().split(/\s+/).map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
-          for (const [pattern, replacement] of abbrevMap) {
-              forcedSet = forcedSet.replace(pattern, replacement);
-          }
           finalBrandSet += forcedSet + ' ';
       }
       leftPart = leftPart.replace(setRegex, ' ').trim();
@@ -124,46 +103,30 @@ function buildSeoTitle(originalTitle, specifics) {
 
   let cardNumStr = specifics?.cardNumber ? specifics.cardNumber.trim().toUpperCase() : '';
   let extractedCardNum = '';
+  
+  // ----- FIX: Better Card Number Extraction -----
   if (cardNumStr) {
-    const safeNum = cardNumStr.replace(/[^A-Z0-9]/g, '');
-    const numPattern = new RegExp(`(?:^|\\s)#?\\s*${safeNum}\\b`, 'i');
-    if (numPattern.test(rightPart)) {
-      rightPart = rightPart.replace(numPattern, ' ').trim();
+    const safeNumExact = cardNumStr.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const numPatternExact = new RegExp(`(?:^|\\s)#?\\s*${safeNumExact}\\b`, 'gi');
+    rightPart = rightPart.replace(numPatternExact, ' ').trim();
+
+    const safeNumAlpha = cardNumStr.replace(/[^A-Z0-9]/ig, '');
+    if (safeNumAlpha && safeNumAlpha !== cardNumStr) {
+        const numPatternAlpha = new RegExp(`(?:^|\\s)#?\\s*${safeNumAlpha}\\b`, 'gi');
+        rightPart = rightPart.replace(numPatternAlpha, ' ').trim();
     }
+
     extractedCardNum = cardNumStr.startsWith('#') ? cardNumStr : `#${cardNumStr}`;
   } else {
     const hashMatch = rightPart.match(/(?:^|\s)#[A-Z0-9-]+\b/i);
     if (hashMatch) {
       extractedCardNum = hashMatch[0].trim().toUpperCase();
-      rightPart = rightPart.replace(hashMatch[0], ' ').trim();
+      rightPart = rightPart.replace(new RegExp(hashMatch[0].replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), ' ').trim();
     }
   }
+  // ----------------------------------------------
 
-  const attributes = [];
-  const attrRegex = /\b(RC|AUTO|RPA|SP|SSP)\b/gi;
-  let attrMatch;
-  while ((attrMatch = attrRegex.exec(rightPart)) !== null) {
-    attributes.push(attrMatch[1].toUpperCase());
-  }
-  rightPart = rightPart.replace(attrRegex, ' ').replace(/\s{2,}/g, ' ').trim();
-
-  const serialRegex = /(?:^|\s)(\d{1,5}\/\d{1,5}|\/\d{1,5})\b/g;
-  let serialMatch;
-  while ((serialMatch = serialRegex.exec(rightPart)) !== null) {
-    attributes.push(serialMatch[1]);
-  }
-  rightPart = rightPart.replace(serialRegex, ' ').replace(/\s{2,}/g, ' ').trim();
-
-  const grades = [];
-  const gradeRegex = /\b(PSA|BGS|SGC|CGC)\s*(10|9\.5|9|8\.5|8|7|6|5|4|3|2|1\.5|1)\b/gi;
-  let gradeMatch;
-  while ((gradeMatch = gradeRegex.exec(rightPart)) !== null) {
-    grades.push(`${gradeMatch[1].toUpperCase()} ${gradeMatch[2]}`);
-  }
-  rightPart = rightPart.replace(gradeRegex, ' ').replace(/\s{2,}/g, ' ').trim();
-
-  // FIX: Strip ALL leading/trailing dashes and spaces
-  rightPart = rightPart.replace(/\s{2,}/g, ' ').replace(/^[-–—,\s]+/, '').replace(/[-–—,\s]+$/, '').trim();
+  rightPart = rightPart.replace(/\s{2,}/g, ' ').replace(/^[-–—,\s]+/, '').replace(/[-–—,\s]+$/, '').replace(/\s*,\s*/g, ' ').trim();
 
   let finalParts = [];
   if (yearStr) finalParts.push(yearStr);
@@ -180,17 +143,9 @@ function buildSeoTitle(originalTitle, specifics) {
       if (leftPart || playerStr) finalParts.push('-');
       finalParts.push(rightPart);
   }
-  
-  if (attributes.length > 0) finalParts.push(attributes.join(' '));
-  if (grades.length > 0) finalParts.push(grades.join(' '));
 
   title = finalParts.join(' ').replace(/\s{2,}/g, ' ').trim();
   
-  if (title.length > MAX_LENGTH) {
-    const cut = title.lastIndexOf(' ', MAX_LENGTH);
-    title = title.substring(0, cut > MAX_LENGTH - 15 ? cut : MAX_LENGTH).trim();
-  }
-
   return title;
 }
 

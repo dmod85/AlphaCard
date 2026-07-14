@@ -336,17 +336,22 @@ function buildSeoTitle(originalTitle: string, specifics: ItemSpecifics): string 
   let cardNumStr = specifics?.cardNumber ? specifics.cardNumber.trim().toUpperCase() : '';
   let extractedCardNum = '';
   if (cardNumStr) {
-    const safeNum = cardNumStr.replace(/[^A-Z0-9]/g, '');
-    const numPattern = new RegExp(`(?:^|\\s)#?\\s*${safeNum}\\b`, 'i');
-    if (numPattern.test(rightPart)) {
-      rightPart = rightPart.replace(numPattern, ' ').trim();
+    const safeNumExact = cardNumStr.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const numPatternExact = new RegExp(`(?:^|\\s)#?\\s*${safeNumExact}\\b`, 'gi');
+    rightPart = rightPart.replace(numPatternExact, ' ').trim();
+
+    const safeNumAlpha = cardNumStr.replace(/[^A-Z0-9]/ig, '');
+    if (safeNumAlpha && safeNumAlpha !== cardNumStr) {
+        const numPatternAlpha = new RegExp(`(?:^|\\s)#?\\s*${safeNumAlpha}\\b`, 'gi');
+        rightPart = rightPart.replace(numPatternAlpha, ' ').trim();
     }
+
     extractedCardNum = cardNumStr.startsWith('#') ? cardNumStr : `#${cardNumStr}`;
   } else {
     const hashMatch = rightPart.match(/(?:^|\s)#[A-Z0-9-]+\b/i);
     if (hashMatch) {
       extractedCardNum = hashMatch[0].trim().toUpperCase();
-      rightPart = rightPart.replace(hashMatch[0], ' ').trim();
+      rightPart = rightPart.replace(new RegExp(hashMatch[0].replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), ' ').trim();
     }
   }
 
