@@ -228,8 +228,9 @@ export default function ActiveListingsPage() {
     else setSelected(new Set(listings.map(l => l.itemId)));
   };
 
-  const selectNeedsOptimization = () => {
-    const unoptimized = listings.filter(l => !l.isSeoFriendly).map(l => l.itemId);
+  const selectNeedsOptimization = (limit?: number) => {
+    let unoptimized = listings.filter(l => !l.isSeoFriendly).map(l => l.itemId);
+    if (limit) unoptimized = unoptimized.slice(0, limit);
     setSelected(new Set(unoptimized));
   };
 
@@ -317,13 +318,24 @@ export default function ActiveListingsPage() {
             Refresh
           </button>
           {!loading && unoptimizedCount > 0 && (
-            <button
-              onClick={selectNeedsOptimization}
-              disabled={rewriting}
-              className="px-3 py-1.5 text-sm bg-gray-800 text-yellow-400 border border-yellow-500/30 rounded-lg hover:bg-yellow-500/10 transition disabled:opacity-50"
-            >
-              Select needs optimization ({unoptimizedCount})
-            </button>
+            <>
+              {unoptimizedCount > 50 && (
+                <button
+                  onClick={() => selectNeedsOptimization(50)}
+                  disabled={rewriting}
+                  className="px-3 py-1.5 text-sm bg-gray-800 text-yellow-400 border border-yellow-500/30 rounded-lg hover:bg-yellow-500/10 transition disabled:opacity-50"
+                >
+                  Select 50 unoptimized
+                </button>
+              )}
+              <button
+                onClick={() => selectNeedsOptimization()}
+                disabled={rewriting}
+                className="px-3 py-1.5 text-sm bg-gray-800 text-yellow-400 border border-yellow-500/30 rounded-lg hover:bg-yellow-500/10 transition disabled:opacity-50"
+              >
+                Select all unoptimized ({unoptimizedCount})
+              </button>
+            </>
           )}
           <button
             onClick={rewriteDescriptions}
