@@ -283,6 +283,10 @@ function buildSeoTitle(originalTitle: string, specifics: ItemSpecifics): string 
   const brand = specifics?.brand || extractBrandFromTitle(originalTitle);
   let set = specifics?.set || '';
   
+  if (yearStr && set.includes(yearStr)) {
+      set = set.replace(new RegExp(`\\b${yearStr}\\b`, 'gi'), '').trim();
+  }
+  
   if (brand && set.toLowerCase().includes(brand.toLowerCase())) {
       set = set.replace(new RegExp(`\\b${brand.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'gi'), '').trim();
   }
@@ -372,7 +376,7 @@ function buildSeoTitle(originalTitle: string, specifics: ItemSpecifics): string 
   rightPart = rightPart.replace(gradeRegex, ' ').replace(/\s{2,}/g, ' ').trim();
 
   // Clean up title (which is now strictly Insert/Parallel/Color + Team info)
-  rightPart = rightPart.replace(/\s{2,}/g, ' ').replace(/^[-–—,]\s*/, '').replace(/\s*[-–—,]$/, '').replace(/\s*,\s*/g, ' ').trim();
+  rightPart = rightPart.replace(/\s{2,}/g, ' ').replace(/^[-–—,\s]+/, '').replace(/[-–—,\s]+$/, '').replace(/\s*,\s*/g, ' ').trim();
 
   // Reconstruct: [Year] [Brand & Set] - [Player Name] [Card #] - [Insert/Parallel/Color] [Attributes] [Grade]
   let finalParts = [];

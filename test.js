@@ -1,8 +1,8 @@
-const title = "2025 Panini Hailey Van Lith #24 Donruss WNBA Net Marvels RC";
+const title = "2025 Panini - Hailey Van Lith #24 - Donruss WNBA - Net Marvels RC";
 const specifics = {
   year: "2025",
   brand: "Panini",
-  set: "Donruss WNBA",
+  set: "2025 Donruss WNBA", // Set contains year!
   player: "Hailey Van Lith",
   cardNumber: "24"
 };
@@ -70,10 +70,13 @@ function buildSeoTitle(originalTitle, specifics) {
 
   leftPart = leftPart.replace(/^[-–—,]\s*/, '').replace(/\s*[-–—,]$/, '').trim();
 
-  // ----- NEW LOGIC -----
   const brand = specifics?.brand || extractBrandFromTitle(originalTitle);
   let set = specifics?.set || '';
   
+  if (yearStr && set.includes(yearStr)) {
+      set = set.replace(new RegExp(`\\b${yearStr}\\b`, 'gi'), '').trim();
+  }
+
   if (brand && set.toLowerCase().includes(brand.toLowerCase())) {
       set = set.replace(new RegExp(`\\b${brand.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'gi'), '').trim();
   }
@@ -86,10 +89,8 @@ function buildSeoTitle(originalTitle, specifics) {
       
       let match = leftPart.match(brandRegex) || rightPart.match(brandRegex);
       if (match) {
-          // Keep the capitalization from the title match if it exists
           finalBrandSet += match[0] + ' ';
       } else {
-          // Capitalize brand properly if forcing
           const forcedBrand = brand.toLowerCase().split(/\s+/).map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
           finalBrandSet += forcedBrand + ' '; 
       }
@@ -105,8 +106,6 @@ function buildSeoTitle(originalTitle, specifics) {
       if (match) {
           finalBrandSet += match[0] + ' ';
       } else {
-          // Capitalize set properly if forcing
-          // Wait, abbreviations won't be applied to forced set! We should run abbrevMap on it if we force it.
           let forcedSet = set.toLowerCase().split(/\s+/).map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
           for (const [pattern, replacement] of abbrevMap) {
               forcedSet = forcedSet.replace(pattern, replacement);
@@ -122,7 +121,6 @@ function buildSeoTitle(originalTitle, specifics) {
   }
   
   leftPart = finalBrandSet.trim();
-  // ---------------------
 
   let cardNumStr = specifics?.cardNumber ? specifics.cardNumber.trim().toUpperCase() : '';
   let extractedCardNum = '';
@@ -164,7 +162,8 @@ function buildSeoTitle(originalTitle, specifics) {
   }
   rightPart = rightPart.replace(gradeRegex, ' ').replace(/\s{2,}/g, ' ').trim();
 
-  rightPart = rightPart.replace(/\s{2,}/g, ' ').replace(/^[-–—,]\s*/, '').replace(/\s*[-–—,]$/, '').replace(/\s*,\s*/g, ' ').trim();
+  // FIX: Strip ALL leading/trailing dashes and spaces
+  rightPart = rightPart.replace(/\s{2,}/g, ' ').replace(/^[-–—,\s]+/, '').replace(/[-–—,\s]+$/, '').trim();
 
   let finalParts = [];
   if (yearStr) finalParts.push(yearStr);
