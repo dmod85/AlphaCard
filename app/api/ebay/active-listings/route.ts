@@ -53,6 +53,7 @@ function buildGetSellerListRequest(page: number, token: string): string {
     <PageNumber>${page}</PageNumber>
   </Pagination>
   <DetailLevel>ItemReturnDescription</DetailLevel>
+  <IncludeItemSpecifics>true</IncludeItemSpecifics>
   <EndTimeFrom>${now.toISOString()}</EndTimeFrom>
   <EndTimeTo>${future.toISOString()}</EndTimeTo>
   <ErrorLanguage>en_US</ErrorLanguage>
@@ -83,6 +84,26 @@ interface ItemSpecifics {
   player?: string;
 }
 
+function parseItemSpecifics(xml: string): ItemSpecifics {
+  const result: ItemSpecifics = {};
+  const nvRegex = /<NameValueList>([\s\S]*?)<\/NameValueList>/g;
+  let m;
+  while ((m = nvRegex.exec(xml)) !== null) {
+    const block = m[1];
+    const name = (block.match(/<Name>(.*?)<\/Name>/)?.[1] || '').toLowerCase().trim();
+    const value = decodeXml((block.match(/<Value>(.*?)<\/Value>/)?.[1] || '').trim());
+
+    if (name === 'set') result.set = value;
+    else if (name === 'year manufactured' || name === 'season') result.year = value;
+    else if (name === 'card number') result.cardNumber = value;
+    else if (name === 'parallel/variety') result.parallel = value;
+    else if (name === 'sport') result.sport = value;
+    else if (name === 'manufacturer' || name === 'brand') result.brand = value;
+    else if (name === 'player/athlete' || name === 'player') result.player = value;
+  }
+  return result;
+}
+
 function parseActiveListings(xml: string): ActiveListing[] {
   const listings: ActiveListing[] = [];
 
@@ -109,8 +130,9 @@ function parseActiveListings(xml: string): ActiveListing[] {
     const rawDescription = decodeXml(item.match(/<Description>([\s\S]*?)<\/Description>/)?.[1] || '');
 
     if (itemId) {
-      // Pass an empty object to buildSeoTitle just for the initial list check
-      const seoTitle = buildSeoTitle(title, {});
+      // Parse item specifics to ensure accurate SEO title calculation
+      const specifics = parseItemSpecifics(item);
+      const seoTitle = buildSeoTitle(title, specifics);
       const expectedDesc = buildDescription(title);
       
       const normalizeDesc = (d: string) => d.replace(/[\s\r\n]+/g, ' ').trim();
@@ -405,25 +427,7 @@ function buildGetItemRequest(itemId: string, token: string): string {
 </GetItemRequest>`;
 }
 
-function parseItemSpecifics(xml: string): ItemSpecifics {
-  const result: ItemSpecifics = {};
-  const nvRegex = /<NameValueList>([\s\S]*?)<\/NameValueList>/g;
-  let m;
-  while ((m = nvRegex.exec(xml)) !== null) {
-    const block = m[1];
-    const name = (block.match(/<Name>(.*?)<\/Name>/)?.[1] || '').toLowerCase().trim();
-    const value = decodeXml((block.match(/<Value>(.*?)<\/Value>/)?.[1] || '').trim());
 
-    if (name === 'set') result.set = value;
-    else if (name === 'year manufactured' || name === 'season') result.year = value;
-    else if (name === 'card number') result.cardNumber = value;
-    else if (name === 'parallel/variety') result.parallel = value;
-    else if (name === 'sport') result.sport = value;
-    else if (name === 'manufacturer' || name === 'brand') result.brand = value;
-    else if (name === 'player/athlete' || name === 'player') result.player = value;
-  }
-  return result;
-}
 
 // Format: YEAR-BRAND-SET_NAME-SPORT (e.g. 2026-TOPPS-CHROME-UFC)
 function buildSku(specifics: ItemSpecifics, titleYear?: string, titleBrand?: string): string | null {
