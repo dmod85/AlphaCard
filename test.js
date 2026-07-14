@@ -1,15 +1,15 @@
-const title = "2026 Topps Series 1 Freddie Freeman #GH-7 2025 Greatest Hits #GH-7 #GH-7";
+const title = "2024 Panini Donruss FIFA Christian Pulisic #10 25";
 const specifics = {
-  year: "2026",
-  brand: "Topps",
-  set: "Series 1",
-  player: "Freddie Freeman",
-  cardNumber: "GH-7"
+  year: "2024",
+  brand: "Panini",
+  set: "Donruss FIFA",
+  player: "Christian Pulisic",
+  cardNumber: "25"
 };
 
 function hasWorldCupCountry(title) { return false; }
 function inferWorldCupCountry(title) { return null; }
-function extractBrandFromTitle(title) { return "Topps"; }
+function extractBrandFromTitle(title) { return "Panini"; }
 
 function buildSeoTitle(originalTitle, specifics) {
   const MAX_LENGTH = 80;
@@ -32,9 +32,12 @@ function buildSeoTitle(originalTitle, specifics) {
     playerStr = playerStr.toLowerCase().split(/\s+/).map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
   }
 
-  const yearStr = specifics?.year?.match(/\b(19|20)\d{2}\b/)?.[0] || title.match(/\b(19|20)\d{2}\b/)?.[0] || '';
+  // Year matching: handles 19xx, 20xx, and ranges like 1999-00, 2024-25, 2024-2025
+  const yearPattern = /\b((?:19|20)\d{2}(?:-\d{2,4})?)\b/i;
+  const yearStr = specifics?.year?.match(yearPattern)?.[1] || title.match(yearPattern)?.[1] || '';
   if (yearStr) {
-    title = title.replace(new RegExp(`\\b${yearStr}\\b`, 'g'), '').replace(/\s{2,}/g, ' ').trim();
+    const safeYear = yearStr.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    title = title.replace(new RegExp(`\\b${safeYear}\\b`, 'gi'), '').replace(/\s{2,}/g, ' ').trim();
   }
 
   let leftPart = '';
@@ -56,9 +59,10 @@ function buildSeoTitle(originalTitle, specifics) {
   let set = specifics?.set || '';
   
   if (yearStr && set.includes(yearStr)) {
-      set = set.replace(new RegExp(`\\b${yearStr}\\b`, 'gi'), '').trim();
+      const safeYear = yearStr.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      set = set.replace(new RegExp(`\\b${safeYear}\\b`, 'gi'), '').trim();
   }
-
+  
   if (brand && set.toLowerCase().includes(brand.toLowerCase())) {
       set = set.replace(new RegExp(`\\b${brand.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'gi'), '').trim();
   }
@@ -81,6 +85,7 @@ function buildSeoTitle(originalTitle, specifics) {
   }
   
   if (set) {
+      set = set.replace(/^[-–—,]\s*/, '').trim();
       const safeSet = set.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       const setRegex = new RegExp(`\\b${safeSet}\\b`, 'gi');
       
@@ -89,6 +94,9 @@ function buildSeoTitle(originalTitle, specifics) {
           finalBrandSet += match[0] + ' ';
       } else {
           let forcedSet = set.toLowerCase().split(/\s+/).map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
+          for (const [pattern, replacement] of abbrevMap) {
+              forcedSet = forcedSet.replace(pattern, replacement);
+          }
           finalBrandSet += forcedSet + ' ';
       }
       leftPart = leftPart.replace(setRegex, ' ').trim();
@@ -103,8 +111,6 @@ function buildSeoTitle(originalTitle, specifics) {
 
   let cardNumStr = specifics?.cardNumber ? specifics.cardNumber.trim().toUpperCase() : '';
   let extractedCardNum = '';
-  
-  // ----- FIX: Better Card Number Extraction -----
   if (cardNumStr) {
     const safeNumExact = cardNumStr.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const numPatternExact = new RegExp(`(?:^|\\s)#?\\s*${safeNumExact}\\b`, 'gi');
@@ -124,7 +130,6 @@ function buildSeoTitle(originalTitle, specifics) {
       rightPart = rightPart.replace(new RegExp(hashMatch[0].replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), ' ').trim();
     }
   }
-  // ----------------------------------------------
 
   rightPart = rightPart.replace(/\s{2,}/g, ' ').replace(/^[-–—,\s]+/, '').replace(/[-–—,\s]+$/, '').replace(/\s*,\s*/g, ' ').trim();
 

@@ -254,10 +254,12 @@ function buildSeoTitle(originalTitle: string, specifics: ItemSpecifics): string 
     playerStr = playerStr.toLowerCase().split(/\s+/).map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
   }
 
-  // Year
-  const yearStr = specifics?.year?.match(/\b(19|20)\d{2}\b/)?.[0] || title.match(/\b(19|20)\d{2}\b/)?.[0] || '';
+  // Year matching: handles 19xx, 20xx, and ranges like 1999-00, 2024-25, 2024-2025
+  const yearPattern = /\b((?:19|20)\d{2}(?:-\d{2,4})?)\b/i;
+  const yearStr = specifics?.year?.match(yearPattern)?.[1] || title.match(yearPattern)?.[1] || '';
   if (yearStr) {
-    title = title.replace(new RegExp(`\\b${yearStr}\\b`, 'g'), '').replace(/\s{2,}/g, ' ').trim();
+    const safeYear = yearStr.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    title = title.replace(new RegExp(`\\b${safeYear}\\b`, 'gi'), '').replace(/\s{2,}/g, ' ').trim();
   }
 
   let leftPart = '';
@@ -284,7 +286,8 @@ function buildSeoTitle(originalTitle: string, specifics: ItemSpecifics): string 
   let set = specifics?.set || '';
   
   if (yearStr && set.includes(yearStr)) {
-      set = set.replace(new RegExp(`\\b${yearStr}\\b`, 'gi'), '').trim();
+      const safeYear = yearStr.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      set = set.replace(new RegExp(`\\b${safeYear}\\b`, 'gi'), '').trim();
   }
   
   if (brand && set.toLowerCase().includes(brand.toLowerCase())) {
@@ -309,6 +312,7 @@ function buildSeoTitle(originalTitle: string, specifics: ItemSpecifics): string 
   }
   
   if (set) {
+      set = set.replace(/^[-–—,]\s*/, '').trim();
       const safeSet = set.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       const setRegex = new RegExp(`\\b${safeSet}\\b`, 'gi');
       
