@@ -244,7 +244,7 @@ export default function ActiveListingsPage() {
       let done = 0, failed = 0;
       for (const result of (data.results || [])) {
         if (result.success) {
-          updates[result.itemId] = { status: 'done', generatedSku: result.childSku };
+          updates[result.itemId] = { status: 'done', generatedSku: result.sku };
           successfulIds.add(result.itemId);
           done++;
         } else {

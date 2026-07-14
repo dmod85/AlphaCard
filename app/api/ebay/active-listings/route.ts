@@ -256,9 +256,6 @@ function buildSeoTitle(originalTitle: string, specifics: ItemSpecifics): string 
 
   // Clean up leftPart
   leftPart = leftPart.replace(/^[-–—,]\s*/, '').replace(/\s*[-–—,]$/, '').trim();
-  if (leftPart) {
-     leftPart = leftPart.toLowerCase().split(/\s+/).map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
-  }
 
   // Refine leftPart to ONLY contain Brand & Set, moving any Insert/Parallel info prepended before player into rightPart
   if (leftPart) {
@@ -345,13 +342,23 @@ function buildSeoTitle(originalTitle: string, specifics: ItemSpecifics): string 
   // Clean up title (which is now strictly Insert/Parallel/Color + Team info)
   rightPart = rightPart.replace(/\s{2,}/g, ' ').replace(/^[-–—,]\s*/, '').replace(/\s*[-–—,]$/, '').replace(/\s*,\s*/g, ' ').trim();
 
-  // Reconstruct: [Year] [Brand & Set] [Player Name] [Card #] [Insert/Parallel/Color] [Attributes] [Grade]
+  // Reconstruct: [Year] [Brand & Set] - [Player Name] [Card #] - [Insert/Parallel/Color] [Attributes] [Grade]
   let finalParts = [];
   if (yearStr) finalParts.push(yearStr);
   if (leftPart) finalParts.push(leftPart); // Brand & Set
-  if (playerStr) finalParts.push(playerStr);
+  
+  if (playerStr) {
+    if (leftPart) finalParts.push('-');
+    finalParts.push(playerStr);
+  }
+  
   if (extractedCardNum) finalParts.push(extractedCardNum);
-  if (rightPart) finalParts.push(rightPart); // Insert/Parallel/Color
+  
+  if (rightPart) {
+    if (leftPart || playerStr) finalParts.push('-');
+    finalParts.push(rightPart); // Insert/Parallel/Color
+  }
+  
   if (attributes.length > 0) finalParts.push(attributes.join(' '));
   if (grades.length > 0) finalParts.push(grades.join(' '));
 
@@ -408,8 +415,8 @@ function parseItemSpecifics(xml: string): ItemSpecifics {
   return result;
 }
 
-// Format: YY-BRAND-SET_NAME-SPORT (e.g. 26-TOPPS-SERIES_1-BASEBALL)
-function buildParentSku(specifics: ItemSpecifics, titleYear?: string, titleBrand?: string): string | null {
+// Format: YEAR-BRAND-SET_NAME-SPORT (e.g. 2026-TOPPS-CHROME-UFC)
+function buildSku(specifics: ItemSpecifics, titleYear?: string, titleBrand?: string): string | null {
   const year = specifics.year || titleYear;
   const brand = specifics.brand || titleBrand || 'UNKNOWN';
   const set = specifics.set || 'UNKNOWN';
@@ -417,31 +424,18 @@ function buildParentSku(specifics: ItemSpecifics, titleYear?: string, titleBrand
 
   if (!year) return null;
 
-  const twoDigit = year.slice(-2);
+  // Use full 4 digit year
+  const year4 = year.match(/\b(19|20)\d{2}\b/)?.[0] || year;
 
-  const cleanBrand = brand.toUpperCase().replace(/\s+/g, '_').replace(/[^A-Z0-9_]/g, '');
+  const cleanBrand = brand.toUpperCase().replace(/\s+/g, '-').replace(/[^A-Z0-9-]/g, '');
 
-  let cleanSet = set.replace(new RegExp(`^${year}\\s*`, 'i'), '').trim();
+  let cleanSet = set.replace(new RegExp(`^${year4}\\s*`, 'i'), '').trim();
   cleanSet = cleanSet.replace(new RegExp(`^${brand}\\s*`, 'i'), '').trim();
-  cleanSet = cleanSet.toUpperCase().replace(/\s+/g, '_').replace(/[^A-Z0-9_]/g, '');
+  cleanSet = cleanSet.toUpperCase().replace(/\s+/g, '-').replace(/[^A-Z0-9-]/g, '');
 
-  const cleanSport = sport.toUpperCase().replace(/\s+/g, '_').replace(/[^A-Z0-9_]/g, '');
+  const cleanSport = sport.toUpperCase().replace(/\s+/g, '-').replace(/[^A-Z0-9-]/g, '');
 
-  return `${twoDigit}-${cleanBrand}-${cleanSet}-${cleanSport}`;
-}
-
-// Format: [ParentSKU]-[CARDNUMBER]
-function buildChildSku(parentSku: string, cardNumber: string, parallel?: string): string {
-  const num = cardNumber.replace(/^#/, '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
-  let sku = `${parentSku}-${num}`;
-
-  // Only append parallel if it's a distinct variation to avoid colliding with base card SKU
-  if (parallel && parallel.toUpperCase() !== 'BASE') {
-    const par = parallel.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
-    sku = `${sku}-${par}`;
-  }
-
-  return sku.slice(0, 50); // eBay limit safety
+  return `${year4}-${cleanBrand}-${cleanSet}-${cleanSport}`;
 }
 
 function buildReviseItemRequest(itemId: string, seoTitle: string, description: string, token: string, sku?: string): string {
@@ -519,12 +513,18 @@ export async function POST(request: NextRequest) {
     const token = await getValidToken();
 
     const specificsMap = new Map<string, ItemSpecifics>();
+    const skuMap = new Map<string, string>();
     await Promise.all(
       items.map(async (item) => {
         try {
           const xml = buildGetItemRequest(item.itemId, token);
           const response = await callEbayApi(xml, 'GetItem', token);
           specificsMap.set(item.itemId, parseItemSpecifics(response));
+          
+          const existingSku = response.match(/<SKU>(.*?)<\/SKU>/)?.[1];
+          if (existingSku) {
+            skuMap.set(item.itemId, decodeXml(existingSku));
+          }
         } catch {
           specificsMap.set(item.itemId, {});
         }
@@ -543,6 +543,7 @@ export async function POST(request: NextRequest) {
     for (const item of items) {
       try {
         const specifics = specificsMap.get(item.itemId) || {};
+        const existingSku = skuMap.get(item.itemId) || '';
 
         // Pass item specifics down to structurally govern the Title Convention
         const seoTitle = buildSeoTitle(item.title, specifics);
@@ -551,17 +552,17 @@ export async function POST(request: NextRequest) {
         const titleYear = item.title.match(/\b((19|20)\d{2})\b/)?.[1];
         const titleBrand = extractBrandFromTitle(item.title);
 
-        const parentSku = buildParentSku(specifics, titleYear, titleBrand) ?? undefined;
-        const childSku = parentSku && specifics.cardNumber != null
-          ? buildChildSku(parentSku, specifics.cardNumber, specifics.parallel)
-          : undefined;
+        let finalSku: string | undefined = undefined;
+        if (!existingSku.toLowerCase().startsWith('lot')) {
+          finalSku = buildSku(specifics, titleYear, titleBrand) ?? undefined;
+        }
 
-        const xml = buildReviseItemRequest(item.itemId, seoTitle, description, token, childSku);
+        const xml = buildReviseItemRequest(item.itemId, seoTitle, description, token, finalSku);
         const response = await callEbayApi(xml, 'ReviseItem', token);
 
         const ack = response.match(/<Ack>(.*?)<\/Ack>/)?.[1];
         if (ack === 'Success' || ack === 'Warning') {
-          results.push({ itemId: item.itemId, success: true, seoTitle, parentSku, childSku });
+          results.push({ itemId: item.itemId, success: true, seoTitle, sku: finalSku });
         } else {
           const error = response.match(/<LongMessage>(.*?)<\/LongMessage>/)?.[1]
             || response.match(/<ShortMessage>(.*?)<\/ShortMessage>/)?.[1]
