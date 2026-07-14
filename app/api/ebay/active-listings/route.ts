@@ -535,8 +535,7 @@ export async function POST(request: NextRequest) {
       itemId: string;
       success: boolean;
       seoTitle?: string;
-      parentSku?: string;
-      childSku?: string;
+      sku?: string;
       error?: string;
     }> = [];
 
