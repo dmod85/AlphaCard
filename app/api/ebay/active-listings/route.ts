@@ -258,43 +258,53 @@ function buildSeoTitle(originalTitle: string, specifics: ItemSpecifics): string 
   leftPart = leftPart.replace(/^[-–—,]\s*/, '').replace(/\s*[-–—,]$/, '').trim();
 
   // Refine leftPart to ONLY contain Brand & Set, moving any Insert/Parallel info prepended before player into rightPart
-  if (leftPart) {
-      const brand = specifics?.brand || extractBrandFromTitle(originalTitle);
-      let set = specifics?.set || '';
-      
-      if (brand && set.toLowerCase().includes(brand.toLowerCase())) {
-          set = set.replace(new RegExp(`\\b${brand.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'gi'), '').trim();
-      }
-      
-      let matchedBrandSet = '';
-      let remainingLeft = leftPart;
-      
-      if (brand) {
-        const safeBrand = brand.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        const brandRegex = new RegExp(`\\b${safeBrand}\\b`, 'gi');
-        const match = remainingLeft.match(brandRegex);
-        if (match) {
-           matchedBrandSet += match[0] + ' ';
-           remainingLeft = remainingLeft.replace(brandRegex, ' ').trim();
-        }
-      }
-      if (set) {
-        const safeSet = set.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        const setRegex = new RegExp(`\\b${safeSet}\\b`, 'gi');
-        const match = remainingLeft.match(setRegex);
-        if (match) {
-           matchedBrandSet += match[0] + ' ';
-           remainingLeft = remainingLeft.replace(setRegex, ' ').trim();
-        }
-      }
-      
-      if (matchedBrandSet) {
-          leftPart = matchedBrandSet.trim();
-          if (remainingLeft) {
-              rightPart = remainingLeft + ' ' + rightPart;
-          }
-      }
+  const brand = specifics?.brand || extractBrandFromTitle(originalTitle);
+  let set = specifics?.set || '';
+  
+  if (brand && set.toLowerCase().includes(brand.toLowerCase())) {
+      set = set.replace(new RegExp(`\\b${brand.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'gi'), '').trim();
   }
+  
+  let finalBrandSet = '';
+  
+  if (brand) {
+      const safeBrand = brand.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const brandRegex = new RegExp(`\\b${safeBrand}\\b`, 'gi');
+      
+      let match = leftPart.match(brandRegex) || rightPart.match(brandRegex);
+      if (match) {
+          finalBrandSet += match[0] + ' ';
+      } else {
+          const forcedBrand = brand.toLowerCase().split(/\s+/).map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
+          finalBrandSet += forcedBrand + ' '; 
+      }
+      leftPart = leftPart.replace(brandRegex, ' ').trim();
+      rightPart = rightPart.replace(brandRegex, ' ').trim();
+  }
+  
+  if (set) {
+      const safeSet = set.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const setRegex = new RegExp(`\\b${safeSet}\\b`, 'gi');
+      
+      let match = leftPart.match(setRegex) || rightPart.match(setRegex);
+      if (match) {
+          finalBrandSet += match[0] + ' ';
+      } else {
+          let forcedSet = set.toLowerCase().split(/\s+/).map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
+          for (const [pattern, replacement] of abbrevMap) {
+              forcedSet = forcedSet.replace(pattern, replacement);
+          }
+          finalBrandSet += forcedSet + ' ';
+      }
+      leftPart = leftPart.replace(setRegex, ' ').trim();
+      rightPart = rightPart.replace(setRegex, ' ').trim();
+  }
+  
+  if (leftPart) {
+      rightPart = leftPart + ' ' + rightPart;
+  }
+  
+  leftPart = finalBrandSet.trim();
 
   // Card Number
   let cardNumStr = specifics?.cardNumber ? specifics.cardNumber.trim().toUpperCase() : '';
