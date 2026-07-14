@@ -133,7 +133,7 @@ function parseActiveListings(xml: string): ActiveListing[] {
       // Parse item specifics to ensure accurate SEO title calculation
       const specifics = parseItemSpecifics(item);
       const seoTitle = buildSeoTitle(title, specifics);
-      const expectedDesc = buildDescription(title);
+      const expectedDesc = buildDescription(seoTitle);
       
       const normalizeDesc = (d: string) => d.replace(/[\s\r\n]+/g, ' ').trim();
       const isDescFriendly = normalizeDesc(rawDescription) === normalizeDesc(expectedDesc);
@@ -565,7 +565,7 @@ export async function POST(request: NextRequest) {
 
         // Pass item specifics down to structurally govern the Title Convention
         const seoTitle = buildSeoTitle(item.title, specifics);
-        const description = buildDescription(item.title);
+        const description = buildDescription(seoTitle);
 
         const titleYear = item.title.match(/\b((19|20)\d{2})\b/)?.[1];
         const titleBrand = extractBrandFromTitle(item.title);
