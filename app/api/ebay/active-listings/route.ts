@@ -471,12 +471,14 @@ function buildReviseItemRequest(itemId: string, seoTitle: string, description: s
 </ReviseItemRequest>`;
 }
 
-// GET — fetch active listings (all pages)
-export async function GET() {
+// GET — fetch active listings (lazy loaded by page)
+export async function GET(request: NextRequest) {
   try {
+    const { searchParams } = new URL(request.url);
+    const page = parseInt(searchParams.get('page') || '1', 10);
     const token = await getValidToken();
 
-    const firstXml = buildGetSellerListRequest(1, token);
+    const firstXml = buildGetSellerListRequest(page, token);
     const firstResponse = await callEbayApi(firstXml, 'GetSellerList', token);
 
     const ack = firstResponse.match(/<Ack>(.*?)<\/Ack>/)?.[1];
@@ -494,19 +496,9 @@ export async function GET() {
 
     const total = parseInt(firstResponse.match(/<TotalNumberOfEntries>(.*?)<\/TotalNumberOfEntries>/)?.[1] || '0');
     const totalPages = parseInt(firstResponse.match(/<TotalNumberOfPages>(.*?)<\/TotalNumberOfPages>/)?.[1] || '1');
-    const allListings = parseActiveListings(firstResponse);
+    const listings = parseActiveListings(firstResponse);
 
-    if (totalPages > 1) {
-      const pageNums = Array.from({ length: totalPages - 1 }, (_, i) => i + 2);
-      const pageResponses = await Promise.all(
-        pageNums.map(page => callEbayApi(buildGetSellerListRequest(page, token), 'GetSellerList', token))
-      );
-      for (const pageResponse of pageResponses) {
-        allListings.push(...parseActiveListings(pageResponse));
-      }
-    }
-
-    return NextResponse.json({ listings: allListings, total });
+    return NextResponse.json({ listings, total, totalPages, currentPage: page });
   } catch (err: any) {
     if (err.message === 'EBAY_AUTH_REQUIRED') {
       return NextResponse.json({ error: 'EBAY_AUTH_REQUIRED' }, { status: 401 });

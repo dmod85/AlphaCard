@@ -80,6 +80,10 @@ export default function ActiveListingsPage() {
   const [listings, setListings] = useState<ActiveListing[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const loadMoreRef = useRef<HTMLDivElement>(null);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [itemStates, setItemStates] = useState<Record<string, ItemState>>({});
@@ -122,28 +126,37 @@ export default function ActiveListingsPage() {
     }
   }, [openComparable, comparables, fetchComparablePrice]);
 
-  const fetchListings = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    setNeedsAuth(false);
-    setSelected(new Set());
-    setItemStates({});
-    setSummary(null);
-    setDescriptions({});
+  const fetchListings = useCallback(async (pageNum = 1, append = false) => {
+    if (append) setLoadingMore(true);
+    else setLoading(true);
+    
+    if (!append) {
+      setError(null);
+      setNeedsAuth(false);
+      setSelected(new Set());
+      setItemStates({});
+      setSummary(null);
+      setDescriptions({});
+    }
+
     try {
-      const res = await fetch('/api/ebay/active-listings');
+      const res = await fetch(`/api/ebay/active-listings?page=${pageNum}`);
       const data = await res.json();
       if (res.status === 401 || data.error === 'EBAY_AUTH_REQUIRED') {
         setNeedsAuth(true);
         return;
       }
       if (!res.ok) throw new Error(data.error || 'Failed to fetch listings');
-      setListings(data.listings);
+      
+      setListings(prev => append ? [...prev, ...data.listings] : data.listings);
       setTotal(data.total);
+      setTotalPages(data.totalPages || 1);
+      setPage(data.currentPage || 1);
     } catch (err: any) {
       setError(err.message);
     } finally {
       setLoading(false);
+      setLoadingMore(false);
     }
   }, []);
 
@@ -152,8 +165,21 @@ export default function ActiveListingsPage() {
     if (params.get('ebay_connected')) {
       window.history.replaceState({}, '', '/active-listings');
     }
-    fetchListings();
+    fetchListings(1, false);
   }, [fetchListings]);
+
+  useEffect(() => {
+    if (loading || loadingMore || page >= totalPages) return;
+    
+    const observer = new IntersectionObserver(([entry]) => {
+      if (entry.isIntersecting) {
+        fetchListings(page + 1, true);
+      }
+    }, { rootMargin: '200px' });
+    
+    if (loadMoreRef.current) observer.observe(loadMoreRef.current);
+    return () => observer.disconnect();
+  }, [loading, loadingMore, page, totalPages, fetchListings]);
 
   useEffect(() => {
     if (selectAllRef.current) {
@@ -284,7 +310,7 @@ export default function ActiveListingsPage() {
         </div>
         <div className="flex items-center gap-3">
           <button
-            onClick={fetchListings}
+            onClick={() => fetchListings(1, false)}
             disabled={loading || rewriting}
             className="px-3 py-1.5 text-sm bg-gray-800 text-gray-300 rounded-lg hover:bg-gray-700 transition disabled:opacity-50"
           >
@@ -694,6 +720,12 @@ export default function ActiveListingsPage() {
               })}
             </tbody>
           </table>
+          {page < totalPages && (
+            <div ref={loadMoreRef} className="py-4 text-center text-sm text-gray-500 flex items-center justify-center gap-2">
+              <div className="w-4 h-4 border-2 border-gray-700 border-t-green-500 rounded-full animate-spin" />
+              Loading more...
+            </div>
+          )}
         </div>
       ) : null}
     </div>
