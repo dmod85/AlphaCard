@@ -11,6 +11,7 @@ const NAV_ITEMS = [
   { href: '/inventory', label: 'Inventory', icon: '📦' },
   { href: '/bulk-list', label: 'Bulk List ', icon: '🚀' },
   { href: '/active-listings', label: 'Active Listings', icon: '📋' },
+  { href: '/listing-details', label: 'Listing Details', icon: '🔎' },
   { href: '/analytics', label: 'Analytics', icon: '📊' },
 ];
 

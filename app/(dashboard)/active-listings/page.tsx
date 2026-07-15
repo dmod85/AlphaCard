@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import Link from 'next/link';
 
 interface ActiveListing {
   itemId: string;
@@ -298,7 +299,7 @@ export default function ActiveListingsPage() {
   const allSelected = listings.length > 0 && selected.size === listings.length;
 
   return (
-    <div className="flex-1 p-6 bg-gray-900 min-h-screen">
+    <div className="flex-1 p-6 bg-gray-900 h-full overflow-auto">
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
@@ -515,16 +516,25 @@ export default function ActiveListingsPage() {
                           </span>
                         )}
                       </div>
-                      {(() => {
-                        const displaySku = itemStates[listing.itemId]?.generatedSku || listing.sku;
-                        if (!displaySku) return null;
-                        const isNew = !!itemStates[listing.itemId]?.generatedSku;
-                        return (
-                          <span className={`block text-[10px] font-mono mt-0.5 ${isNew ? 'text-green-400' : 'text-gray-500'}`}>
-                            {displaySku}
-                          </span>
-                        );
-                      })()}
+                      <div className="flex items-center gap-3 mt-1">
+                        {(() => {
+                          const displaySku = itemStates[listing.itemId]?.generatedSku || listing.sku;
+                          if (!displaySku) return null;
+                          const isNew = !!itemStates[listing.itemId]?.generatedSku;
+                          return (
+                            <span className={`text-[10px] font-mono ${isNew ? 'text-green-400' : 'text-gray-500'}`}>
+                              {displaySku}
+                            </span>
+                          );
+                        })()}
+                        <Link
+                          href={`/listing-details?itemId=${listing.itemId}`}
+                          onClick={(e) => e.stopPropagation()}
+                          className="text-[10px] text-blue-400 hover:text-blue-300 underline underline-offset-2 transition-colors"
+                        >
+                          Details →
+                        </Link>
+                      </div>
                     </td>
                     <td className="px-4 py-3 text-right text-green-400 font-medium tabular-nums">
                       ${listing.price.toFixed(2)}

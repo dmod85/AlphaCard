@@ -86,7 +86,7 @@ export default function Dashboard() {
   );
 
   return (
-    <div className="min-h-screen bg-gray-950 text-white p-6 font-sans">
+    <div className="h-full overflow-auto bg-gray-950 text-white p-6 font-sans">
       {/* Header */}
       <header className="mb-8 flex items-center justify-between">
         <div>

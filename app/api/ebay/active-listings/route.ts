@@ -61,6 +61,11 @@ function buildGetSellerListRequest(page: number, token: string): string {
 </GetSellerListRequest>`;
 }
 
+interface NameValuePair {
+  name: string;
+  value: string;
+}
+
 interface ActiveListing {
   itemId: string;
   title: string;
@@ -72,6 +77,7 @@ interface ActiveListing {
   startTime: string;
   isSeoFriendly: boolean;
   sku?: string;
+  specifics: NameValuePair[];
 }
 
 interface ItemSpecifics {
@@ -104,6 +110,19 @@ function parseItemSpecifics(xml: string): ItemSpecifics {
   return result;
 }
 
+function parseAllSpecifics(xml: string): NameValuePair[] {
+  const result: NameValuePair[] = [];
+  const nvRegex = /<NameValueList>([\s\S]*?)<\/NameValueList>/g;
+  let m;
+  while ((m = nvRegex.exec(xml)) !== null) {
+    const block = m[1];
+    const name = decodeXml((block.match(/<Name>(.*?)<\/Name>/)?.[1] || '').trim());
+    const value = decodeXml((block.match(/<Value>(.*?)<\/Value>/)?.[1] || '').trim());
+    if (name && value) result.push({ name, value });
+  }
+  return result;
+}
+
 function parseActiveListings(xml: string): ActiveListing[] {
   const listings: ActiveListing[] = [];
 
@@ -130,16 +149,19 @@ function parseActiveListings(xml: string): ActiveListing[] {
     const rawDescription = decodeXml(item.match(/<Description>([\s\S]*?)<\/Description>/)?.[1] || '');
 
     if (itemId) {
-      // Parse item specifics to ensure accurate SEO title calculation
+      // Parse item specifics for SEO calculation
       const specifics = parseItemSpecifics(item);
       const seoTitle = buildSeoTitle(title, specifics);
       const expectedDesc = buildDescription(seoTitle);
-      
+
       const normalizeDesc = (d: string) => d.replace(/[\s\r\n]+/g, ' ').trim();
       const isDescFriendly = normalizeDesc(rawDescription) === normalizeDesc(expectedDesc);
-      
       const isSeoFriendly = title === seoTitle && isDescFriendly;
-      listings.push({ itemId, title, price, url, pictureUrl, quantity, quantityAvailable, startTime, isSeoFriendly, sku });
+
+      // Parse all specifics as raw name-value pairs for display
+      const allSpecifics = parseAllSpecifics(item);
+
+      listings.push({ itemId, title, price, url, pictureUrl, quantity, quantityAvailable, startTime, isSeoFriendly, sku, specifics: allSpecifics });
     }
   }
 
