@@ -18,6 +18,9 @@ interface ActiveListing {
   startTime: string;
   isSeoFriendly: boolean;
   sku?: string;
+  // Already included in the bulk /api/ebay/active-listings response (eBay's
+  // GetSellerList call is made with IncludeItemSpecifics=true), so no extra
+  // per-item API calls are needed to populate this.
   specifics: NameValuePair[];
 }
 
@@ -35,12 +38,8 @@ const PRIORITY_COLS = [
 // How many rows to render up front, growing as the user scrolls — keeps the
 // initial paint fast even once every listing has been fetched into memory.
 const ROW_BATCH = 50;
-// How many item IDs to request specifics for per API call, and how many of
-// those batched calls to run concurrently.
-const SPEC_BATCH = 20;
-const SPEC_CONCURRENCY = 4;
 
-type SpecificMap = Record<string, NameValuePair[] | 'loading' | 'error'>;
+type SpecificMap = Record<string, NameValuePair[]>;
 type SortDir = 'asc' | 'desc';
 // edits[itemId][colName] = new value
 type EditMap = Record<string, Record<string, string>>;
@@ -56,12 +55,10 @@ function getSpecificValue(specifics: NameValuePair[], colName: string): string {
 function buildColumns(specificMap: SpecificMap): string[] {
   const seen = new Set<string>(PRIORITY_COLS.map((c) => c.toLowerCase().trim()));
   const extras: string[] = [];
-  for (const val of Object.values(specificMap)) {
-    if (Array.isArray(val)) {
-      for (const s of val) {
-        const k = s.name.toLowerCase().trim();
-        if (!seen.has(k)) { seen.add(k); extras.push(s.name); }
-      }
+  for (const specifics of Object.values(specificMap)) {
+    for (const s of specifics) {
+      const k = s.name.toLowerCase().trim();
+      if (!seen.has(k)) { seen.add(k); extras.push(s.name); }
     }
   }
   return [...PRIORITY_COLS, ...extras];
@@ -186,7 +183,6 @@ export default function ListingDetailsPage() {
   const [sortCol, setSortCol] = useState<string | null>(null);
   const [sortDir, setSortDir] = useState<SortDir>('asc');
 
-  const [specificMap, setSpecificMap] = useState<SpecificMap>({});
   const [edits, setEdits] = useState<EditMap>({});
   const [editingCell, setEditingCell] = useState<{ itemId: string; col: string } | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -199,79 +195,22 @@ export default function ListingDetailsPage() {
   const [srCase, setSrCase] = useState(false);
   const srFindRef = useRef<HTMLInputElement>(null);
 
-  const fetchingRef = useRef<Set<string>>(new Set());
   const sentinelRef = useRef<HTMLDivElement>(null);
-  // Queue that listing pages push their item IDs into as soon as they arrive,
-  // drained continuously by the specifics workers below — this is what lets
-  // specifics fetching run *at the same time* as later listing pages, instead
-  // of waiting for every page to finish first.
-  const specQueueRef = useRef<string[]>([]);
-  const pagesDoneRef = useRef(false);
 
-  // ── Fetch a batch of item specifics ───────────────────────────────────────
-  const fetchSpecifics = useCallback(async (itemIds: string[]) => {
-    const toFetch = itemIds.filter((id) => !fetchingRef.current.has(id));
-    if (toFetch.length === 0) return;
-    toFetch.forEach((id) => fetchingRef.current.add(id));
-    setSpecificMap((prev) => {
-      const next = { ...prev };
-      toFetch.forEach((id) => { next[id] = 'loading'; });
-      return next;
-    });
-    try {
-      const res = await fetch(`/api/ebay/listing-details?itemIds=${toFetch.join(',')}`);
-      const data = await res.json();
-      if (!res.ok || data.error) throw new Error(data.error || 'Failed');
-      setSpecificMap((prev) => {
-        const next = { ...prev };
-        for (const r of data.results as { itemId: string; specifics: NameValuePair[] }[]) {
-          next[r.itemId] = r.specifics;
-          fetchingRef.current.delete(r.itemId);
-        }
-        return next;
-      });
-    } catch {
-      setSpecificMap((prev) => {
-        const next = { ...prev };
-        toFetch.forEach((id) => { next[id] = 'error'; fetchingRef.current.delete(id); });
-        return next;
-      });
-    }
-  }, []);
+  // Specifics arrive bundled with each listing — just index them by itemId.
+  const specificMap: SpecificMap = useMemo(() => {
+    const map: SpecificMap = {};
+    for (const l of allListings) map[l.itemId] = l.specifics;
+    return map;
+  }, [allListings]);
 
-  // Persistent pool of workers that drain specQueueRef as items land in it —
-  // started once per load, they keep pulling batches until every page has
-  // been fetched *and* the queue is empty.
-  const runSpecificsWorkers = useCallback(async () => {
-    async function worker() {
-      while (true) {
-        const batch = specQueueRef.current.splice(0, SPEC_BATCH);
-        if (batch.length > 0) {
-          await fetchSpecifics(batch);
-        } else if (pagesDoneRef.current) {
-          return;
-        } else {
-          await new Promise((r) => setTimeout(r, 100));
-        }
-      }
-    }
-    await Promise.all(Array.from({ length: SPEC_CONCURRENCY }, worker));
-  }, [fetchSpecifics]);
-
-  // ── Load listing pages and their specifics concurrently ──────────────────
+  // ── Load listing pages (each page already includes full item specifics) ──
   const loadEverything = useCallback(async () => {
     setLoading(true);
     setPagesLoading(true);
     setError(null);
     setAllListings([]);
-    setSpecificMap({});
     setVisibleCount(ROW_BATCH);
-    fetchingRef.current.clear();
-    specQueueRef.current = [];
-    pagesDoneRef.current = false;
-
-    const specificsDone = runSpecificsWorkers();
-
     try {
       let page = 1;
       let totalPages = 1;
@@ -284,10 +223,6 @@ export default function ListingDetailsPage() {
         }
         if (!res.ok) throw new Error(data.error || 'Failed to fetch listings');
         setAllListings((prev) => [...prev, ...data.listings]);
-        // Queue this page's items for specifics immediately — the worker
-        // pool above is already running and will pick them up right away,
-        // in parallel with fetching the next page.
-        specQueueRef.current.push(...data.listings.map((l: ActiveListing) => l.itemId));
         totalPages = data.totalPages || 1;
         setTotal(data.total || 0);
         setLoading(false); // reveal rows as soon as the first page is in
@@ -298,10 +233,8 @@ export default function ListingDetailsPage() {
     } finally {
       setLoading(false);
       setPagesLoading(false);
-      pagesDoneRef.current = true;
-      await specificsDone;
     }
-  }, [runSpecificsWorkers]);
+  }, []);
 
   useEffect(() => { loadEverything(); }, [loadEverything]);
 
@@ -331,9 +264,7 @@ export default function ListingDetailsPage() {
     let affected = 0;
 
     for (const listing of allListings) {
-      const specs = specificMap[listing.itemId];
-      if (!Array.isArray(specs)) continue;
-      const original = getSpecificValue(specs, col);
+      const original = getSpecificValue(listing.specifics, col);
       const current = newEdits[listing.itemId]?.[col] ?? original;
       if (current === '') continue;
       affected++;
@@ -344,7 +275,7 @@ export default function ListingDetailsPage() {
       setEdits(newEdits);
       setSubmitResults({});
     }
-  }, [allListings, specificMap, edits]);
+  }, [allListings, edits]);
 
   // ── Open S&R for a column ─────────────────────────────────────────────────
   const openSr = useCallback((col: string) => {
@@ -363,9 +294,7 @@ export default function ListingDetailsPage() {
       if (srCol === '__title__') {
         current = edits[listing.itemId]?.['__title__'] ?? listing.title;
       } else {
-        const specs = specificMap[listing.itemId];
-        if (!Array.isArray(specs)) continue;
-        current = edits[listing.itemId]?.[srCol] ?? getSpecificValue(specs, srCol);
+        current = edits[listing.itemId]?.[srCol] ?? getSpecificValue(listing.specifics, srCol);
       }
       const regex = new RegExp(
         srFind.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),
@@ -374,7 +303,7 @@ export default function ListingDetailsPage() {
       if (regex.test(current)) count++;
     }
     return count;
-  }, [srCol, srFind, srCase, allListings, specificMap, edits]);
+  }, [srCol, srFind, srCase, allListings, edits]);
 
   // ── Replace All ───────────────────────────────────────────────────────────
   const handleReplaceAll = useCallback(() => {
@@ -390,9 +319,7 @@ export default function ListingDetailsPage() {
         original = listing.title;
         current = newEdits[listing.itemId]?.['__title__'] ?? original;
       } else {
-        const specs = specificMap[listing.itemId];
-        if (!Array.isArray(specs)) continue;
-        original = getSpecificValue(specs, srCol);
+        original = getSpecificValue(listing.specifics, srCol);
         current = newEdits[listing.itemId]?.[srCol] ?? original;
       }
 
@@ -416,7 +343,7 @@ export default function ListingDetailsPage() {
       setEdits(newEdits);
       setSubmitResults({});
     }
-  }, [srCol, srFind, srReplace, srCase, allListings, specificMap, edits]);
+  }, [srCol, srFind, srReplace, srCase, allListings, edits]);
 
   // ── Cell edit handlers ────────────────────────────────────────────────────
   const startEdit = useCallback((itemId: string, col: string) => {
@@ -425,14 +352,11 @@ export default function ListingDetailsPage() {
 
   const commitEdit = useCallback((itemId: string, col: string, newVal: string) => {
     setEditingCell(null);
-    // Determine the original value — title comes from allListings, specifics from specificMap
-    let originalVal = '';
-    if (col === '__title__') {
-      originalVal = allListings.find((l) => l.itemId === itemId)?.title ?? '';
-    } else {
-      const specs = specificMap[itemId];
-      originalVal = Array.isArray(specs) ? getSpecificValue(specs, col) : '';
-    }
+    // Determine the original value — title comes from allListings, specifics from listing.specifics
+    const listing = allListings.find((l) => l.itemId === itemId);
+    const originalVal = col === '__title__'
+      ? (listing?.title ?? '')
+      : getSpecificValue(listing?.specifics ?? [], col);
     if (newVal.trim() === originalVal.trim()) {
       // No change — remove any stale edit for this col
       setEdits((prev) => {
@@ -456,7 +380,7 @@ export default function ListingDetailsPage() {
       delete next[itemId];
       return next;
     });
-  }, [specificMap, allListings]);
+  }, [allListings]);
 
   const cancelEdit = useCallback(() => {
     setEditingCell(null);
@@ -478,7 +402,7 @@ export default function ListingDetailsPage() {
     });
 
     const items = changedItemIds.map((itemId) => {
-      const baseSpecs = Array.isArray(specificMap[itemId]) ? (specificMap[itemId] as NameValuePair[]) : [];
+      const baseSpecs = specificMap[itemId] ?? [];
       const itemEdits = edits[itemId];
 
       // Pull out title edit if present
@@ -522,21 +446,14 @@ export default function ListingDetailsPage() {
 
       setSubmitResults(newResults);
 
-      // Apply successful edits into specificMap / allListings and clear those edits
+      // Apply successful edits back into allListings and clear those edits
       if (successIds.size > 0) {
-        setSpecificMap((prev) => {
-          const next = { ...prev };
-          for (const item of items) {
-            if (successIds.has(item.itemId)) next[item.itemId] = item.specifics;
-          }
-          return next;
-        });
-        // Sync updated titles back into allListings
         setAllListings((prev) =>
           prev.map((l) => {
             if (!successIds.has(l.itemId)) return l;
             const item = items.find((i) => i.itemId === l.itemId);
-            return item?.title ? { ...l, title: item.title } : l;
+            if (!item) return l;
+            return { ...l, specifics: item.specifics, title: item.title || l.title };
           })
         );
         setEdits((prev) => {
@@ -568,24 +485,16 @@ export default function ListingDetailsPage() {
       let aVal = '', bVal = '';
       if (sortCol === '__title__') { aVal = a.title; bVal = b.title; }
       else {
-        const aSpecs = specificMap[a.itemId];
-        const bSpecs = specificMap[b.itemId];
-        aVal = Array.isArray(aSpecs) ? getSpecificValue(aSpecs, sortCol) : '￿';
-        bVal = Array.isArray(bSpecs) ? getSpecificValue(bSpecs, sortCol) : '￿';
+        aVal = getSpecificValue(a.specifics, sortCol);
+        bVal = getSpecificValue(b.specifics, sortCol);
       }
       const cmp = aVal.localeCompare(bVal, undefined, { numeric: true, sensitivity: 'base' });
       return sortDir === 'asc' ? cmp : -cmp;
     });
-  }, [filtered, sortCol, sortDir, specificMap]);
+  }, [filtered, sortCol, sortDir]);
 
   const visible = sortedFiltered.slice(0, visibleCount);
   const columns = buildColumns(specificMap);
-
-  const specificsLoadedCount = useMemo(
-    () => allListings.reduce((n, l) => n + (Array.isArray(specificMap[l.itemId]) ? 1 : 0), 0),
-    [allListings, specificMap]
-  );
-  const specificsPending = allListings.length > 0 && specificsLoadedCount < allListings.length;
 
   return (
     <div className="h-full bg-gray-950 text-white flex flex-col">
@@ -602,10 +511,8 @@ export default function ListingDetailsPage() {
                 sorted by {sortCol === '__title__' ? 'Title' : sortCol} {sortDir === 'asc' ? '↑' : '↓'}
               </span>
             )}
-            {!loading && (pagesLoading || specificsPending) && (
-              <span className="ml-2 text-amber-400/70">
-                loading details… ({specificsLoadedCount.toLocaleString()}/{allListings.length.toLocaleString()})
-              </span>
+            {!loading && pagesLoading && (
+              <span className="ml-2 text-amber-400/70">loading more…</span>
             )}
           </p>
         </div>
@@ -856,9 +763,6 @@ export default function ListingDetailsPage() {
             {loading
               ? Array.from({ length: 20 }).map((_, i) => <SkeletonRow key={i} cols={PRIORITY_COLS.length} />)
               : visible.map((listing) => {
-                  const specs = specificMap[listing.itemId];
-                  const specsLoaded = Array.isArray(specs);
-                  const specsError = specs === 'error';
                   const itemEdits = edits[listing.itemId] || {};
                   const submitResult = submitResults[listing.itemId];
                   const isItemPending = submitResult === 'pending';
@@ -893,20 +797,7 @@ export default function ListingDetailsPage() {
 
                       {/* Specifics (editable) */}
                       {columns.map((col) => {
-                        if (!specsLoaded) {
-                          return (
-                            <td key={col} className="px-3 py-2">
-                              {specs === 'loading' || specs === undefined
-                                ? <div className="h-2.5 w-12 bg-gray-800 rounded animate-pulse" />
-                                : specsError
-                                  ? <span className="text-[10px] text-red-700">err</span>
-                                  : <span className="text-xs text-gray-800">—</span>
-                              }
-                            </td>
-                          );
-                        }
-
-                        const originalVal = getSpecificValue(specs as NameValuePair[], col);
+                        const originalVal = getSpecificValue(listing.specifics, col);
                         const editedVal = col in itemEdits ? itemEdits[col] : originalVal;
                         const isEdited = col in itemEdits;
                         const isEditing =
