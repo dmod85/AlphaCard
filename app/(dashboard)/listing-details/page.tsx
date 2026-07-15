@@ -64,6 +64,17 @@ function buildColumns(specificMap: SpecificMap): string[] {
   return [...PRIORITY_COLS, ...extras];
 }
 
+/** Formats an ISO timestamp as e.g. "12:00 AM PT (in 6h 12m)" */
+function formatResetTime(iso: string): string {
+  const target = new Date(iso);
+  const clock = target.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'America/Los_Angeles', timeZoneName: 'short' });
+  const diffMs = target.getTime() - Date.now();
+  if (diffMs <= 0) return clock;
+  const hours = Math.floor(diffMs / 3_600_000);
+  const minutes = Math.round((diffMs % 3_600_000) / 60_000);
+  return `${clock} (in ${hours}h ${minutes}m)`;
+}
+
 /** Replace all occurrences of `find` in `str` with `replace` */
 function replaceOccurrences(str: string, find: string, replace: string, caseSensitive: boolean): string {
   if (!find) return str;
@@ -194,6 +205,35 @@ export default function ListingDetailsPage() {
   const [srReplace, setSrReplace] = useState('');
   const [srCase, setSrCase] = useState(false);
   const srFindRef = useRef<HTMLInputElement>(null);
+
+  // ── eBay API usage panel ──────────────────────────────────────────────────
+  const [usageOpen, setUsageOpen] = useState(false);
+  const [usageLoading, setUsageLoading] = useState(false);
+  const [usageError, setUsageError] = useState<string | null>(null);
+  const [usageData, setUsageData] = useState<{
+    resetsAt: string;
+    aggregate: { used: number; limit: number; percent: number; status: string } | null;
+    rules: { callName: string; used: number; limit: number; percent: number; status: string }[];
+  } | null>(null);
+
+  const checkApiUsage = useCallback(async () => {
+    setUsageLoading(true);
+    setUsageError(null);
+    try {
+      const res = await fetch('/api/ebay/api-usage');
+      const data = await res.json();
+      if (res.status === 401 || data.error === 'EBAY_AUTH_REQUIRED') {
+        setUsageError('eBay auth required — please reconnect your account.');
+        return;
+      }
+      if (!res.ok || data.error) throw new Error(data.error || 'Failed to check usage');
+      setUsageData(data);
+    } catch (err: any) {
+      setUsageError(err.message || 'Failed to check usage');
+    } finally {
+      setUsageLoading(false);
+    }
+  }, []);
 
   const sentinelRef = useRef<HTMLDivElement>(null);
 
@@ -584,6 +624,91 @@ export default function ListingDetailsPage() {
         >
           ↺ Refresh
         </button>
+
+        {/* API usage */}
+        <div className="relative">
+          <button
+            onClick={() => {
+              const next = !usageOpen;
+              setUsageOpen(next);
+              if (next && !usageData && !usageLoading) checkApiUsage();
+            }}
+            className="px-3 py-1.5 bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-300 text-xs rounded-lg transition"
+          >
+            📊 API Usage
+          </button>
+
+          {usageOpen && (
+            <div className="absolute right-0 top-full mt-2 w-72 bg-gray-900 border border-gray-700 rounded-xl shadow-xl p-4 z-30 text-xs">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-gray-400 font-semibold uppercase tracking-widest text-[10px]">eBay API Usage</span>
+                <button
+                  onClick={checkApiUsage}
+                  disabled={usageLoading}
+                  className="text-gray-500 hover:text-gray-300 transition disabled:opacity-40"
+                  title="Refresh usage (diagnostic call — avoid checking too often)"
+                >
+                  ↺
+                </button>
+              </div>
+
+              {usageLoading && (
+                <div className="flex items-center gap-2 text-gray-500 py-2">
+                  <div className="w-3 h-3 border border-gray-600 border-t-green-500 rounded-full animate-spin" />
+                  Checking usage…
+                </div>
+              )}
+
+              {!usageLoading && usageError && (
+                <p className="text-red-400 py-1">{usageError}</p>
+              )}
+
+              {!usageLoading && !usageError && usageData && (
+                <div className="space-y-3">
+                  {usageData.aggregate ? (
+                    <div>
+                      <div className="flex items-center justify-between text-gray-300 mb-1">
+                        <span>Daily calls used</span>
+                        <span className="font-semibold">
+                          {usageData.aggregate.used.toLocaleString()} / {usageData.aggregate.limit.toLocaleString()}
+                        </span>
+                      </div>
+                      <div className="h-1.5 w-full bg-gray-800 rounded-full overflow-hidden">
+                        <div
+                          className={`h-full rounded-full ${
+                            usageData.aggregate.percent >= 85 ? 'bg-red-500' : usageData.aggregate.percent >= 60 ? 'bg-amber-500' : 'bg-green-500'
+                          }`}
+                          style={{ width: `${Math.min(100, usageData.aggregate.percent)}%` }}
+                        />
+                      </div>
+                      <p className="text-gray-500 mt-1">{usageData.aggregate.percent}% used</p>
+                    </div>
+                  ) : (
+                    <p className="text-gray-500">No application-wide usage rule returned.</p>
+                  )}
+
+                  <p className="text-gray-400">Resets at {formatResetTime(usageData.resetsAt)}</p>
+
+                  {usageData.rules.filter((r) => r.used > 0).length > 0 && (
+                    <div className="pt-2 border-t border-gray-800">
+                      <p className="text-gray-500 mb-1">By call:</p>
+                      {usageData.rules
+                        .filter((r) => r.used > 0)
+                        .sort((a, b) => b.percent - a.percent)
+                        .slice(0, 5)
+                        .map((r) => (
+                          <div key={r.callName} className="flex items-center justify-between text-gray-400">
+                            <span>{r.callName}</span>
+                            <span>{r.used.toLocaleString()} / {r.limit.toLocaleString()}</span>
+                          </div>
+                        ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* ── Search & Replace Panel ── */}
