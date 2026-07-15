@@ -62,6 +62,13 @@ function buildColumns(specificMap: SpecificMap): string[] {
   return [...PRIORITY_COLS, ...extras];
 }
 
+/** Replace all occurrences of `find` in `str` with `replace` */
+function replaceOccurrences(str: string, find: string, replace: string, caseSensitive: boolean): string {
+  if (!find) return str;
+  const escaped = find.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return str.replace(new RegExp(escaped, caseSensitive ? 'g' : 'gi'), replace);
+}
+
 function SortIndicator({ col, sortCol, sortDir }: { col: string; sortCol: string | null; sortDir: SortDir }) {
   const active = sortCol === col;
   return (
@@ -188,6 +195,7 @@ export default function ListingDetailsPage() {
   const [visibleCount, setVisibleCount] = useState(ROW_BATCH);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [loadingAll, setLoadingAll] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [ebayPage, setEbayPage] = useState(1);
   const [totalEbayPages, setTotalEbayPages] = useState(1);
@@ -201,6 +209,13 @@ export default function ListingDetailsPage() {
   const [editingCell, setEditingCell] = useState<{ itemId: string; col: string } | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [submitResults, setSubmitResults] = useState<SubmitResultMap>({});
+
+  // ── Search & Replace state ─────────────────────────────────────────────────
+  const [srCol, setSrCol] = useState<string | null>(null);
+  const [srFind, setSrFind] = useState('');
+  const [srReplace, setSrReplace] = useState('');
+  const [srCase, setSrCase] = useState(false);
+  const srFindRef = useRef<HTMLInputElement>(null);
 
   const fetchingRef = useRef<Set<string>>(new Set());
   const sentinelRef = useRef<HTMLDivElement>(null);
@@ -234,6 +249,37 @@ export default function ListingDetailsPage() {
 
   useEffect(() => { fetchPage(1, false); }, [fetchPage]);
 
+  // ── Load every remaining page at once (no lazy scroll-triggered fetching) ──
+  const loadAllListings = useCallback(async () => {
+    if (loadingAll || loading) return;
+    setLoadingAll(true);
+    setError(null);
+    try {
+      let page = ebayPage;
+      let pages = totalEbayPages;
+      while (page < pages) {
+        const res = await fetch(`/api/ebay/active-listings?page=${page + 1}`);
+        const data = await res.json();
+        if (res.status === 401 || data.error === 'EBAY_AUTH_REQUIRED') {
+          setError('eBay auth required — please reconnect your account.');
+          break;
+        }
+        if (!res.ok) throw new Error(data.error || 'Failed to fetch listings');
+        setAllListings((prev) => [...prev, ...data.listings]);
+        pages = data.totalPages || pages;
+        page = data.currentPage || page + 1;
+        setTotalEbayPages(pages);
+        setTotal(data.total || 0);
+        setEbayPage(page);
+      }
+      setVisibleCount(Infinity);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setLoadingAll(false);
+    }
+  }, [ebayPage, totalEbayPages, loadingAll, loading]);
+
   // ── Bottom sentinel ───────────────────────────────────────────────────────
   useEffect(() => {
     if (loading) return;
@@ -241,7 +287,7 @@ export default function ListingDetailsPage() {
       if (!entry.isIntersecting) return;
       if (visibleCount < sortedFiltered.length) {
         setVisibleCount((v) => v + ROW_BATCH);
-      } else if (ebayPage < totalEbayPages && !loadingMore) {
+      } else if (ebayPage < totalEbayPages && !loadingMore && !loadingAll) {
         fetchPage(ebayPage + 1, true);
       }
     }, { rootMargin: '400px' });
@@ -292,13 +338,107 @@ export default function ListingDetailsPage() {
 
   // ── Sort ──────────────────────────────────────────────────────────────────
   const handleSort = useCallback((col: string) => {
-    setSortCol((prev) => {
-      if (prev === col) { setSortDir((d) => (d === 'asc' ? 'desc' : 'asc')); return col; }
+    if (sortCol === col) {
+      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortCol(col);
       setSortDir('asc');
-      return col;
-    });
+    }
     setVisibleCount(ROW_BATCH);
+  }, [sortCol]);
+
+  // ── Clear all values in a column ──────────────────────────────────────────
+  const handleClearColumn = useCallback((col: string) => {
+    const newEdits: EditMap = { ...edits };
+    let affected = 0;
+
+    for (const listing of allListings) {
+      const specs = specificMap[listing.itemId];
+      if (!Array.isArray(specs)) continue;
+      const original = getSpecificValue(specs, col);
+      const current = newEdits[listing.itemId]?.[col] ?? original;
+      if (current === '') continue;
+      affected++;
+      newEdits[listing.itemId] = { ...(newEdits[listing.itemId] || {}), [col]: '' };
+    }
+
+    if (affected > 0) {
+      setEdits(newEdits);
+      setSubmitResults({});
+    }
+  }, [allListings, specificMap, edits]);
+
+  // ── Open S&R for a column ─────────────────────────────────────────────────
+  const openSr = useCallback((col: string) => {
+    setSrCol(col);
+    setSrFind('');
+    setSrReplace('');
+    setTimeout(() => srFindRef.current?.focus(), 50);
   }, []);
+
+  // ── S&R match count (across all loaded data) ──────────────────────────────
+  const srMatchCount = useMemo(() => {
+    if (!srCol || !srFind) return 0;
+    let count = 0;
+    for (const listing of allListings) {
+      let current = '';
+      if (srCol === '__title__') {
+        current = edits[listing.itemId]?.['__title__'] ?? listing.title;
+      } else {
+        const specs = specificMap[listing.itemId];
+        if (!Array.isArray(specs)) continue;
+        current = edits[listing.itemId]?.[srCol] ?? getSpecificValue(specs, srCol);
+      }
+      const regex = new RegExp(
+        srFind.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),
+        srCase ? '' : 'i'
+      );
+      if (regex.test(current)) count++;
+    }
+    return count;
+  }, [srCol, srFind, srCase, allListings, specificMap, edits]);
+
+  // ── Replace All ───────────────────────────────────────────────────────────
+  const handleReplaceAll = useCallback(() => {
+    if (!srCol || !srFind) return;
+    const newEdits: EditMap = { ...edits };
+    let affected = 0;
+
+    for (const listing of allListings) {
+      let current = '';
+      let original = '';
+
+      if (srCol === '__title__') {
+        original = listing.title;
+        current = newEdits[listing.itemId]?.['__title__'] ?? original;
+      } else {
+        const specs = specificMap[listing.itemId];
+        if (!Array.isArray(specs)) continue;
+        original = getSpecificValue(specs, srCol);
+        current = newEdits[listing.itemId]?.[srCol] ?? original;
+      }
+
+      const replaced = replaceOccurrences(current, srFind, srReplace, srCase);
+      if (replaced === current) continue;
+      affected++;
+
+      if (replaced.trim() === original.trim()) {
+        // Reverted to original — clean up the edit key
+        if (newEdits[listing.itemId]) {
+          const { [srCol]: _, ...rest } = newEdits[listing.itemId];
+          if (Object.keys(rest).length === 0) delete newEdits[listing.itemId];
+          else newEdits[listing.itemId] = rest;
+        }
+      } else {
+        newEdits[listing.itemId] = { ...(newEdits[listing.itemId] || {}), [srCol]: replaced.trim() };
+      }
+    }
+
+    if (affected > 0) {
+      setEdits(newEdits);
+      setSubmitResults({});
+    }
+  }, [srCol, srFind, srReplace, srCase, allListings, specificMap, edits]);
 
   // ── Cell edit handlers ────────────────────────────────────────────────────
   const startEdit = useCallback((itemId: string, col: string) => {
@@ -539,6 +679,22 @@ export default function ListingDetailsPage() {
           </button>
         )}
 
+        {/* Load all listings */}
+        <button
+          onClick={loadAllListings}
+          disabled={loadingAll || loading || ebayPage >= totalEbayPages}
+          className="flex items-center gap-2 px-3 py-1.5 bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-300 text-xs rounded-lg transition disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          {loadingAll ? (
+            <>
+              <div className="w-3 h-3 border border-gray-600 border-t-green-500 rounded-full animate-spin" />
+              Loading all…
+            </>
+          ) : (
+            '⇊ Load all listings'
+          )}
+        </button>
+
         {/* Refresh */}
         <button
           onClick={() => { setAllListings([]); setSpecificMap({}); setEdits({}); setSubmitResults({}); fetchingRef.current.clear(); setVisibleCount(ROW_BATCH); setEbayPage(1); setSortCol(null); fetchPage(1, false); }}
@@ -547,6 +703,87 @@ export default function ListingDetailsPage() {
           ↺ Refresh
         </button>
       </div>
+
+      {/* ── Search & Replace Panel ── */}
+      {srCol && (
+        <div className="bg-gray-900/98 border-b border-purple-500/40 px-5 py-3 flex items-center gap-3 flex-wrap">
+          {/* Column badge */}
+          <div className="flex items-center gap-2 shrink-0">
+            <span className="text-[10px] text-purple-400/70 uppercase tracking-widest font-semibold">Find & Replace</span>
+            <span className="px-2 py-0.5 bg-purple-500/20 border border-purple-500/40 text-purple-300 text-xs rounded font-medium">
+              {srCol === '__title__' ? 'Title' : srCol}
+            </span>
+          </div>
+
+          <span className="text-gray-700 text-xs hidden sm:block">in</span>
+
+          {/* Find input */}
+          <div className="relative">
+            <input
+              ref={srFindRef}
+              type="text"
+              value={srFind}
+              onChange={(e) => setSrFind(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') handleReplaceAll(); if (e.key === 'Escape') setSrCol(null); }}
+              placeholder="Find…"
+              className="bg-gray-800 border border-gray-700 focus:border-purple-500/60 rounded-lg px-3 py-1.5 text-xs text-gray-200 placeholder-gray-600 outline-none w-48 transition"
+            />
+          </div>
+
+          <span className="text-gray-600 text-xs">→</span>
+
+          {/* Replace input */}
+          <input
+            type="text"
+            value={srReplace}
+            onChange={(e) => setSrReplace(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') handleReplaceAll(); if (e.key === 'Escape') setSrCol(null); }}
+            placeholder="Replace with…"
+            className="bg-gray-800 border border-gray-700 focus:border-purple-500/60 rounded-lg px-3 py-1.5 text-xs text-gray-200 placeholder-gray-600 outline-none w-48 transition"
+          />
+
+          {/* Case sensitive toggle */}
+          <label className="flex items-center gap-1.5 cursor-pointer select-none shrink-0">
+            <input
+              type="checkbox"
+              checked={srCase}
+              onChange={(e) => setSrCase(e.target.checked)}
+              className="w-3 h-3 accent-purple-500"
+            />
+            <span className="text-[11px] text-gray-500">Aa</span>
+          </label>
+
+          {/* Match count */}
+          {srFind && (
+            <span className="text-[11px] text-gray-500 shrink-0">
+              {srMatchCount === 0
+                ? 'No matches'
+                : `${srMatchCount.toLocaleString()} match${srMatchCount === 1 ? '' : 'es'}`}
+              {allListings.length < total && (
+                <span className="text-gray-700"> (in {allListings.length.toLocaleString()} loaded)</span>
+              )}
+            </span>
+          )}
+
+          {/* Replace All button */}
+          <button
+            onClick={handleReplaceAll}
+            disabled={!srFind || srMatchCount === 0}
+            className="px-3 py-1.5 bg-purple-500/15 hover:bg-purple-500/25 border border-purple-500/40 hover:border-purple-400/60 text-purple-300 text-xs rounded-lg font-medium transition disabled:opacity-30 disabled:cursor-not-allowed shrink-0"
+          >
+            Replace All
+          </button>
+
+          {/* Close */}
+          <button
+            onClick={() => setSrCol(null)}
+            className="ml-auto px-2 py-1.5 text-gray-600 hover:text-gray-400 text-xs rounded transition"
+            title="Close (Esc)"
+          >
+            ✕
+          </button>
+        </div>
+      )}
 
       {/* Legend */}
       {changedCount > 0 && (
@@ -578,21 +815,64 @@ export default function ListingDetailsPage() {
         <table className="w-full text-sm border-collapse min-w-max">
           <thead className="sticky top-0 z-10">
             <tr className="bg-gray-900 border-b border-gray-700">
-              <th
-                className="px-3 py-3 text-left text-xs uppercase tracking-widest font-semibold min-w-[260px] max-w-[340px] whitespace-nowrap cursor-pointer select-none hover:text-gray-200 transition-colors"
-                onClick={() => handleSort('__title__')}
-              >
-                <span className={sortCol === '__title__' ? 'text-green-400' : 'text-gray-500'}>Title</span>
-                <SortIndicator col="__title__" sortCol={sortCol} sortDir={sortDir} />
+              {/* Title header */}
+              <th className="px-3 py-3 text-left text-xs uppercase tracking-widest font-semibold min-w-[260px] max-w-[340px] whitespace-nowrap">
+                <div className="flex items-center gap-1 group/hdr">
+                  <span
+                    className={`cursor-pointer select-none hover:text-gray-200 transition-colors ${sortCol === '__title__' ? 'text-green-400' : 'text-gray-500'}`}
+                    onClick={() => handleSort('__title__')}
+                  >
+                    Title
+                    <SortIndicator col="__title__" sortCol={sortCol} sortDir={sortDir} />
+                  </span>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); openSr('__title__'); }}
+                    className={`ml-1 px-1 py-0.5 rounded text-[10px] transition-all select-none ${
+                      srCol === '__title__'
+                        ? 'opacity-100 text-purple-300 bg-purple-500/25 border border-purple-500/40'
+                        : 'opacity-0 group-hover/hdr:opacity-100 text-gray-600 hover:text-purple-400 hover:bg-purple-500/10'
+                    }`}
+                    title="Search & Replace in Title"
+                  >
+                    ⇄
+                  </button>
+                </div>
               </th>
+              {/* Specifics headers */}
               {columns.map((col) => (
-                <th
-                  key={col}
-                  className="px-3 py-3 text-left text-xs uppercase tracking-widest font-semibold whitespace-nowrap cursor-pointer select-none hover:text-gray-200 transition-colors"
-                  onClick={() => handleSort(col)}
-                >
-                  <span className={sortCol === col ? 'text-green-400' : 'text-gray-500'}>{col}</span>
-                  <SortIndicator col={col} sortCol={sortCol} sortDir={sortDir} />
+                <th key={col} className="px-3 py-3 text-left text-xs uppercase tracking-widest font-semibold whitespace-nowrap">
+                  <div className="flex items-center gap-1 group/hdr">
+                    <span
+                      className={`cursor-pointer select-none hover:text-gray-200 transition-colors ${sortCol === col ? 'text-green-400' : 'text-gray-500'}`}
+                      onClick={() => handleSort(col)}
+                    >
+                      {col}
+                      <SortIndicator col={col} sortCol={sortCol} sortDir={sortDir} />
+                    </span>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); openSr(col); }}
+                      className={`ml-1 px-1 py-0.5 rounded text-[10px] transition-all select-none ${
+                        srCol === col
+                          ? 'opacity-100 text-purple-300 bg-purple-500/25 border border-purple-500/40'
+                          : 'opacity-0 group-hover/hdr:opacity-100 text-gray-600 hover:text-purple-400 hover:bg-purple-500/10'
+                      }`}
+                      title={`Search & Replace in ${col}`}
+                    >
+                      ⇄
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (confirm(`Clear "${col}" for all ${allListings.length.toLocaleString()} loaded listings?`)) {
+                          handleClearColumn(col);
+                        }
+                      }}
+                      className="ml-0.5 px-1 py-0.5 rounded text-[10px] transition-all select-none opacity-0 group-hover/hdr:opacity-100 text-gray-600 hover:text-red-400 hover:bg-red-500/10"
+                      title={`Clear all values in ${col}`}
+                    >
+                      🗑
+                    </button>
+                  </div>
                 </th>
               ))}
             </tr>
@@ -680,13 +960,13 @@ export default function ListingDetailsPage() {
 
         {/* Load-more sentinel */}
         <div ref={sentinelRef} className="h-16 flex items-center justify-center">
-          {loadingMore && (
+          {(loadingMore || loadingAll) && (
             <div className="flex items-center gap-2 text-xs text-gray-500">
               <div className="w-4 h-4 border-2 border-gray-700 border-t-green-500 rounded-full animate-spin" />
-              Loading more listings…
+              {loadingAll ? 'Loading all listings…' : 'Loading more listings…'}
             </div>
           )}
-          {!loading && !loadingMore && sortedFiltered.length === 0 && !error && (
+          {!loading && !loadingMore && !loadingAll && sortedFiltered.length === 0 && !error && (
             <p className="text-xs text-gray-600">No listings found.</p>
           )}
         </div>
