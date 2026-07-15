@@ -337,6 +337,12 @@ export default function ListingDetailsPage() {
   }, [specificMap, fetchSpecifics]);
 
   // ── Sort ──────────────────────────────────────────────────────────────────
+  // Once every eBay page has been fetched, keep showing everything instead of
+  // collapsing back down to one batch (avoids re-triggering "Load all").
+  const resetVisibleCount = useCallback(() => {
+    setVisibleCount(ebayPage >= totalEbayPages ? Infinity : ROW_BATCH);
+  }, [ebayPage, totalEbayPages]);
+
   const handleSort = useCallback((col: string) => {
     if (sortCol === col) {
       setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
@@ -344,8 +350,8 @@ export default function ListingDetailsPage() {
       setSortCol(col);
       setSortDir('asc');
     }
-    setVisibleCount(ROW_BATCH);
-  }, [sortCol]);
+    resetVisibleCount();
+  }, [sortCol, resetVisibleCount]);
 
   // ── Clear all values in a column ──────────────────────────────────────────
   const handleClearColumn = useCallback((col: string) => {
@@ -625,7 +631,7 @@ export default function ListingDetailsPage() {
           <input
             type="text"
             value={search}
-            onChange={(e) => { setSearch(e.target.value); setVisibleCount(ROW_BATCH); }}
+            onChange={(e) => { setSearch(e.target.value); resetVisibleCount(); }}
             placeholder="Search titles…"
             className="bg-gray-900 border border-gray-700 rounded-lg pl-8 pr-4 py-1.5 text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:border-gray-500 w-56"
           />
@@ -634,7 +640,7 @@ export default function ListingDetailsPage() {
         {/* Clear sort */}
         {sortCol && (
           <button
-            onClick={() => { setSortCol(null); setSortDir('asc'); setVisibleCount(ROW_BATCH); }}
+            onClick={() => { setSortCol(null); setSortDir('asc'); resetVisibleCount(); }}
             className="px-3 py-1.5 bg-green-500/10 hover:bg-green-500/20 border border-green-500/30 text-green-400 text-xs rounded-lg transition"
           >
             ✕ Clear sort
