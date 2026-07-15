@@ -32,8 +32,10 @@ const PRIORITY_COLS = [
   'League',
 ];
 
-const ROW_BATCH = 50;
+// How many item IDs to request specifics for per API call, and how many of
+// those batched calls to run concurrently while loading everything up front.
 const SPEC_BATCH = 20;
+const SPEC_CONCURRENCY = 4;
 
 type SpecificMap = Record<string, NameValuePair[] | 'loading' | 'error'>;
 type SortDir = 'asc' | 'desc';
@@ -91,26 +93,6 @@ function SkeletonRow({ cols }: { cols: number }) {
       ))}
     </tr>
   );
-}
-
-function RowSentinel({ onVisible }: { onVisible: () => void }) {
-  const ref = useRef<HTMLDivElement>(null);
-  const fired = useRef(false);
-  useEffect(() => {
-    if (fired.current) return;
-    const el = ref.current;
-    if (!el) return;
-    const obs = new IntersectionObserver(([entry]) => {
-      if (entry.isIntersecting && !fired.current) {
-        fired.current = true;
-        obs.disconnect();
-        onVisible();
-      }
-    }, { rootMargin: '300px' });
-    obs.observe(el);
-    return () => obs.disconnect();
-  }, [onVisible]);
-  return <div ref={ref} className="h-px w-px absolute" />;
 }
 
 /** Inline editable cell */
@@ -192,13 +174,8 @@ function EditableCell({
 
 export default function ListingDetailsPage() {
   const [allListings, setAllListings] = useState<ActiveListing[]>([]);
-  const [visibleCount, setVisibleCount] = useState(ROW_BATCH);
   const [loading, setLoading] = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [loadingAll, setLoadingAll] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [ebayPage, setEbayPage] = useState(1);
-  const [totalEbayPages, setTotalEbayPages] = useState(1);
   const [total, setTotal] = useState(0);
   const [search, setSearch] = useState('');
   const [sortCol, setSortCol] = useState<string | null>(null);
@@ -218,86 +195,10 @@ export default function ListingDetailsPage() {
   const srFindRef = useRef<HTMLInputElement>(null);
 
   const fetchingRef = useRef<Set<string>>(new Set());
-  const sentinelRef = useRef<HTMLDivElement>(null);
-  const pendingRef = useRef<string[]>([]);
-  const flushTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // ── Fetch listings ────────────────────────────────────────────────────────
-  const fetchPage = useCallback(async (pageNum: number, append = false) => {
-    if (append) setLoadingMore(true);
-    else setLoading(true);
-    setError(null);
-    try {
-      const res = await fetch(`/api/ebay/active-listings?page=${pageNum}`);
-      const data = await res.json();
-      if (res.status === 401 || data.error === 'EBAY_AUTH_REQUIRED') {
-        setError('eBay auth required — please reconnect your account.');
-        return;
-      }
-      if (!res.ok) throw new Error(data.error || 'Failed to fetch listings');
-      setAllListings((prev) => (append ? [...prev, ...data.listings] : data.listings));
-      setTotalEbayPages(data.totalPages || 1);
-      setTotal(data.total || 0);
-      setEbayPage(data.currentPage || 1);
-    } catch (err: any) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-      setLoadingMore(false);
-    }
-  }, []);
-
-  useEffect(() => { fetchPage(1, false); }, [fetchPage]);
-
-  // ── Load every remaining page at once (no lazy scroll-triggered fetching) ──
-  const loadAllListings = useCallback(async () => {
-    if (loadingAll || loading) return;
-    setLoadingAll(true);
-    setError(null);
-    try {
-      let page = ebayPage;
-      let pages = totalEbayPages;
-      while (page < pages) {
-        const res = await fetch(`/api/ebay/active-listings?page=${page + 1}`);
-        const data = await res.json();
-        if (res.status === 401 || data.error === 'EBAY_AUTH_REQUIRED') {
-          setError('eBay auth required — please reconnect your account.');
-          break;
-        }
-        if (!res.ok) throw new Error(data.error || 'Failed to fetch listings');
-        setAllListings((prev) => [...prev, ...data.listings]);
-        pages = data.totalPages || pages;
-        page = data.currentPage || page + 1;
-        setTotalEbayPages(pages);
-        setTotal(data.total || 0);
-        setEbayPage(page);
-      }
-      setVisibleCount(Infinity);
-    } catch (err: any) {
-      setError(err.message);
-    } finally {
-      setLoadingAll(false);
-    }
-  }, [ebayPage, totalEbayPages, loadingAll, loading]);
-
-  // ── Bottom sentinel ───────────────────────────────────────────────────────
-  useEffect(() => {
-    if (loading) return;
-    const observer = new IntersectionObserver(([entry]) => {
-      if (!entry.isIntersecting) return;
-      if (visibleCount < sortedFiltered.length) {
-        setVisibleCount((v) => v + ROW_BATCH);
-      } else if (ebayPage < totalEbayPages && !loadingMore && !loadingAll) {
-        fetchPage(ebayPage + 1, true);
-      }
-    }, { rootMargin: '400px' });
-    if (sentinelRef.current) observer.observe(sentinelRef.current);
-    return () => observer.disconnect();
-  });
-
-  // ── Fetch specifics batch ─────────────────────────────────────────────────
+  // ── Fetch a batch of item specifics ───────────────────────────────────────
   const fetchSpecifics = useCallback(async (itemIds: string[]) => {
-    const toFetch = itemIds.filter((id) => !fetchingRef.current.has(id) && !(id in specificMap));
+    const toFetch = itemIds.filter((id) => !fetchingRef.current.has(id));
     if (toFetch.length === 0) return;
     toFetch.forEach((id) => fetchingRef.current.add(id));
     setSpecificMap((prev) => {
@@ -324,25 +225,60 @@ export default function ListingDetailsPage() {
         return next;
       });
     }
-  }, [specificMap]);
+  }, []);
 
-  const queueSpecificsFetch = useCallback((itemId: string) => {
-    if (fetchingRef.current.has(itemId) || itemId in specificMap) return;
-    if (!pendingRef.current.includes(itemId)) pendingRef.current.push(itemId);
-    if (flushTimer.current) clearTimeout(flushTimer.current);
-    flushTimer.current = setTimeout(() => {
-      const batch = pendingRef.current.splice(0, SPEC_BATCH);
-      if (batch.length > 0) fetchSpecifics(batch);
-    }, 50);
-  }, [specificMap, fetchSpecifics]);
+  // Fetch specifics for every item, a handful of batches at a time, so sorting
+  // and searching by any specifics column is accurate as soon as possible.
+  const fetchAllSpecifics = useCallback(async (itemIds: string[]) => {
+    const chunks: string[][] = [];
+    for (let i = 0; i < itemIds.length; i += SPEC_BATCH) chunks.push(itemIds.slice(i, i + SPEC_BATCH));
+    let nextChunk = 0;
+    async function worker() {
+      while (nextChunk < chunks.length) {
+        const chunk = chunks[nextChunk++];
+        await fetchSpecifics(chunk);
+      }
+    }
+    await Promise.all(Array.from({ length: SPEC_CONCURRENCY }, worker));
+  }, [fetchSpecifics]);
+
+  // ── Load every listing (and then every item's specifics) up front ────────
+  const loadEverything = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    setAllListings([]);
+    setSpecificMap({});
+    fetchingRef.current.clear();
+    try {
+      let page = 1;
+      let totalPages = 1;
+      const itemIds: string[] = [];
+      while (page <= totalPages) {
+        const res = await fetch(`/api/ebay/active-listings?page=${page}`);
+        const data = await res.json();
+        if (res.status === 401 || data.error === 'EBAY_AUTH_REQUIRED') {
+          setError('eBay auth required — please reconnect your account.');
+          return;
+        }
+        if (!res.ok) throw new Error(data.error || 'Failed to fetch listings');
+        setAllListings((prev) => [...prev, ...data.listings]);
+        itemIds.push(...data.listings.map((l: ActiveListing) => l.itemId));
+        totalPages = data.totalPages || 1;
+        setTotal(data.total || 0);
+        setLoading(false); // reveal rows as soon as the first page is in
+        page += 1;
+      }
+      fetchAllSpecifics(itemIds);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }, [fetchAllSpecifics]);
+
+  useEffect(() => { loadEverything(); }, [loadEverything]);
 
   // ── Sort ──────────────────────────────────────────────────────────────────
-  // Once every eBay page has been fetched, keep showing everything instead of
-  // collapsing back down to one batch (avoids re-triggering "Load all").
-  const resetVisibleCount = useCallback(() => {
-    setVisibleCount(ebayPage >= totalEbayPages ? Infinity : ROW_BATCH);
-  }, [ebayPage, totalEbayPages]);
-
   const handleSort = useCallback((col: string) => {
     if (sortCol === col) {
       setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
@@ -350,8 +286,7 @@ export default function ListingDetailsPage() {
       setSortCol(col);
       setSortDir('asc');
     }
-    resetVisibleCount();
-  }, [sortCol, resetVisibleCount]);
+  }, [sortCol]);
 
   // ── Clear all values in a column ──────────────────────────────────────────
   const handleClearColumn = useCallback((col: string) => {
@@ -598,16 +533,21 @@ export default function ListingDetailsPage() {
       else {
         const aSpecs = specificMap[a.itemId];
         const bSpecs = specificMap[b.itemId];
-        aVal = Array.isArray(aSpecs) ? getSpecificValue(aSpecs, sortCol) : '\uFFFF';
-        bVal = Array.isArray(bSpecs) ? getSpecificValue(bSpecs, sortCol) : '\uFFFF';
+        aVal = Array.isArray(aSpecs) ? getSpecificValue(aSpecs, sortCol) : '￿';
+        bVal = Array.isArray(bSpecs) ? getSpecificValue(bSpecs, sortCol) : '￿';
       }
       const cmp = aVal.localeCompare(bVal, undefined, { numeric: true, sensitivity: 'base' });
       return sortDir === 'asc' ? cmp : -cmp;
     });
   }, [filtered, sortCol, sortDir, specificMap]);
 
-  const visible = sortedFiltered.slice(0, visibleCount);
   const columns = buildColumns(specificMap);
+
+  const specificsLoadedCount = useMemo(
+    () => allListings.reduce((n, l) => n + (Array.isArray(specificMap[l.itemId]) ? 1 : 0), 0),
+    [allListings, specificMap]
+  );
+  const specificsPending = allListings.length > 0 && specificsLoadedCount < allListings.length;
 
   return (
     <div className="h-full bg-gray-950 text-white flex flex-col">
@@ -616,10 +556,17 @@ export default function ListingDetailsPage() {
         <div className="flex-1 min-w-0">
           <h1 className="text-base font-semibold text-white tracking-tight">Listing Details</h1>
           <p className="text-xs text-gray-500 mt-0.5">
-            {loading ? 'Loading…' : `${sortedFiltered.length.toLocaleString()} of ${total.toLocaleString()} listings`}
+            {loading
+              ? 'Loading…'
+              : `${sortedFiltered.length.toLocaleString()} of ${total.toLocaleString()} listings`}
             {sortCol && (
               <span className="ml-2 text-green-400/80">
                 sorted by {sortCol === '__title__' ? 'Title' : sortCol} {sortDir === 'asc' ? '↑' : '↓'}
+              </span>
+            )}
+            {!loading && specificsPending && (
+              <span className="ml-2 text-amber-400/70">
+                loading details… ({specificsLoadedCount.toLocaleString()}/{allListings.length.toLocaleString()})
               </span>
             )}
           </p>
@@ -631,7 +578,7 @@ export default function ListingDetailsPage() {
           <input
             type="text"
             value={search}
-            onChange={(e) => { setSearch(e.target.value); resetVisibleCount(); }}
+            onChange={(e) => setSearch(e.target.value)}
             placeholder="Search titles…"
             className="bg-gray-900 border border-gray-700 rounded-lg pl-8 pr-4 py-1.5 text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:border-gray-500 w-56"
           />
@@ -640,7 +587,7 @@ export default function ListingDetailsPage() {
         {/* Clear sort */}
         {sortCol && (
           <button
-            onClick={() => { setSortCol(null); setSortDir('asc'); resetVisibleCount(); }}
+            onClick={() => { setSortCol(null); setSortDir('asc'); }}
             className="px-3 py-1.5 bg-green-500/10 hover:bg-green-500/20 border border-green-500/30 text-green-400 text-xs rounded-lg transition"
           >
             ✕ Clear sort
@@ -685,25 +632,9 @@ export default function ListingDetailsPage() {
           </button>
         )}
 
-        {/* Load all listings */}
-        <button
-          onClick={loadAllListings}
-          disabled={loadingAll || loading || ebayPage >= totalEbayPages}
-          className="flex items-center gap-2 px-3 py-1.5 bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-300 text-xs rounded-lg transition disabled:opacity-40 disabled:cursor-not-allowed"
-        >
-          {loadingAll ? (
-            <>
-              <div className="w-3 h-3 border border-gray-600 border-t-green-500 rounded-full animate-spin" />
-              Loading all…
-            </>
-          ) : (
-            '⇊ Load all listings'
-          )}
-        </button>
-
         {/* Refresh */}
         <button
-          onClick={() => { setAllListings([]); setSpecificMap({}); setEdits({}); setSubmitResults({}); fetchingRef.current.clear(); setVisibleCount(ROW_BATCH); setEbayPage(1); setSortCol(null); fetchPage(1, false); }}
+          onClick={() => { setEdits({}); setSubmitResults({}); setSortCol(null); loadEverything(); }}
           className="px-3 py-1.5 bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-300 text-xs rounded-lg transition"
         >
           ↺ Refresh
@@ -886,7 +817,7 @@ export default function ListingDetailsPage() {
           <tbody>
             {loading
               ? Array.from({ length: 20 }).map((_, i) => <SkeletonRow key={i} cols={PRIORITY_COLS.length} />)
-              : visible.map((listing) => {
+              : sortedFiltered.map((listing) => {
                   const specs = specificMap[listing.itemId];
                   const specsLoaded = Array.isArray(specs);
                   const specsError = specs === 'error';
@@ -903,7 +834,6 @@ export default function ListingDetailsPage() {
                     >
                       {/* Title (editable) */}
                       <td className="px-2 py-1.5 min-w-[260px] max-w-[400px] relative">
-                        <RowSentinel onVisible={() => queueSpecificsFetch(listing.itemId)} />
                         {(() => {
                           const originalTitle = listing.title;
                           const editedTitle = '__title__' in itemEdits ? itemEdits['__title__'] : originalTitle;
@@ -928,7 +858,7 @@ export default function ListingDetailsPage() {
                         if (!specsLoaded) {
                           return (
                             <td key={col} className="px-3 py-2">
-                              {specs === 'loading'
+                              {specs === 'loading' || specs === undefined
                                 ? <div className="h-2.5 w-12 bg-gray-800 rounded animate-pulse" />
                                 : specsError
                                   ? <span className="text-[10px] text-red-700">err</span>
@@ -964,18 +894,9 @@ export default function ListingDetailsPage() {
           </tbody>
         </table>
 
-        {/* Load-more sentinel */}
-        <div ref={sentinelRef} className="h-16 flex items-center justify-center">
-          {(loadingMore || loadingAll) && (
-            <div className="flex items-center gap-2 text-xs text-gray-500">
-              <div className="w-4 h-4 border-2 border-gray-700 border-t-green-500 rounded-full animate-spin" />
-              {loadingAll ? 'Loading all listings…' : 'Loading more listings…'}
-            </div>
-          )}
-          {!loading && !loadingMore && !loadingAll && sortedFiltered.length === 0 && !error && (
-            <p className="text-xs text-gray-600">No listings found.</p>
-          )}
-        </div>
+        {!loading && sortedFiltered.length === 0 && !error && (
+          <p className="text-xs text-gray-600 text-center py-8">No listings found.</p>
+        )}
       </div>
     </div>
   );
