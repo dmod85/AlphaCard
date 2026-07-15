@@ -32,8 +32,11 @@ const PRIORITY_COLS = [
   'League',
 ];
 
+// How many rows to render up front, growing as the user scrolls — keeps the
+// initial paint fast even once every listing has been fetched into memory.
+const ROW_BATCH = 50;
 // How many item IDs to request specifics for per API call, and how many of
-// those batched calls to run concurrently while loading everything up front.
+// those batched calls to run concurrently.
 const SPEC_BATCH = 20;
 const SPEC_CONCURRENCY = 4;
 
@@ -174,7 +177,9 @@ function EditableCell({
 
 export default function ListingDetailsPage() {
   const [allListings, setAllListings] = useState<ActiveListing[]>([]);
+  const [visibleCount, setVisibleCount] = useState(ROW_BATCH);
   const [loading, setLoading] = useState(true);
+  const [pagesLoading, setPagesLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [total, setTotal] = useState(0);
   const [search, setSearch] = useState('');
@@ -195,6 +200,13 @@ export default function ListingDetailsPage() {
   const srFindRef = useRef<HTMLInputElement>(null);
 
   const fetchingRef = useRef<Set<string>>(new Set());
+  const sentinelRef = useRef<HTMLDivElement>(null);
+  // Queue that listing pages push their item IDs into as soon as they arrive,
+  // drained continuously by the specifics workers below — this is what lets
+  // specifics fetching run *at the same time* as later listing pages, instead
+  // of waiting for every page to finish first.
+  const specQueueRef = useRef<string[]>([]);
+  const pagesDoneRef = useRef(false);
 
   // ── Fetch a batch of item specifics ───────────────────────────────────────
   const fetchSpecifics = useCallback(async (itemIds: string[]) => {
@@ -227,32 +239,42 @@ export default function ListingDetailsPage() {
     }
   }, []);
 
-  // Fetch specifics for every item, a handful of batches at a time, so sorting
-  // and searching by any specifics column is accurate as soon as possible.
-  const fetchAllSpecifics = useCallback(async (itemIds: string[]) => {
-    const chunks: string[][] = [];
-    for (let i = 0; i < itemIds.length; i += SPEC_BATCH) chunks.push(itemIds.slice(i, i + SPEC_BATCH));
-    let nextChunk = 0;
+  // Persistent pool of workers that drain specQueueRef as items land in it —
+  // started once per load, they keep pulling batches until every page has
+  // been fetched *and* the queue is empty.
+  const runSpecificsWorkers = useCallback(async () => {
     async function worker() {
-      while (nextChunk < chunks.length) {
-        const chunk = chunks[nextChunk++];
-        await fetchSpecifics(chunk);
+      while (true) {
+        const batch = specQueueRef.current.splice(0, SPEC_BATCH);
+        if (batch.length > 0) {
+          await fetchSpecifics(batch);
+        } else if (pagesDoneRef.current) {
+          return;
+        } else {
+          await new Promise((r) => setTimeout(r, 100));
+        }
       }
     }
     await Promise.all(Array.from({ length: SPEC_CONCURRENCY }, worker));
   }, [fetchSpecifics]);
 
-  // ── Load every listing (and then every item's specifics) up front ────────
+  // ── Load listing pages and their specifics concurrently ──────────────────
   const loadEverything = useCallback(async () => {
     setLoading(true);
+    setPagesLoading(true);
     setError(null);
     setAllListings([]);
     setSpecificMap({});
+    setVisibleCount(ROW_BATCH);
     fetchingRef.current.clear();
+    specQueueRef.current = [];
+    pagesDoneRef.current = false;
+
+    const specificsDone = runSpecificsWorkers();
+
     try {
       let page = 1;
       let totalPages = 1;
-      const itemIds: string[] = [];
       while (page <= totalPages) {
         const res = await fetch(`/api/ebay/active-listings?page=${page}`);
         const data = await res.json();
@@ -262,21 +284,36 @@ export default function ListingDetailsPage() {
         }
         if (!res.ok) throw new Error(data.error || 'Failed to fetch listings');
         setAllListings((prev) => [...prev, ...data.listings]);
-        itemIds.push(...data.listings.map((l: ActiveListing) => l.itemId));
+        // Queue this page's items for specifics immediately — the worker
+        // pool above is already running and will pick them up right away,
+        // in parallel with fetching the next page.
+        specQueueRef.current.push(...data.listings.map((l: ActiveListing) => l.itemId));
         totalPages = data.totalPages || 1;
         setTotal(data.total || 0);
         setLoading(false); // reveal rows as soon as the first page is in
         page += 1;
       }
-      fetchAllSpecifics(itemIds);
     } catch (err: any) {
       setError(err.message);
     } finally {
       setLoading(false);
+      setPagesLoading(false);
+      pagesDoneRef.current = true;
+      await specificsDone;
     }
-  }, [fetchAllSpecifics]);
+  }, [runSpecificsWorkers]);
 
   useEffect(() => { loadEverything(); }, [loadEverything]);
+
+  // ── Bottom sentinel — reveals more already-loaded rows as you scroll ─────
+  useEffect(() => {
+    const observer = new IntersectionObserver(([entry]) => {
+      if (!entry.isIntersecting) return;
+      setVisibleCount((v) => v + ROW_BATCH);
+    }, { rootMargin: '400px' });
+    if (sentinelRef.current) observer.observe(sentinelRef.current);
+    return () => observer.disconnect();
+  }, []);
 
   // ── Sort ──────────────────────────────────────────────────────────────────
   const handleSort = useCallback((col: string) => {
@@ -541,6 +578,7 @@ export default function ListingDetailsPage() {
     });
   }, [filtered, sortCol, sortDir, specificMap]);
 
+  const visible = sortedFiltered.slice(0, visibleCount);
   const columns = buildColumns(specificMap);
 
   const specificsLoadedCount = useMemo(
@@ -564,7 +602,7 @@ export default function ListingDetailsPage() {
                 sorted by {sortCol === '__title__' ? 'Title' : sortCol} {sortDir === 'asc' ? '↑' : '↓'}
               </span>
             )}
-            {!loading && specificsPending && (
+            {!loading && (pagesLoading || specificsPending) && (
               <span className="ml-2 text-amber-400/70">
                 loading details… ({specificsLoadedCount.toLocaleString()}/{allListings.length.toLocaleString()})
               </span>
@@ -817,7 +855,7 @@ export default function ListingDetailsPage() {
           <tbody>
             {loading
               ? Array.from({ length: 20 }).map((_, i) => <SkeletonRow key={i} cols={PRIORITY_COLS.length} />)
-              : sortedFiltered.map((listing) => {
+              : visible.map((listing) => {
                   const specs = specificMap[listing.itemId];
                   const specsLoaded = Array.isArray(specs);
                   const specsError = specs === 'error';
@@ -894,9 +932,18 @@ export default function ListingDetailsPage() {
           </tbody>
         </table>
 
-        {!loading && sortedFiltered.length === 0 && !error && (
-          <p className="text-xs text-gray-600 text-center py-8">No listings found.</p>
-        )}
+        {/* Reveal-more sentinel */}
+        <div ref={sentinelRef} className="h-16 flex items-center justify-center">
+          {!loading && visibleCount < sortedFiltered.length && (
+            <div className="flex items-center gap-2 text-xs text-gray-500">
+              <div className="w-4 h-4 border-2 border-gray-700 border-t-green-500 rounded-full animate-spin" />
+              Showing more…
+            </div>
+          )}
+          {!loading && sortedFiltered.length === 0 && !error && (
+            <p className="text-xs text-gray-600">No listings found.</p>
+          )}
+        </div>
       </div>
     </div>
   );
