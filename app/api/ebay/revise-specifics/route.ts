@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getValidToken, isOAuthToken, getEbayApiHeaders, getEbayApiUrl, clearTokenCache } from '@/app/lib/ebay-auth';
+import { supabaseAdmin } from '@/app/lib/supabase-admin';
 
 interface NameValuePair {
   name: string;
@@ -92,6 +93,14 @@ export async function POST(request: NextRequest) {
 
           const ack = text.match(/<Ack>(.*?)<\/Ack>/)?.[1];
           if (ack === 'Success' || ack === 'Warning') {
+            // Keep the specifics cache in sync with what eBay now has, so the
+            // Listing Details page doesn't need a fresh GetItem call to see it.
+            await supabaseAdmin
+              .from('ebay_item_specifics')
+              .upsert(
+                { item_id: item.itemId, specifics: item.specifics, updated_at: new Date().toISOString() },
+                { onConflict: 'item_id' }
+              );
             return { itemId: item.itemId, success: true };
           }
 

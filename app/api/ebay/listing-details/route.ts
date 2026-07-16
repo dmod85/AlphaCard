@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getValidToken, isOAuthToken, getEbayApiHeaders, getEbayApiUrl, clearTokenCache } from '@/app/lib/ebay-auth';
+import { supabaseAdmin } from '@/app/lib/supabase-admin';
 
 function decodeXml(str: string): string {
   return str
@@ -66,7 +67,12 @@ async function fetchSpecificsForItem(
 /**
  * GET /api/ebay/listing-details?itemIds=123,456,789
  * Returns an array of { itemId, specifics } for each requested item.
- * Fetches up to 20 items in parallel.
+ * Specifics are cached in Supabase (ebay_item_specifics) — GetItem is only
+ * called for item IDs not already in the cache, since GetSellerList (used to
+ * list active listings) doesn't return item specifics at all, and calling
+ * GetItem for every listing on every page load quickly exhausts eBay's daily
+ * call limit. The cache row is refreshed when an item is revised (see
+ * /api/ebay/revise-specifics).
  */
 export async function GET(request: NextRequest) {
   try {
@@ -82,11 +88,33 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'itemIds is required' }, { status: 400 });
     }
 
-    const token = await getValidToken();
+    const { data: cached } = await supabaseAdmin
+      .from('ebay_item_specifics')
+      .select('item_id, specifics')
+      .in('item_id', itemIds);
 
-    const results = await Promise.all(
-      itemIds.map((id) => fetchSpecificsForItem(id, token))
+    const cachedMap = new Map<string, NameValuePair[]>(
+      (cached ?? []).map((row) => [row.item_id as string, row.specifics as NameValuePair[]])
     );
+    const uncachedIds = itemIds.filter((id) => !cachedMap.has(id));
+
+    let fetched: { itemId: string; specifics: NameValuePair[] }[] = [];
+    if (uncachedIds.length > 0) {
+      const token = await getValidToken();
+      fetched = await Promise.all(uncachedIds.map((id) => fetchSpecificsForItem(id, token)));
+
+      await supabaseAdmin
+        .from('ebay_item_specifics')
+        .upsert(
+          fetched.map((r) => ({ item_id: r.itemId, specifics: r.specifics, updated_at: new Date().toISOString() })),
+          { onConflict: 'item_id' }
+        );
+    }
+
+    const results = itemIds.map((id) => ({
+      itemId: id,
+      specifics: cachedMap.get(id) ?? fetched.find((r) => r.itemId === id)?.specifics ?? [],
+    }));
 
     return NextResponse.json({ results });
   } catch (err: any) {
