@@ -33,6 +33,9 @@ const PRIORITY_COLS = [
   'League',
 ];
 
+// Columns that should be flagged when left blank on a listing
+const HIGHLIGHT_EMPTY_COLS = new Set(['Sport', 'Player/Athlete', 'Team', 'Manufacturer', 'Set']);
+
 // How many rows to render up front, growing as the user scrolls — keeps the
 // initial paint fast even once every listing has been fetched into memory.
 const ROW_BATCH = 50;
@@ -50,10 +53,143 @@ type EditMap = Record<string, Record<string, string>>;
 // submitResult[itemId] = 'pending' | 'success' | 'error' | string (error msg)
 type SubmitResultMap = Record<string, 'pending' | 'success' | string>;
 
+// ── Advanced field filtering ──────────────────────────────────────────────
+type FilterOperator =
+  | 'equals' | 'not_equals'
+  | 'contains' | 'not_contains'
+  | 'starts_with' | 'ends_with'
+  | 'is_empty' | 'is_not_empty';
+
+interface FilterCondition {
+  id: string;
+  column: string; // '__title__' or a specifics column name
+  operator: FilterOperator;
+  value: string;
+  joiner: 'AND' | 'OR'; // how this condition combines with the accumulated result so far (ignored for the first row)
+}
+
+const FILTER_OPERATORS: { value: FilterOperator; label: string }[] = [
+  { value: 'equals', label: 'is' },
+  { value: 'not_equals', label: 'is not' },
+  { value: 'contains', label: 'contains' },
+  { value: 'not_contains', label: 'does not contain' },
+  { value: 'starts_with', label: 'starts with' },
+  { value: 'ends_with', label: 'ends with' },
+  { value: 'is_empty', label: 'is empty' },
+  { value: 'is_not_empty', label: 'is not empty' },
+];
+
+function isValuelessOperator(op: FilterOperator): boolean {
+  return op === 'is_empty' || op === 'is_not_empty';
+}
+
 function getSpecificValue(specifics: NameValuePair[], colName: string): string {
   const lower = colName.toLowerCase().trim();
   const pair = specifics.find((s) => s.name.toLowerCase().trim() === lower);
   return pair?.value ?? '';
+}
+
+// Builds the listing title strictly from eBay item specifics — mirrors
+// buildSeoTitle() in app/api/ebay/active-listings/route.ts:
+//   [Set] - [Player/Athlete] [Card Number] - [Parallel/Variety] [Team]
+// The Set field is used as-is for Year/Brand/Set (eBay's Set value already
+// carries all three, e.g. "2024 Topps Chrome"). Parallel/Variety is omitted
+// when it's just "Base". Team is only appended if it fits under MAX_LENGTH.
+const TITLE_MAX_LENGTH = 80;
+
+function buildTitleFromSpecifics(fields: {
+  set: string;
+  player: string;
+  cardNumber: string;
+  parallel: string;
+  team: string;
+}): string {
+  const set = fields.set.trim();
+  const player = fields.player.trim();
+
+  const cardNumberRaw = fields.cardNumber.trim();
+  const cardNumber = cardNumberRaw
+    ? (cardNumberRaw.startsWith('#') ? cardNumberRaw.toUpperCase() : `#${cardNumberRaw.toUpperCase()}`)
+    : '';
+
+  const parallelRaw = fields.parallel.trim();
+  const parallel = parallelRaw.replace(/[[\]]/g, '').trim().toLowerCase() === 'base' ? '' : parallelRaw;
+
+  const team = fields.team.trim();
+
+  const parts: string[] = [];
+  if (set) parts.push(set);
+
+  if (player) {
+    if (set) parts.push('-');
+    parts.push(player);
+  }
+
+  if (cardNumber) parts.push(cardNumber);
+
+  if (parallel) {
+    if (set || player) parts.push('-');
+    parts.push(parallel);
+  }
+
+  let title = parts.join(' ').replace(/\s{2,}/g, ' ').trim();
+
+  // Attributes: only add the full team name if there's room within the title limit
+  if (team) {
+    const withTeam = `${title} ${team}`.replace(/\s{2,}/g, ' ').trim();
+    if (withTeam.length <= TITLE_MAX_LENGTH) {
+      title = withTeam;
+    }
+  }
+
+  // Truncate to eBay's 80-character hard limit without splitting words
+  if (title.length > TITLE_MAX_LENGTH) {
+    const cut = title.lastIndexOf(' ', TITLE_MAX_LENGTH);
+    title = title.substring(0, cut > TITLE_MAX_LENGTH - 15 ? cut : TITLE_MAX_LENGTH).trim();
+  }
+
+  return title;
+}
+
+/** Current value shown for a listing's column, accounting for unsaved edits */
+function getFieldValue(listing: ActiveListing, col: string, specificMap: SpecificMap, edits: EditMap): string {
+  if (col === '__title__') {
+    return edits[listing.itemId]?.['__title__'] ?? listing.title;
+  }
+  const specs = specificMap[listing.itemId];
+  const original = Array.isArray(specs) ? getSpecificValue(specs, col) : '';
+  return edits[listing.itemId]?.[col] ?? original;
+}
+
+function matchesCondition(value: string, operator: FilterOperator, condValue: string): boolean {
+  const v = value.trim().toLowerCase();
+  const c = condValue.trim().toLowerCase();
+  switch (operator) {
+    case 'equals': return v === c;
+    case 'not_equals': return v !== c;
+    case 'contains': return v.includes(c);
+    case 'not_contains': return !v.includes(c);
+    case 'starts_with': return v.startsWith(c);
+    case 'ends_with': return v.endsWith(c);
+    case 'is_empty': return v === '';
+    case 'is_not_empty': return v !== '';
+  }
+}
+
+/** Evaluates a sequence of conditions left-to-right, combining with each row's own AND/OR joiner */
+function evaluateConditions(
+  listing: ActiveListing,
+  conditions: FilterCondition[],
+  specificMap: SpecificMap,
+  edits: EditMap
+): boolean {
+  let result: boolean | null = null;
+  for (const cond of conditions) {
+    const value = getFieldValue(listing, cond.column, specificMap, edits);
+    const match = matchesCondition(value, cond.operator, cond.value);
+    result = result === null ? match : (cond.joiner === 'AND' ? result && match : result || match);
+  }
+  return result ?? true;
 }
 
 // MMA is an individual sport — there's no Team to report, so eBay's
@@ -125,6 +261,7 @@ function EditableCell({
   edited,
   isEditing,
   submitResult,
+  highlightEmpty,
   onStartEdit,
   onCommit,
   onCancel,
@@ -133,6 +270,7 @@ function EditableCell({
   edited: boolean;
   isEditing: boolean;
   submitResult?: 'pending' | 'success' | string;
+  highlightEmpty?: boolean;
   onStartEdit: () => void;
   onCommit: (val: string) => void;
   onCancel: () => void;
@@ -167,6 +305,7 @@ function EditableCell({
   const isPending = submitResult === 'pending';
   const isSuccess = submitResult === 'success';
   const isError = submitResult && submitResult !== 'pending' && submitResult !== 'success';
+  const isFlaggedEmpty = highlightEmpty && !value && !edited && !isSuccess && !isError;
 
   return (
     <div
@@ -177,15 +316,16 @@ function EditableCell({
         ${edited && !isSuccess && !isError ? 'bg-amber-500/10 border border-amber-500/30' : ''}
         ${isSuccess ? 'bg-green-500/10 border border-green-500/30' : ''}
         ${isError ? 'bg-red-500/10 border border-red-500/30' : ''}
+        ${isFlaggedEmpty ? 'bg-red-500/20 border border-red-500/40' : ''}
       `}
-      title={isError ? String(submitResult) : edited ? 'Edited — click to change' : 'Click to edit'}
+      title={isError ? String(submitResult) : edited ? 'Edited — click to change' : isFlaggedEmpty ? 'Missing required field — click to fill in' : 'Click to edit'}
     >
       {value ? (
         <span className={isSuccess ? 'text-green-300' : isError ? 'text-red-300' : edited ? 'text-amber-200' : 'text-gray-200'}>
           {value}
         </span>
       ) : (
-        <span className="text-gray-700 group-hover:text-gray-500 transition-colors">—</span>
+        <span className={isFlaggedEmpty ? 'text-red-400' : 'text-gray-700 group-hover:text-gray-500 transition-colors'}>—</span>
       )}
       {isSuccess && <span className="ml-1 text-green-400 text-[9px]">✓</span>}
       {isError && <span className="ml-1 text-red-400 text-[9px]" title={String(submitResult)}>✗</span>}
@@ -219,6 +359,10 @@ export default function ListingDetailsPage() {
   const [srReplace, setSrReplace] = useState('');
   const [srCase, setSrCase] = useState(false);
   const srFindRef = useRef<HTMLInputElement>(null);
+
+  // ── Advanced filter state ───────────────────────────────────────────────────
+  const [filterPanelOpen, setFilterPanelOpen] = useState(false);
+  const [filterConditions, setFilterConditions] = useState<FilterCondition[]>([]);
 
   // ── eBay API usage panel ──────────────────────────────────────────────────
   const [usageOpen, setUsageOpen] = useState(false);
@@ -482,6 +626,27 @@ export default function ListingDetailsPage() {
     }
   }, [srCol, srFind, srReplace, srCase, allListings, specificMap, edits]);
 
+  // ── Advanced filter handlers ────────────────────────────────────────────────
+  const addFilterCondition = useCallback(() => {
+    setFilterConditions((prev) => [
+      ...prev,
+      { id: crypto.randomUUID(), column: '__title__', operator: 'equals', value: '', joiner: 'AND' },
+    ]);
+    setFilterPanelOpen(true);
+  }, []);
+
+  const updateFilterCondition = useCallback((id: string, patch: Partial<FilterCondition>) => {
+    setFilterConditions((prev) => prev.map((c) => (c.id === id ? { ...c, ...patch } : c)));
+  }, []);
+
+  const removeFilterCondition = useCallback((id: string) => {
+    setFilterConditions((prev) => prev.filter((c) => c.id !== id));
+  }, []);
+
+  const clearFilters = useCallback(() => {
+    setFilterConditions([]);
+  }, []);
+
   // ── Cell edit handlers ────────────────────────────────────────────────────
   const startEdit = useCallback((itemId: string, col: string) => {
     setEditingCell({ itemId, col });
@@ -510,21 +675,38 @@ export default function ListingDetailsPage() {
       });
       return;
     }
-    setEdits((prev) => ({
-      ...prev,
-      [itemId]: { ...(prev[itemId] || {}), [col]: newVal.trim() },
-    }));
+    setEdits((prev) => {
+      const itemEdits = { ...(prev[itemId] || {}), [col]: newVal.trim() };
 
-    // MMA has no Team — auto-fill it with N/A when Sport is set to MMA
-    if (col === 'Sport' && isMma(newVal)) {
-      const specs = specificMap[itemId];
-      const existingTeam = Array.isArray(specs) ? getSpecificValue(specs, 'Team') : '';
-      setEdits((prev) => {
-        const currentTeam = prev[itemId]?.Team ?? existingTeam;
-        if (currentTeam.trim()) return prev;
-        return { ...prev, [itemId]: { ...(prev[itemId] || {}), Team: 'N/A' } };
-      });
-    }
+      // MMA has no Team — auto-fill it with N/A when Sport is set to MMA
+      if (col === 'Sport' && isMma(newVal) && !(itemEdits.Team ?? '').trim()) {
+        const specs = specificMap[itemId];
+        const existingTeam = Array.isArray(specs) ? getSpecificValue(specs, 'Team') : '';
+        if (!existingTeam.trim()) itemEdits.Team = 'N/A';
+      }
+
+      // Auto-rebuild the title whenever one of the main identifying fields changes
+      if (HIGHLIGHT_EMPTY_COLS.has(col)) {
+        const specs = specificMap[itemId];
+        const specArr = Array.isArray(specs) ? specs : [];
+        const effective = (c: string) => itemEdits[c] ?? getSpecificValue(specArr, c);
+        const builtTitle = buildTitleFromSpecifics({
+          set: effective('Set'),
+          player: effective('Player/Athlete'),
+          cardNumber: effective('Card Number'),
+          parallel: effective('Parallel/Variety'),
+          team: effective('Team'),
+        });
+        const originalTitle = (allListings.find((l) => l.itemId === itemId)?.title ?? '').trim();
+        if (builtTitle && builtTitle !== originalTitle) {
+          itemEdits.__title__ = builtTitle;
+        } else {
+          delete itemEdits.__title__;
+        }
+      }
+
+      return { ...prev, [itemId]: itemEdits };
+    });
 
     // Clear any stale submit result for this item
     setSubmitResults((prev) => {
@@ -631,12 +813,23 @@ export default function ListingDetailsPage() {
   }, [changedCount, changedItemIds, submitting, edits, specificMap]);
 
   // ── Filter + sort ─────────────────────────────────────────────────────────
-  const filtered = useMemo(
-    () => search.trim()
-      ? allListings.filter((l) => l.title.toLowerCase().includes(search.toLowerCase()))
-      : allListings,
-    [allListings, search]
+  // Only conditions with a usable value (or a valueless operator) actually filter anything
+  const activeFilterConditions = useMemo(
+    () => filterConditions.filter((c) => isValuelessOperator(c.operator) || c.value.trim() !== ''),
+    [filterConditions]
   );
+
+  const filtered = useMemo(() => {
+    let result = search.trim()
+      ? allListings.filter((l) => l.title.toLowerCase().includes(search.toLowerCase()))
+      : allListings;
+
+    if (activeFilterConditions.length > 0) {
+      result = result.filter((l) => evaluateConditions(l, activeFilterConditions, specificMap, edits));
+    }
+
+    return result;
+  }, [allListings, search, activeFilterConditions, specificMap, edits]);
 
   const sortedFiltered = useMemo(() => {
     if (!sortCol) return filtered;
@@ -697,6 +890,33 @@ export default function ListingDetailsPage() {
             className="bg-gray-900 border border-gray-700 rounded-lg pl-8 pr-4 py-1.5 text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:border-gray-500 w-56"
           />
         </div>
+
+        {/* Advanced filter toggle */}
+        <button
+          onClick={() => setFilterPanelOpen((v) => !v)}
+          className={`flex items-center gap-1.5 px-3 py-1.5 border text-xs rounded-lg transition ${
+            filterPanelOpen || activeFilterConditions.length > 0
+              ? 'bg-blue-500/15 border-blue-500/40 text-blue-300 hover:bg-blue-500/25'
+              : 'bg-gray-800 hover:bg-gray-700 border-gray-700 text-gray-300'
+          }`}
+        >
+          ⚗ Filter
+          {activeFilterConditions.length > 0 && (
+            <span className="inline-flex items-center justify-center w-4 h-4 bg-blue-500/30 text-blue-300 rounded-full text-[10px] font-bold">
+              {activeFilterConditions.length}
+            </span>
+          )}
+        </button>
+
+        {/* Clear filters */}
+        {filterConditions.length > 0 && (
+          <button
+            onClick={clearFilters}
+            className="px-3 py-1.5 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/30 text-blue-400 text-xs rounded-lg transition"
+          >
+            ✕ Clear filters
+          </button>
+        )}
 
         {/* Clear sort */}
         {sortCol && (
@@ -921,6 +1141,96 @@ export default function ListingDetailsPage() {
         </div>
       )}
 
+      {/* ── Advanced Filter Panel ── */}
+      {filterPanelOpen && (
+        <div className="bg-gray-900/98 border-b border-blue-500/40 px-5 py-3 flex flex-col gap-2">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] text-blue-400/70 uppercase tracking-widest font-semibold">Filter listings</span>
+            <button
+              onClick={() => setFilterPanelOpen(false)}
+              className="px-2 py-1 text-gray-600 hover:text-gray-400 text-xs rounded transition"
+              title="Close"
+            >
+              ✕
+            </button>
+          </div>
+
+          {filterConditions.length === 0 && (
+            <p className="text-xs text-gray-600">No conditions yet — add one to filter by any field (e.g. Sport is Soccer).</p>
+          )}
+
+          {filterConditions.map((cond, idx) => (
+            <div key={cond.id} className="flex items-center gap-2 flex-wrap">
+              {idx === 0 ? (
+                <span className="w-14 shrink-0 text-[10px] text-gray-600 uppercase tracking-wide">Where</span>
+              ) : (
+                <select
+                  value={cond.joiner}
+                  onChange={(e) => updateFilterCondition(cond.id, { joiner: e.target.value as 'AND' | 'OR' })}
+                  className="w-14 shrink-0 bg-gray-800 border border-gray-700 rounded-lg px-1.5 py-1.5 text-xs text-blue-300 font-semibold outline-none focus:border-blue-500/60"
+                >
+                  <option value="AND">AND</option>
+                  <option value="OR">OR</option>
+                </select>
+              )}
+
+              <select
+                value={cond.column}
+                onChange={(e) => updateFilterCondition(cond.id, { column: e.target.value })}
+                className="bg-gray-800 border border-gray-700 rounded-lg px-2 py-1.5 text-xs text-gray-200 outline-none focus:border-blue-500/60 max-w-[180px]"
+              >
+                <option value="__title__">Title</option>
+                {columns.map((col) => (
+                  <option key={col} value={col}>{col}</option>
+                ))}
+              </select>
+
+              <select
+                value={cond.operator}
+                onChange={(e) => updateFilterCondition(cond.id, { operator: e.target.value as FilterOperator })}
+                className="bg-gray-800 border border-gray-700 rounded-lg px-2 py-1.5 text-xs text-gray-200 outline-none focus:border-blue-500/60"
+              >
+                {FILTER_OPERATORS.map((op) => (
+                  <option key={op.value} value={op.value}>{op.label}</option>
+                ))}
+              </select>
+
+              {!isValuelessOperator(cond.operator) && (
+                <input
+                  type="text"
+                  value={cond.value}
+                  onChange={(e) => updateFilterCondition(cond.id, { value: e.target.value })}
+                  placeholder="Value…"
+                  className="bg-gray-800 border border-gray-700 focus:border-blue-500/60 rounded-lg px-3 py-1.5 text-xs text-gray-200 placeholder-gray-600 outline-none w-40 transition"
+                />
+              )}
+
+              <button
+                onClick={() => removeFilterCondition(cond.id)}
+                className="px-2 py-1.5 text-gray-600 hover:text-red-400 text-xs rounded transition"
+                title="Remove condition"
+              >
+                🗑
+              </button>
+            </div>
+          ))}
+
+          <div className="flex items-center gap-3 pt-1">
+            <button
+              onClick={addFilterCondition}
+              className="px-3 py-1.5 bg-blue-500/15 hover:bg-blue-500/25 border border-blue-500/40 hover:border-blue-400/60 text-blue-300 text-xs rounded-lg font-medium transition"
+            >
+              + Add condition
+            </button>
+            {activeFilterConditions.length > 0 && (
+              <span className="text-[11px] text-gray-500">
+                {sortedFiltered.length.toLocaleString()} match{sortedFiltered.length === 1 ? '' : 'es'}
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Legend */}
       {changedCount > 0 && (
         <div className="px-6 py-2 bg-amber-500/5 border-b border-amber-500/20 flex items-center gap-4 text-[11px] text-amber-400/80">
@@ -1080,6 +1390,7 @@ export default function ListingDetailsPage() {
                               edited={isEdited}
                               isEditing={isEditing}
                               submitResult={isItemPending ? 'pending' : submitResult}
+                              highlightEmpty={HIGHLIGHT_EMPTY_COLS.has(col)}
                               onStartEdit={() => !isItemPending && startEdit(listing.itemId, col)}
                               onCommit={(v) => commitEdit(listing.itemId, col, v)}
                               onCancel={cancelEdit}
