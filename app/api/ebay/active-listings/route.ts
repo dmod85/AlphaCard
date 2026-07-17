@@ -88,6 +88,7 @@ interface ItemSpecifics {
   parallel?: string;
   sport?: string;
   player?: string;
+  team?: string;
 }
 
 function parseItemSpecifics(xml: string): ItemSpecifics {
@@ -106,6 +107,7 @@ function parseItemSpecifics(xml: string): ItemSpecifics {
     else if (name === 'sport') result.sport = value;
     else if (name === 'manufacturer' || name === 'brand') result.brand = value;
     else if (name === 'player/athlete' || name === 'player') result.player = value;
+    else if (name === 'team') result.team = value;
   }
   return result;
 }
@@ -151,7 +153,7 @@ function parseActiveListings(xml: string): ActiveListing[] {
     if (itemId) {
       // Parse item specifics for SEO calculation
       const specifics = parseItemSpecifics(item);
-      const seoTitle = buildSeoTitle(title, specifics);
+      const seoTitle = buildSeoTitle(specifics);
       const expectedDesc = buildDescription(seoTitle);
 
       const normalizeDesc = (d: string) => d.replace(/[\s\r\n]+/g, ' ').trim();
@@ -168,36 +170,6 @@ function parseActiveListings(xml: string): ActiveListing[] {
   return listings;
 }
 
-const WORLD_CUP_COUNTRIES = [
-  'Argentina', 'Brazil', 'England', 'France', 'Germany', 'Italy', 'Spain', 'Portugal',
-  'Netherlands', 'Belgium', 'Croatia', 'Uruguay', 'USA', 'Mexico', 'Japan', 'South Korea',
-] as const;
-
-const WORLD_CUP_PLAYER_COUNTRY_HINTS: Array<{ pattern: RegExp; country: typeof WORLD_CUP_COUNTRIES[number] }> = [
-  { pattern: /\bharry\s+kane\b/i, country: 'England' },
-  { pattern: /\bjude\s+bellingham\b/i, country: 'England' },
-  { pattern: /\bbukayo\s+saka\b/i, country: 'England' },
-  { pattern: /\bphil\s+foden\b/i, country: 'England' },
-  { pattern: /\blionel\s+messi\b/i, country: 'Argentina' },
-  { pattern: /\bkylian\s+mbappe\b/i, country: 'France' },
-  { pattern: /\bcristiano\s+ronaldo\b/i, country: 'Portugal' },
-  { pattern: /\bvinicius\s+jr\b/i, country: 'Brazil' },
-  { pattern: /\bvinicius\s+junior\b/i, country: 'Brazil' },
-  { pattern: /\bpedri\b/i, country: 'Spain' },
-  { pattern: /\bluka\s+modric\b/i, country: 'Croatia' },
-];
-
-function hasWorldCupCountry(title: string): boolean {
-  return WORLD_CUP_COUNTRIES.some(country => new RegExp(`\\b${country.replace(/\s+/g, '\\s+')}\\b`, 'i').test(title));
-}
-
-function inferWorldCupCountry(title: string): string | null {
-  for (const hint of WORLD_CUP_PLAYER_COUNTRY_HINTS) {
-    if (hint.pattern.test(title)) return hint.country;
-  }
-  return null;
-}
-
 function extractBrandFromTitle(title: string): string | undefined {
   const brands = ['Topps', 'Panini', 'Upper Deck', 'Bowman', 'Leaf', 'Fleer', 'Donruss', 'Score', 'O-Pee-Chee', 'Futera'];
   for (const b of brands) {
@@ -208,230 +180,53 @@ function extractBrandFromTitle(title: string): string | undefined {
   return undefined;
 }
 
-// Enforces Visual Uniformity (Title Case) and strict SEO ordering
-function buildSeoTitle(originalTitle: string, specifics: ItemSpecifics): string {
+// Builds the listing title strictly from eBay item specifics:
+//   [Set] - [Player/Athlete] [Card Number] - [Parallel/Variety] [Team]
+// The Set field is used as-is for Year/Brand/Set (eBay's Set value already
+// carries all three, e.g. "2024 Topps Chrome"). Parallel/Variety is omitted
+// when it's just "Base". Team is only appended if it fits under MAX_LENGTH.
+function buildSeoTitle(specifics: ItemSpecifics): string {
   const MAX_LENGTH = 80;
 
-  // 1. Remove spammy fluff
-  const FLUFF = /\b(WOW|L@@K|LOOK!*|AMAZING|GORGEOUS|BEAUTIFUL|MUST\s*SEE|FREE\s*SHIP(?:PING)?|FAST\s*SHIP(?:PING)?|HOT|FIRE|INVEST|GEM|MINT)\b/gi;
-  let title = originalTitle.replace(FLUFF, '').replace(/\s{2,}/g, ' ').trim();
+  const set = (specifics.set || '').trim();
+  const player = (specifics.player || '').trim();
 
-  // 2. Convert to Title Case to visually normalize EVERYTHING
-  title = title.toLowerCase().split(/\s+/).map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
+  const cardNumberRaw = (specifics.cardNumber || '').trim();
+  const cardNumber = cardNumberRaw
+    ? (cardNumberRaw.startsWith('#') ? cardNumberRaw.toUpperCase() : `#${cardNumberRaw.toUpperCase()}`)
+    : '';
 
-  // 3. Standardize common trading-card abbreviations (Force Upper Case & Remove Parens)
-  const abbrevMap: [RegExp, string][] = [
-    [/\bpsa\b/gi, 'PSA'],
-    [/\bbgs\b/gi, 'BGS'],
-    [/\bsgc\b/gi, 'SGC'],
-    [/\bcgc\b/gi, 'CGC'],
-    // Step 1: Replace two-word form "rookie card" (with optional parens) first
-    [/\(?\brookie\s+card\b\)?/gi, 'RC'],
-    // Step 2: Replace remaining standalone "rookie" or "rc" (with optional parens)
-    [/\(?\b(?:rookie|rc)\b\)?/gi, 'RC'],
-    [/\bauto(?:graph)?(?:ed)?\b/gi, 'Auto'],
-    [/\brefractor\b/gi, 'Refractor'],
-    [/\bholographic\b/gi, 'Holo'],
-    [/\bprisms?\b/gi, 'Prizm'],
-    [/\bparallel\b/gi, 'Parallel'],
-    [/\bshort\s*print\b/gi, 'SP'],
-    [/\bsuper\s*short\s*print\b/gi, 'SSP'],
-    [/\bfifa\b/gi, 'FIFA'],
-    [/\bmlb\b/gi, 'MLB'],
-    [/\bnba\b/gi, 'NBA'],
-    [/\bnfl\b/gi, 'NFL'],
-    [/\bnhl\b/gi, 'NHL'],
-    [/\bufc\b/gi, 'UFC'],
-    [/\bwwe\b/gi, 'WWE'],
-    [/\buefa\b/gi, 'UEFA'],
-    [/\bwnba\b/gi, 'WNBA'],
-    [/\bnwsl\b/gi, 'NWSL'],
-    [/\busfl\b/gi, 'USFL'],
-    [/\bxfl\b/gi, 'XFL'],
-    [/\bmls\b/gi, 'MLS'],
-  ];
-  for (const [pattern, replacement] of abbrevMap) {
-    title = title.replace(pattern, replacement);
+  const parallelRaw = (specifics.parallel || '').trim();
+  const parallel = parallelRaw.replace(/[[\]]/g, '').trim().toLowerCase() === 'base' ? '' : parallelRaw;
+
+  const team = (specifics.team || '').trim();
+
+  const parts: string[] = [];
+  if (set) parts.push(set);
+
+  if (player) {
+    if (set) parts.push('-');
+    parts.push(player);
   }
 
-  // Deduplicate consecutive RC tokens (e.g. "RC RC" -> "RC") that can arise
-  // when a title contains both "Rookie Card" and a standalone "RC"
-  title = title.replace(/\bRC(?:\s+RC)+\b/g, 'RC');
+  if (cardNumber) parts.push(cardNumber);
 
-  title = title.replace(/\bWorld\s+Cup\b/gi, 'World Cup');
+  if (parallel) {
+    if (set || player) parts.push('-');
+    parts.push(parallel);
+  }
 
-  if (/\bWorld\s+Cup\b/i.test(title) && !hasWorldCupCountry(title)) {
-    const country = inferWorldCupCountry(title);
-    if (country) {
-      title = `${title} ${country}`;
+  let title = parts.join(' ').replace(/\s{2,}/g, ' ').trim();
+
+  // Attributes: only add the full team name if there's room within the title limit
+  if (team) {
+    const withTeam = `${title} ${team}`.replace(/\s{2,}/g, ' ').trim();
+    if (withTeam.length <= MAX_LENGTH) {
+      title = withTeam;
     }
   }
 
-  // 4. Force uppercase on any token that looks like a card number (e.g., #bcp-95 -> #BCP-95)
-  title = title.split(' ').map(word => word.startsWith('#') ? word.toUpperCase() : word).join(' ');
-
-  // 5. Extract and Reorder components
-  let playerStr = specifics?.player || '';
-  if (playerStr) {
-    playerStr = playerStr.toLowerCase().split(/\s+/).map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
-  }
-
-  // Year matching: handles 19xx, 20xx, and ranges like 1999-00, 2024-25, 2024-2025
-  const yearPattern = /\b((?:19|20)\d{2}(?:-\d{2,4})?)\b/i;
-  const yearStr = specifics?.year?.match(yearPattern)?.[1] || title.match(yearPattern)?.[1] || '';
-  if (yearStr) {
-    const safeYear = yearStr.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    title = title.replace(new RegExp(`\\b${safeYear}\\b`, 'gi'), '').replace(/\s{2,}/g, ' ').trim();
-  }
-
-  let leftPart = '';
-  let rightPart = title;
-
-  // Split title by Player Name to isolate Brand/Set (left) from Parallel/Color (right)
-  if (playerStr) {
-    // Try to handle slight accent differences by removing accents for matching if needed, 
-    // but a safe regex is usually fine for most English cards
-    const safePlayer = playerStr.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const playerRegex = new RegExp(`\\b${safePlayer}\\b`, 'i');
-    const match = playerRegex.exec(rightPart);
-    if (match) {
-      leftPart = rightPart.substring(0, match.index).trim();
-      rightPart = rightPart.substring(match.index + match[0].length).trim();
-    }
-  }
-
-  // Clean up leftPart
-  leftPart = leftPart.replace(/^[-–—,]\s*/, '').replace(/\s*[-–—,]$/, '').trim();
-
-  // Refine leftPart to ONLY contain Brand & Set, moving any Insert/Parallel info prepended before player into rightPart
-  const brand = specifics?.brand || extractBrandFromTitle(originalTitle);
-  let set = specifics?.set || '';
-  
-  if (yearStr && set.includes(yearStr)) {
-      const safeYear = yearStr.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      set = set.replace(new RegExp(`\\b${safeYear}\\b`, 'gi'), '').trim();
-  }
-  
-  if (brand && set.toLowerCase().includes(brand.toLowerCase())) {
-      set = set.replace(new RegExp(`\\b${brand.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'gi'), '').trim();
-  }
-  
-  let finalBrandSet = '';
-  
-  if (brand) {
-      const safeBrand = brand.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      const brandRegex = new RegExp(`\\b${safeBrand}\\b`, 'gi');
-      
-      let match = leftPart.match(brandRegex) || rightPart.match(brandRegex);
-      if (match) {
-          finalBrandSet += match[0] + ' ';
-      } else {
-          const forcedBrand = brand.toLowerCase().split(/\s+/).map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
-          finalBrandSet += forcedBrand + ' '; 
-      }
-      leftPart = leftPart.replace(brandRegex, ' ').trim();
-      rightPart = rightPart.replace(brandRegex, ' ').trim();
-  }
-  
-  if (set) {
-      set = set.replace(/^[-–—,]\s*/, '').trim();
-      const safeSet = set.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      const setRegex = new RegExp(`\\b${safeSet}\\b`, 'gi');
-      
-      let match = leftPart.match(setRegex) || rightPart.match(setRegex);
-      if (match) {
-          finalBrandSet += match[0] + ' ';
-      } else {
-          let forcedSet = set.toLowerCase().split(/\s+/).map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
-          for (const [pattern, replacement] of abbrevMap) {
-              forcedSet = forcedSet.replace(pattern, replacement);
-          }
-          finalBrandSet += forcedSet + ' ';
-      }
-      leftPart = leftPart.replace(setRegex, ' ').trim();
-      rightPart = rightPart.replace(setRegex, ' ').trim();
-  }
-  
-  if (leftPart) {
-      rightPart = leftPart + ' ' + rightPart;
-  }
-  
-  leftPart = finalBrandSet.trim();
-
-  // Card Number
-  let cardNumStr = specifics?.cardNumber ? specifics.cardNumber.trim().toUpperCase() : '';
-  let extractedCardNum = '';
-  if (cardNumStr) {
-    const safeNumExact = cardNumStr.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const numPatternExact = new RegExp(`(?:^|\\s)#?\\s*${safeNumExact}\\b`, 'gi');
-    rightPart = rightPart.replace(numPatternExact, ' ').trim();
-
-    const safeNumAlpha = cardNumStr.replace(/[^A-Z0-9]/ig, '');
-    if (safeNumAlpha && safeNumAlpha !== cardNumStr) {
-        const numPatternAlpha = new RegExp(`(?:^|\\s)#?\\s*${safeNumAlpha}\\b`, 'gi');
-        rightPart = rightPart.replace(numPatternAlpha, ' ').trim();
-    }
-
-    extractedCardNum = cardNumStr.startsWith('#') ? cardNumStr : `#${cardNumStr}`;
-  } else {
-    const hashMatch = rightPart.match(/(?:^|\s)#[A-Z0-9-]+\b/i);
-    if (hashMatch) {
-      extractedCardNum = hashMatch[0].trim().toUpperCase();
-      rightPart = rightPart.replace(new RegExp(hashMatch[0].replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), ' ').trim();
-    }
-  }
-
-  // Attributes (RC, AUTO, RPA, SP, SSP, Serial /99)
-  const attributes: string[] = [];
-  const attrRegex = /\b(RC|AUTO|RPA|SP|SSP)\b/gi;
-  let attrMatch;
-  while ((attrMatch = attrRegex.exec(rightPart)) !== null) {
-    attributes.push(attrMatch[1].toUpperCase());
-  }
-  rightPart = rightPart.replace(attrRegex, ' ').replace(/\s{2,}/g, ' ').trim();
-
-  const serialRegex = /(?:^|\s)(\d{1,5}\/\d{1,5}|\/\d{1,5})\b/g;
-  let serialMatch;
-  while ((serialMatch = serialRegex.exec(rightPart)) !== null) {
-    attributes.push(serialMatch[1]);
-  }
-  rightPart = rightPart.replace(serialRegex, ' ').replace(/\s{2,}/g, ' ').trim();
-
-  // Grade
-  const grades: string[] = [];
-  const gradeRegex = /\b(PSA|BGS|SGC|CGC)\s*(10|9\.5|9|8\.5|8|7|6|5|4|3|2|1\.5|1)\b/gi;
-  let gradeMatch;
-  while ((gradeMatch = gradeRegex.exec(rightPart)) !== null) {
-    grades.push(`${gradeMatch[1].toUpperCase()} ${gradeMatch[2]}`);
-  }
-  rightPart = rightPart.replace(gradeRegex, ' ').replace(/\s{2,}/g, ' ').trim();
-
-  // Clean up title (which is now strictly Insert/Parallel/Color + Team info)
-  rightPart = rightPart.replace(/\s{2,}/g, ' ').replace(/^[-–—,\s]+/, '').replace(/[-–—,\s]+$/, '').replace(/\s*,\s*/g, ' ').trim();
-
-  // Reconstruct: [Year] [Brand & Set] - [Player Name] [Card #] - [Insert/Parallel/Color] [Attributes] [Grade]
-  let finalParts = [];
-  if (yearStr) finalParts.push(yearStr);
-  if (leftPart) finalParts.push(leftPart); // Brand & Set
-  
-  if (playerStr) {
-    if (leftPart) finalParts.push('-');
-    finalParts.push(playerStr);
-  }
-  
-  if (extractedCardNum) finalParts.push(extractedCardNum);
-  
-  if (rightPart) {
-    if (leftPart || playerStr) finalParts.push('-');
-    finalParts.push(rightPart); // Insert/Parallel/Color
-  }
-  
-  if (attributes.length > 0) finalParts.push(attributes.join(' '));
-  if (grades.length > 0) finalParts.push(grades.join(' '));
-
-  title = finalParts.join(' ').replace(/\s{2,}/g, ' ').trim();
-
-  // 7. Truncate to eBay's 80-character hard limit without splitting words
+  // Truncate to eBay's 80-character hard limit without splitting words
   if (title.length > MAX_LENGTH) {
     const cut = title.lastIndexOf(' ', MAX_LENGTH);
     title = title.substring(0, cut > MAX_LENGTH - 15 ? cut : MAX_LENGTH).trim();
@@ -585,8 +380,8 @@ export async function POST(request: NextRequest) {
         const specifics = specificsMap.get(item.itemId) || {};
         const existingSku = skuMap.get(item.itemId) || '';
 
-        // Pass item specifics down to structurally govern the Title Convention
-        const seoTitle = buildSeoTitle(item.title, specifics);
+        // Title is built strictly from item specifics — no parsing of the old title
+        const seoTitle = buildSeoTitle(specifics);
         const description = buildDescription(seoTitle);
 
         const titleYear = item.title.match(/\b((19|20)\d{2})\b/)?.[1];

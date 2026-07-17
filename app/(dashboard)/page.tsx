@@ -31,9 +31,11 @@ export default function Dashboard() {
   const [clockTime, setClockTime] = useState<string>('');
   const [sport, setSport] = useState<string>('all');
   const [sort, setSort] = useState<string>('confidence');
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
+  const [hasLoaded, setHasLoaded] = useState(false);
 
   const fetchData = useCallback(async () => {
+    setLoading(true);
     try {
       const params = new URLSearchParams({ status: 'new', sort, limit: '50' });
       if (sport !== 'all') params.set('sport', sport);
@@ -46,6 +48,7 @@ export default function Dashboard() {
       const statsData = await statsRes.json();
       setLeads(leadsData.leads || []);
       setStats(statsData);
+      setHasLoaded(true);
     } catch (err) {
       console.error('Failed to fetch:', err);
     } finally {
@@ -53,13 +56,12 @@ export default function Dashboard() {
     }
   }, [sort, sport, filter]);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
-
-  // Auto-refresh every 30 seconds
+  // Re-fetch on filter/sort/sport changes, but only once the user has
+  // triggered the initial load via the button — leads never auto-load.
   useEffect(() => {
-    const interval = setInterval(fetchData, 30000);
-    return () => clearInterval(interval);
-  }, [fetchData]);
+    if (hasLoaded) fetchData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sort, sport, filter]);
 
   // Clock — client-only to avoid hydration mismatch
   useEffect(() => {
@@ -97,13 +99,14 @@ export default function Dashboard() {
         </div>
         <div className="flex gap-3 items-center">
           <div className="text-xs text-gray-600">
-            {clockTime && `${clockTime} · `}Auto-refreshing
+            {clockTime}
           </div>
           <button
             onClick={fetchData}
-            className="px-3 py-1.5 bg-gray-800 text-gray-300 rounded-lg text-sm hover:bg-gray-700 transition"
+            disabled={loading}
+            className="px-3 py-1.5 bg-gray-800 text-gray-300 rounded-lg text-sm hover:bg-gray-700 transition disabled:opacity-50"
           >
-            Refresh
+            {loading ? 'Loading…' : hasLoaded ? 'Refresh' : 'Load Leads'}
           </button>
         </div>
       </header>
@@ -174,7 +177,11 @@ export default function Dashboard() {
 
       {/* Lead Cards */}
       <div className="space-y-3">
-        {loading ? (
+        {!hasLoaded ? (
+          <div className="text-center py-12 text-gray-600">
+            {loading ? 'Loading leads...' : 'Click "Load Leads" to fetch the latest leads.'}
+          </div>
+        ) : loading ? (
           <div className="text-center py-12 text-gray-600">Loading leads...</div>
         ) : filtered.length === 0 ? (
           <div className="text-center py-12 text-gray-600">

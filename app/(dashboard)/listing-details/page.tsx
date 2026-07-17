@@ -26,6 +26,8 @@ const PRIORITY_COLS = [
   'Team',
   'Manufacturer',
   'Set',
+  'Season',
+  'Year Manufactured',
   'Parallel/Variety',
   'Card Number',
   'League',
