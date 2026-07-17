@@ -243,6 +243,9 @@ function SortIndicator({ col, sortCol, sortDir }: { col: string; sortCol: string
 function SkeletonRow({ cols }: { cols: number }) {
   return (
     <tr className="border-b border-gray-800/50 animate-pulse">
+      <td className="px-3 py-2 w-14">
+        <div className="h-10 w-10 bg-gray-800 rounded" />
+      </td>
       <td className="px-3 py-2 min-w-[260px] max-w-[340px]">
         <div className="h-3 bg-gray-800 rounded w-5/6 mb-1.5" />
       </td>
@@ -359,6 +362,10 @@ export default function ListingDetailsPage() {
   const [srReplace, setSrReplace] = useState('');
   const [srCase, setSrCase] = useState(false);
   const srFindRef = useRef<HTMLInputElement>(null);
+
+  // ── Title sync state ────────────────────────────────────────────────────────
+  const [titleSyncOpen, setTitleSyncOpen] = useState(false);
+  const [titleSyncSelected, setTitleSyncSelected] = useState<Set<string>>(new Set());
 
   // ── Advanced filter state ───────────────────────────────────────────────────
   const [filterPanelOpen, setFilterPanelOpen] = useState(false);
@@ -626,6 +633,64 @@ export default function ListingDetailsPage() {
     }
   }, [srCol, srFind, srReplace, srCase, allListings, specificMap, edits]);
 
+  // ── Title sync: listings whose title doesn't match the generated template ──
+  const titleMismatches = useMemo(() => {
+    const results: { itemId: string; currentTitle: string; suggestedTitle: string }[] = [];
+    for (const listing of allListings) {
+      const specs = specificMap[listing.itemId];
+      if (!Array.isArray(specs)) continue;
+      const itemEdits = edits[listing.itemId] || {};
+      const effective = (col: string) => itemEdits[col] ?? getSpecificValue(specs, col);
+      const currentTitle = (itemEdits['__title__'] ?? listing.title).trim();
+      const suggestedTitle = buildTitleFromSpecifics({
+        set: effective('Set'),
+        player: effective('Player/Athlete'),
+        cardNumber: effective('Card Number'),
+        parallel: effective('Parallel/Variety'),
+        team: effective('Team'),
+      });
+      if (suggestedTitle && suggestedTitle !== currentTitle) {
+        results.push({ itemId: listing.itemId, currentTitle, suggestedTitle });
+      }
+    }
+    return results;
+  }, [allListings, specificMap, edits]);
+
+  const titleSyncMismatchIds = useMemo(() => new Set(titleMismatches.map((m) => m.itemId)), [titleMismatches]);
+
+  const toggleTitleSyncSelected = useCallback((itemId: string) => {
+    setTitleSyncSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(itemId)) next.delete(itemId);
+      else next.add(itemId);
+      return next;
+    });
+  }, []);
+
+  const toggleTitleSyncSelectAll = useCallback(() => {
+    setTitleSyncSelected((prev) =>
+      prev.size === titleMismatches.length ? new Set() : new Set(titleMismatches.map((m) => m.itemId))
+    );
+  }, [titleMismatches]);
+
+  const applyTitleSync = useCallback(() => {
+    const toApply = titleMismatches.filter((m) => titleSyncSelected.has(m.itemId));
+    if (toApply.length === 0) return;
+    setEdits((prev) => {
+      const next = { ...prev };
+      for (const m of toApply) {
+        next[m.itemId] = { ...(next[m.itemId] || {}), __title__: m.suggestedTitle };
+      }
+      return next;
+    });
+    setSubmitResults((prev) => {
+      const next = { ...prev };
+      for (const m of toApply) delete next[m.itemId];
+      return next;
+    });
+    setTitleSyncSelected(new Set());
+  }, [titleMismatches, titleSyncSelected]);
+
   // ── Advanced filter handlers ────────────────────────────────────────────────
   const addFilterCondition = useCallback(() => {
     setFilterConditions((prev) => [
@@ -675,38 +740,21 @@ export default function ListingDetailsPage() {
       });
       return;
     }
-    setEdits((prev) => {
-      const itemEdits = { ...(prev[itemId] || {}), [col]: newVal.trim() };
+    setEdits((prev) => ({
+      ...prev,
+      [itemId]: { ...(prev[itemId] || {}), [col]: newVal.trim() },
+    }));
 
-      // MMA has no Team — auto-fill it with N/A when Sport is set to MMA
-      if (col === 'Sport' && isMma(newVal) && !(itemEdits.Team ?? '').trim()) {
-        const specs = specificMap[itemId];
-        const existingTeam = Array.isArray(specs) ? getSpecificValue(specs, 'Team') : '';
-        if (!existingTeam.trim()) itemEdits.Team = 'N/A';
-      }
-
-      // Auto-rebuild the title whenever one of the main identifying fields changes
-      if (HIGHLIGHT_EMPTY_COLS.has(col)) {
-        const specs = specificMap[itemId];
-        const specArr = Array.isArray(specs) ? specs : [];
-        const effective = (c: string) => itemEdits[c] ?? getSpecificValue(specArr, c);
-        const builtTitle = buildTitleFromSpecifics({
-          set: effective('Set'),
-          player: effective('Player/Athlete'),
-          cardNumber: effective('Card Number'),
-          parallel: effective('Parallel/Variety'),
-          team: effective('Team'),
-        });
-        const originalTitle = (allListings.find((l) => l.itemId === itemId)?.title ?? '').trim();
-        if (builtTitle && builtTitle !== originalTitle) {
-          itemEdits.__title__ = builtTitle;
-        } else {
-          delete itemEdits.__title__;
-        }
-      }
-
-      return { ...prev, [itemId]: itemEdits };
-    });
+    // MMA has no Team — auto-fill it with N/A when Sport is set to MMA
+    if (col === 'Sport' && isMma(newVal)) {
+      const specs = specificMap[itemId];
+      const existingTeam = Array.isArray(specs) ? getSpecificValue(specs, 'Team') : '';
+      setEdits((prev) => {
+        const currentTeam = prev[itemId]?.Team ?? existingTeam;
+        if (currentTeam.trim()) return prev;
+        return { ...prev, [itemId]: { ...(prev[itemId] || {}), Team: 'N/A' } };
+      });
+    }
 
     // Clear any stale submit result for this item
     setSubmitResults((prev) => {
@@ -917,6 +965,24 @@ export default function ListingDetailsPage() {
             ✕ Clear filters
           </button>
         )}
+
+        {/* Title sync toggle */}
+        <button
+          onClick={() => setTitleSyncOpen((v) => !v)}
+          title="Find listings whose title doesn't match the generated template (Set - Player # - Parallel Team)"
+          className={`flex items-center gap-1.5 px-3 py-1.5 border text-xs rounded-lg transition ${
+            titleSyncOpen
+              ? 'bg-teal-500/15 border-teal-500/40 text-teal-300 hover:bg-teal-500/25'
+              : 'bg-gray-800 hover:bg-gray-700 border-gray-700 text-gray-300'
+          }`}
+        >
+          🏷 Title Check
+          {titleMismatches.length > 0 && (
+            <span className="inline-flex items-center justify-center w-4 h-4 bg-teal-500/30 text-teal-300 rounded-full text-[10px] font-bold">
+              {titleMismatches.length}
+            </span>
+          )}
+        </button>
 
         {/* Clear sort */}
         {sortCol && (
@@ -1231,6 +1297,84 @@ export default function ListingDetailsPage() {
         </div>
       )}
 
+      {/* ── Title Sync Panel ── */}
+      {titleSyncOpen && (
+        <div className="bg-gray-900/98 border-b border-teal-500/40 px-5 py-3 flex flex-col gap-2">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] text-teal-400/70 uppercase tracking-widest font-semibold">
+              Titles not matching template
+            </span>
+            <button
+              onClick={() => setTitleSyncOpen(false)}
+              className="px-2 py-1 text-gray-600 hover:text-gray-400 text-xs rounded transition"
+              title="Close"
+            >
+              ✕
+            </button>
+          </div>
+
+          {titleMismatches.length === 0 ? (
+            <p className="text-xs text-gray-600">
+              {specificsPending
+                ? 'Still loading item specifics — checking as they come in…'
+                : 'Every loaded listing’s title matches its template. Nice.'}
+            </p>
+          ) : (
+            <>
+              <div className="flex items-center gap-3">
+                <label className="flex items-center gap-1.5 cursor-pointer select-none text-xs text-gray-400">
+                  <input
+                    type="checkbox"
+                    checked={titleSyncSelected.size === titleMismatches.length}
+                    ref={(el) => {
+                      if (el) el.indeterminate = titleSyncSelected.size > 0 && titleSyncSelected.size < titleMismatches.length;
+                    }}
+                    onChange={toggleTitleSyncSelectAll}
+                    className="w-3.5 h-3.5 accent-teal-500"
+                  />
+                  Select all ({titleMismatches.length.toLocaleString()})
+                  {allListings.length < total && (
+                    <span className="text-gray-700"> (in {allListings.length.toLocaleString()} loaded)</span>
+                  )}
+                </label>
+
+                <button
+                  onClick={applyTitleSync}
+                  disabled={titleSyncSelected.size === 0}
+                  className="ml-auto px-3 py-1.5 bg-teal-500/15 hover:bg-teal-500/25 border border-teal-500/40 hover:border-teal-400/60 text-teal-300 text-xs rounded-lg font-medium transition disabled:opacity-30 disabled:cursor-not-allowed"
+                >
+                  Update selected ({titleSyncSelected.size})
+                </button>
+              </div>
+
+              <div className="max-h-64 overflow-y-auto rounded-lg border border-gray-800 divide-y divide-gray-800/70">
+                {titleMismatches.map((m) => (
+                  <label
+                    key={m.itemId}
+                    className="flex items-start gap-2.5 px-3 py-2 hover:bg-gray-800/40 cursor-pointer"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={titleSyncSelected.has(m.itemId)}
+                      onChange={() => toggleTitleSyncSelected(m.itemId)}
+                      className="mt-0.5 w-3.5 h-3.5 accent-teal-500 shrink-0"
+                    />
+                    <div className="min-w-0 flex-1 text-xs">
+                      <p className="text-gray-500 truncate" title={m.currentTitle}>
+                        <span className="text-gray-700">was</span> {m.currentTitle || <em className="text-gray-700">(empty)</em>}
+                      </p>
+                      <p className="text-teal-300 truncate" title={m.suggestedTitle}>
+                        <span className="text-teal-600">→</span> {m.suggestedTitle}
+                      </p>
+                    </div>
+                  </label>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
       {/* Legend */}
       {changedCount > 0 && (
         <div className="px-6 py-2 bg-amber-500/5 border-b border-amber-500/20 flex items-center gap-4 text-[11px] text-amber-400/80">
@@ -1261,6 +1405,8 @@ export default function ListingDetailsPage() {
         <table className="w-full text-sm border-collapse min-w-max">
           <thead className="sticky top-0 z-10">
             <tr className="bg-gray-900 border-b border-gray-700">
+              {/* Thumbnail header */}
+              <th className="px-3 py-3 w-14"></th>
               {/* Title header */}
               <th className="px-3 py-3 text-left text-xs uppercase tracking-widest font-semibold min-w-[260px] max-w-[340px] whitespace-nowrap">
                 <div className="flex items-center gap-1 group/hdr">
@@ -1341,6 +1487,28 @@ export default function ListingDetailsPage() {
                         isItemPending ? 'opacity-60' : 'hover:bg-gray-800/20'
                       }`}
                     >
+                      {/* Thumbnail — opens the listing on eBay in a new tab */}
+                      <td className="px-2 py-1.5 w-14">
+                        <a
+                          href={listing.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          title="Open listing on eBay"
+                          className="block w-10 h-10 rounded overflow-hidden bg-gray-800 border border-gray-800 hover:border-green-500/50 transition-colors shrink-0"
+                        >
+                          {listing.pictureUrl ? (
+                            <img
+                              src={listing.pictureUrl}
+                              alt=""
+                              className="w-full h-full object-cover"
+                              loading="lazy"
+                            />
+                          ) : (
+                            <span className="w-full h-full flex items-center justify-center text-gray-700 text-[9px]">—</span>
+                          )}
+                        </a>
+                      </td>
+
                       {/* Title (editable) */}
                       <td className="px-2 py-1.5 min-w-[260px] max-w-[400px] relative">
                         {(() => {
@@ -1360,6 +1528,12 @@ export default function ListingDetailsPage() {
                             />
                           );
                         })()}
+                        {!('__title__' in itemEdits) && titleSyncMismatchIds.has(listing.itemId) && (
+                          <span
+                            className="absolute top-1.5 right-1.5 w-1.5 h-1.5 bg-teal-400 rounded-full"
+                            title="Title doesn't match the generated template — see Title Check"
+                          />
+                        )}
                       </td>
 
                       {/* Specifics (editable) */}
