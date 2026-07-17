@@ -451,6 +451,9 @@ export default function ActiveListingsPage() {
                   onClick={() => handleSort('title')}
                 >
                   Title <SortIcon active={sortKey === 'title'} dir={sortDir} />
+                  <span className="block text-[10px] font-normal normal-case text-gray-600">
+                    [Set - Player/Athlete - Card # - Parallel/Variety]
+                  </span>
                 </th>
                 <th
                   className="px-4 py-3 text-right text-gray-400 font-medium w-24 cursor-pointer select-none hover:text-gray-200 transition"

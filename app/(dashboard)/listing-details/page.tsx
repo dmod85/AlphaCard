@@ -56,6 +56,13 @@ function getSpecificValue(specifics: NameValuePair[], colName: string): string {
   return pair?.value ?? '';
 }
 
+// MMA is an individual sport — there's no Team to report, so eBay's
+// required "Team" specific gets auto-filled with N/A instead of being left
+// blank (which would otherwise need a manual edit on every MMA listing).
+function isMma(sportValue: string): boolean {
+  return sportValue.trim().toUpperCase().includes('MMA');
+}
+
 function buildColumns(specificMap: SpecificMap): string[] {
   const seen = new Set<string>(PRIORITY_COLS.map((c) => c.toLowerCase().trim()));
   const extras: string[] = [];
@@ -265,13 +272,27 @@ export default function ListingDetailsPage() {
       const res = await fetch(`/api/ebay/listing-details?itemIds=${toFetch.join(',')}`);
       const data = await res.json();
       if (!res.ok || data.error) throw new Error(data.error || 'Failed');
+      const results = data.results as { itemId: string; specifics: NameValuePair[] }[];
       setSpecificMap((prev) => {
         const next = { ...prev };
-        for (const r of data.results as { itemId: string; specifics: NameValuePair[] }[]) {
+        for (const r of results) {
           next[r.itemId] = r.specifics;
           fetchingRef.current.delete(r.itemId);
         }
         return next;
+      });
+      // Auto-fill Team = N/A for MMA listings that don't already have one
+      setEdits((prev) => {
+        let changed = false;
+        const next = { ...prev };
+        for (const r of results) {
+          if (!isMma(getSpecificValue(r.specifics, 'Sport'))) continue;
+          if (getSpecificValue(r.specifics, 'Team').trim()) continue;
+          if (next[r.itemId]?.Team) continue;
+          next[r.itemId] = { ...(next[r.itemId] || {}), Team: 'N/A' };
+          changed = true;
+        }
+        return changed ? next : prev;
       });
     } catch {
       setSpecificMap((prev) => {
@@ -493,6 +514,18 @@ export default function ListingDetailsPage() {
       ...prev,
       [itemId]: { ...(prev[itemId] || {}), [col]: newVal.trim() },
     }));
+
+    // MMA has no Team — auto-fill it with N/A when Sport is set to MMA
+    if (col === 'Sport' && isMma(newVal)) {
+      const specs = specificMap[itemId];
+      const existingTeam = Array.isArray(specs) ? getSpecificValue(specs, 'Team') : '';
+      setEdits((prev) => {
+        const currentTeam = prev[itemId]?.Team ?? existingTeam;
+        if (currentTeam.trim()) return prev;
+        return { ...prev, [itemId]: { ...(prev[itemId] || {}), Team: 'N/A' } };
+      });
+    }
+
     // Clear any stale submit result for this item
     setSubmitResults((prev) => {
       const next = { ...prev };
