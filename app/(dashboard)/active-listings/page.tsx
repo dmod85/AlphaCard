@@ -149,7 +149,12 @@ export default function ActiveListingsPage() {
       }
       if (!res.ok) throw new Error(data.error || 'Failed to fetch listings');
       
-      setListings(prev => append ? [...prev, ...data.listings] : data.listings);
+      setListings(prev => {
+        if (!append) return data.listings;
+        const existingIds = new Set(prev.map((l: ActiveListing) => l.itemId));
+        const newItems = (data.listings as ActiveListing[]).filter(l => !existingIds.has(l.itemId));
+        return [...prev, ...newItems];
+      });
       setTotal(data.total);
       setTotalPages(data.totalPages || 1);
       setPage(data.currentPage || 1);
