@@ -88,14 +88,15 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'itemIds is required' }, { status: 400 });
     }
 
-    const { data: cached } = await supabaseAdmin
-      .from('ebay_item_specifics')
-      .select('item_id, specifics')
-      .in('item_id', itemIds);
+    const [{ data: cached }, { data: locks }] = await Promise.all([
+      supabaseAdmin.from('ebay_item_specifics').select('item_id, specifics').in('item_id', itemIds),
+      supabaseAdmin.from('ebay_title_locks').select('item_id').in('item_id', itemIds),
+    ]);
 
     const cachedMap = new Map<string, NameValuePair[]>(
       (cached ?? []).map((row) => [row.item_id as string, row.specifics as NameValuePair[]])
     );
+    const lockedIds = new Set((locks ?? []).map((row) => row.item_id as string));
     const uncachedIds = itemIds.filter((id) => !cachedMap.has(id));
 
     let fetched: { itemId: string; specifics: NameValuePair[] }[] = [];
@@ -114,6 +115,7 @@ export async function GET(request: NextRequest) {
     const results = itemIds.map((id) => ({
       itemId: id,
       specifics: cachedMap.get(id) ?? fetched.find((r) => r.itemId === id)?.specifics ?? [],
+      titleLocked: lockedIds.has(id),
     }));
 
     return NextResponse.json({ results });

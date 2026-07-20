@@ -78,6 +78,7 @@ interface ActiveListing {
   isSeoFriendly: boolean;
   sku?: string;
   specifics: NameValuePair[];
+  description: string;
 }
 
 interface ItemSpecifics {
@@ -163,7 +164,7 @@ function parseActiveListings(xml: string): ActiveListing[] {
       // Parse all specifics as raw name-value pairs for display
       const allSpecifics = parseAllSpecifics(item);
 
-      listings.push({ itemId, title, price, url, pictureUrl, quantity, quantityAvailable, startTime, isSeoFriendly, sku, specifics: allSpecifics });
+      listings.push({ itemId, title, price, url, pictureUrl, quantity, quantityAvailable, startTime, isSeoFriendly, sku, specifics: allSpecifics, description: rawDescription });
     }
   }
 

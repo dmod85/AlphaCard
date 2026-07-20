@@ -11,6 +11,7 @@ interface ReviseItem {
   itemId: string;
   specifics: NameValuePair[];
   title?: string;
+  description?: string;
 }
 
 function escapeXml(str: string): string {
@@ -40,6 +41,10 @@ function buildReviseSpecificsRequest(item: ReviseItem, token: string): string {
     ? `<Title>${escapeXml(item.title.trim())}</Title>`
     : '';
 
+  const descriptionXml = item.description
+    ? `<Description><![CDATA[${item.description.trim()}]]></Description>`
+    : '';
+
   const specificsXml = item.specifics
     .filter((s) => s.name.trim() && s.value.trim())
     .map(
@@ -58,6 +63,7 @@ function buildReviseSpecificsRequest(item: ReviseItem, token: string): string {
   <Item>
     <ItemID>${item.itemId}</ItemID>
     ${titleXml}
+    ${descriptionXml}
     ${itemSpecificsXml}
   </Item>
   <ErrorLanguage>en_US</ErrorLanguage>

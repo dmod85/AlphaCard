@@ -18,6 +18,7 @@ interface ActiveListing {
   startTime: string;
   isSeoFriendly: boolean;
   sku?: string;
+  description: string;
 }
 
 const PRIORITY_COLS = [
@@ -149,6 +150,31 @@ function buildTitleFromSpecifics(fields: {
   }
 
   return title;
+}
+
+// Builds the listing description from its title — mirrors buildDescription()
+// in app/api/ebay/active-listings/route.ts. Kept in sync with whatever title
+// is currently in effect (auto-generated or manually locked).
+function buildDescriptionFromTitle(title: string): string {
+  return `<div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.8;color:#222;max-width:700px">
+  <p><b>Card Details:</b> &gt; ${title}.</p>
+  <p><b>Condition:</b> &gt; Pack fresh, placed directly into a penny sleeve and toploader. Card is Near Mint or Better. Please see high-resolution photos for exact condition.</p>
+  <p><b>Shipping:</b> &gt; Shipped securely via eBay Standard Envelope in a reinforced mailer to ensure it arrives safely.</p>
+</div>`;
+}
+
+// Whitespace-insensitive comparison — mirrors normalizeDesc() server-side
+function normalizeDescription(html: string): string {
+  return html.replace(/[\s\r\n]+/g, ' ').trim();
+}
+
+/** Strips HTML tags down to a compact plain-text preview for the Description Check panel */
+function stripHtmlPreview(html: string): string {
+  return html
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&[a-z]+;/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 /** Current value shown for a listing's column, accounting for unsaved edits */
@@ -366,6 +392,13 @@ export default function ListingDetailsPage() {
   // ── Title sync state ────────────────────────────────────────────────────────
   const [titleSyncOpen, setTitleSyncOpen] = useState(false);
   const [titleSyncSelected, setTitleSyncSelected] = useState<Set<string>>(new Set());
+  // itemId -> true once the title has been manually locked against the
+  // auto-template (persisted in Supabase — see /api/ebay/title-locks)
+  const [titleLocked, setTitleLockedMap] = useState<Record<string, boolean>>({});
+
+  // ── Description sync state ──────────────────────────────────────────────────
+  const [descSyncOpen, setDescSyncOpen] = useState(false);
+  const [descSyncSelected, setDescSyncSelected] = useState<Set<string>>(new Set());
 
   // ── Advanced filter state ───────────────────────────────────────────────────
   const [filterPanelOpen, setFilterPanelOpen] = useState(false);
@@ -423,13 +456,18 @@ export default function ListingDetailsPage() {
       const res = await fetch(`/api/ebay/listing-details?itemIds=${toFetch.join(',')}`);
       const data = await res.json();
       if (!res.ok || data.error) throw new Error(data.error || 'Failed');
-      const results = data.results as { itemId: string; specifics: NameValuePair[] }[];
+      const results = data.results as { itemId: string; specifics: NameValuePair[]; titleLocked: boolean }[];
       setSpecificMap((prev) => {
         const next = { ...prev };
         for (const r of results) {
           next[r.itemId] = r.specifics;
           fetchingRef.current.delete(r.itemId);
         }
+        return next;
+      });
+      setTitleLockedMap((prev) => {
+        const next = { ...prev };
+        for (const r of results) next[r.itemId] = r.titleLocked;
         return next;
       });
       // Auto-fill Team = N/A for MMA listings that don't already have one
@@ -480,6 +518,7 @@ export default function ListingDetailsPage() {
     setError(null);
     setAllListings([]);
     setSpecificMap({});
+    setTitleLockedMap({});
     setVisibleCount(ROW_BATCH);
     fetchingRef.current.clear();
     specQueueRef.current = [];
@@ -637,6 +676,7 @@ export default function ListingDetailsPage() {
   const titleMismatches = useMemo(() => {
     const results: { itemId: string; currentTitle: string; suggestedTitle: string }[] = [];
     for (const listing of allListings) {
+      if (titleLocked[listing.itemId]) continue;
       const specs = specificMap[listing.itemId];
       if (!Array.isArray(specs)) continue;
       const itemEdits = edits[listing.itemId] || {};
@@ -654,9 +694,10 @@ export default function ListingDetailsPage() {
       }
     }
     return results;
-  }, [allListings, specificMap, edits]);
+  }, [allListings, specificMap, edits, titleLocked]);
 
   const titleSyncMismatchIds = useMemo(() => new Set(titleMismatches.map((m) => m.itemId)), [titleMismatches]);
+  const lockedCount = useMemo(() => Object.values(titleLocked).filter(Boolean).length, [titleLocked]);
 
   const toggleTitleSyncSelected = useCallback((itemId: string) => {
     setTitleSyncSelected((prev) => {
@@ -690,6 +731,82 @@ export default function ListingDetailsPage() {
     });
     setTitleSyncSelected(new Set());
   }, [titleMismatches, titleSyncSelected]);
+
+  // Lock (or unlock) a listing's title against the auto-template — persisted
+  // in Supabase so it stays skipped across reloads. Optimistic with rollback.
+  const toggleTitleLock = useCallback(async (itemId: string, locked: boolean) => {
+    setTitleLockedMap((prev) => ({ ...prev, [itemId]: locked }));
+    setTitleSyncSelected((prev) => {
+      if (!prev.has(itemId)) return prev;
+      const next = new Set(prev);
+      next.delete(itemId);
+      return next;
+    });
+    try {
+      const res = await fetch('/api/ebay/title-locks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ itemId, locked }),
+      });
+      if (!res.ok) throw new Error('Failed to update title lock');
+    } catch {
+      setTitleLockedMap((prev) => ({ ...prev, [itemId]: !locked }));
+    }
+  }, []);
+
+  // ── Description sync: listings whose description doesn't match the template
+  // built from whatever title is currently in effect (auto-generated, edited,
+  // or locked) — independent of Title Check, so a locked custom title still
+  // gets a properly formatted description.
+  const descriptionMismatches = useMemo(() => {
+    const results: { itemId: string; currentDescription: string; suggestedDescription: string }[] = [];
+    for (const listing of allListings) {
+      const itemEdits = edits[listing.itemId] || {};
+      const currentTitle = (itemEdits['__title__'] ?? listing.title).trim();
+      if (!currentTitle) continue;
+      const currentDescription = itemEdits['__description__'] ?? listing.description ?? '';
+      const suggestedDescription = buildDescriptionFromTitle(currentTitle);
+      if (normalizeDescription(currentDescription) !== normalizeDescription(suggestedDescription)) {
+        results.push({ itemId: listing.itemId, currentDescription, suggestedDescription });
+      }
+    }
+    return results;
+  }, [allListings, edits]);
+
+  const descSyncMismatchIds = useMemo(() => new Set(descriptionMismatches.map((m) => m.itemId)), [descriptionMismatches]);
+
+  const toggleDescSyncSelected = useCallback((itemId: string) => {
+    setDescSyncSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(itemId)) next.delete(itemId);
+      else next.add(itemId);
+      return next;
+    });
+  }, []);
+
+  const toggleDescSyncSelectAll = useCallback(() => {
+    setDescSyncSelected((prev) =>
+      prev.size === descriptionMismatches.length ? new Set() : new Set(descriptionMismatches.map((m) => m.itemId))
+    );
+  }, [descriptionMismatches]);
+
+  const applyDescSync = useCallback(() => {
+    const toApply = descriptionMismatches.filter((m) => descSyncSelected.has(m.itemId));
+    if (toApply.length === 0) return;
+    setEdits((prev) => {
+      const next = { ...prev };
+      for (const m of toApply) {
+        next[m.itemId] = { ...(next[m.itemId] || {}), __description__: m.suggestedDescription };
+      }
+      return next;
+    });
+    setSubmitResults((prev) => {
+      const next = { ...prev };
+      for (const m of toApply) delete next[m.itemId];
+      return next;
+    });
+    setDescSyncSelected(new Set());
+  }, [descriptionMismatches, descSyncSelected]);
 
   // ── Advanced filter handlers ────────────────────────────────────────────────
   const addFilterCondition = useCallback(() => {
@@ -787,15 +904,16 @@ export default function ListingDetailsPage() {
       const baseSpecs = Array.isArray(specificMap[itemId]) ? (specificMap[itemId] as NameValuePair[]) : [];
       const itemEdits = edits[itemId];
 
-      // Pull out title edit if present
+      // Pull out title/description edits if present
       const newTitle = itemEdits['__title__'] ?? undefined;
+      const newDescription = itemEdits['__description__'] ?? undefined;
 
-      // Merge specifics edits (exclude the __title__ key)
+      // Merge specifics edits (exclude the __title__/__description__ keys)
       const mergedMap = new Map<string, string>(baseSpecs.map((s) => [s.name.toLowerCase().trim(), s.value]));
       const displayNames = new Map<string, string>(baseSpecs.map((s) => [s.name.toLowerCase().trim(), s.name]));
 
       for (const [col, val] of Object.entries(itemEdits)) {
-        if (col === '__title__') continue;
+        if (col === '__title__' || col === '__description__') continue;
         const key = col.toLowerCase().trim();
         mergedMap.set(key, val);
         if (!displayNames.has(key)) displayNames.set(key, col);
@@ -805,7 +923,7 @@ export default function ListingDetailsPage() {
         .filter(([, v]) => v.trim())
         .map(([key, value]) => ({ name: displayNames.get(key) || key, value }));
 
-      return { itemId, specifics, title: newTitle };
+      return { itemId, specifics, title: newTitle, description: newDescription };
     });
 
     try {
@@ -837,12 +955,17 @@ export default function ListingDetailsPage() {
           }
           return next;
         });
-        // Sync updated titles back into allListings
+        // Sync updated titles/descriptions back into allListings
         setAllListings((prev) =>
           prev.map((l) => {
             if (!successIds.has(l.itemId)) return l;
             const item = items.find((i) => i.itemId === l.itemId);
-            return item?.title ? { ...l, title: item.title } : l;
+            if (!item) return l;
+            return {
+              ...l,
+              ...(item.title ? { title: item.title } : {}),
+              ...(item.description ? { description: item.description } : {}),
+            };
           })
         );
         setEdits((prev) => {
@@ -980,6 +1103,24 @@ export default function ListingDetailsPage() {
           {titleMismatches.length > 0 && (
             <span className="inline-flex items-center justify-center w-4 h-4 bg-teal-500/30 text-teal-300 rounded-full text-[10px] font-bold">
               {titleMismatches.length}
+            </span>
+          )}
+        </button>
+
+        {/* Description sync toggle */}
+        <button
+          onClick={() => setDescSyncOpen((v) => !v)}
+          title="Find listings whose description doesn't match the generated template built from the current title"
+          className={`flex items-center gap-1.5 px-3 py-1.5 border text-xs rounded-lg transition ${
+            descSyncOpen
+              ? 'bg-indigo-500/15 border-indigo-500/40 text-indigo-300 hover:bg-indigo-500/25'
+              : 'bg-gray-800 hover:bg-gray-700 border-gray-700 text-gray-300'
+          }`}
+        >
+          📝 Description Check
+          {descriptionMismatches.length > 0 && (
+            <span className="inline-flex items-center justify-center w-4 h-4 bg-indigo-500/30 text-indigo-300 rounded-full text-[10px] font-bold">
+              {descriptionMismatches.length}
             </span>
           )}
         </button>
@@ -1301,9 +1442,16 @@ export default function ListingDetailsPage() {
       {titleSyncOpen && (
         <div className="bg-gray-900/98 border-b border-teal-500/40 px-5 py-3 flex flex-col gap-2">
           <div className="flex items-center justify-between">
-            <span className="text-[10px] text-teal-400/70 uppercase tracking-widest font-semibold">
-              Titles not matching template
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] text-teal-400/70 uppercase tracking-widest font-semibold">
+                Titles not matching template
+              </span>
+              {lockedCount > 0 && (
+                <span className="text-[11px] text-gray-600">
+                  🔒 {lockedCount.toLocaleString()} title{lockedCount === 1 ? '' : 's'} locked (skipped)
+                </span>
+              )}
+            </div>
             <button
               onClick={() => setTitleSyncOpen(false)}
               className="px-2 py-1 text-gray-600 hover:text-gray-400 text-xs rounded transition"
@@ -1317,7 +1465,9 @@ export default function ListingDetailsPage() {
             <p className="text-xs text-gray-600">
               {specificsPending
                 ? 'Still loading item specifics — checking as they come in…'
-                : 'Every loaded listing’s title matches its template. Nice.'}
+                : lockedCount > 0
+                  ? `Every unlocked listing's title matches its template. ${lockedCount.toLocaleString()} title${lockedCount === 1 ? ' is' : 's are'} locked and skipped.`
+                  : 'Every loaded listing’s title matches its template. Nice.'}
             </p>
           ) : (
             <>
@@ -1349,22 +1499,105 @@ export default function ListingDetailsPage() {
 
               <div className="max-h-64 overflow-y-auto rounded-lg border border-gray-800 divide-y divide-gray-800/70">
                 {titleMismatches.map((m) => (
+                  <div
+                    key={m.itemId}
+                    className="flex items-start gap-2.5 px-3 py-2 hover:bg-gray-800/40"
+                  >
+                    <label className="flex items-start gap-2.5 flex-1 min-w-0 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={titleSyncSelected.has(m.itemId)}
+                        onChange={() => toggleTitleSyncSelected(m.itemId)}
+                        className="mt-0.5 w-3.5 h-3.5 accent-teal-500 shrink-0"
+                      />
+                      <div className="min-w-0 flex-1 text-xs">
+                        <p className="text-gray-500 truncate" title={m.currentTitle}>
+                          <span className="text-gray-700">was</span> {m.currentTitle || <em className="text-gray-700">(empty)</em>}
+                        </p>
+                        <p className="text-teal-300 truncate" title={m.suggestedTitle}>
+                          <span className="text-teal-600">→</span> {m.suggestedTitle}
+                        </p>
+                      </div>
+                    </label>
+                    <button
+                      onClick={() => toggleTitleLock(m.itemId, true)}
+                      title="This title is fine as-is — lock it so Title Check stops flagging it"
+                      className="shrink-0 px-2 py-1 bg-gray-800 hover:bg-amber-500/15 border border-gray-700 hover:border-amber-500/40 text-gray-400 hover:text-amber-300 text-[11px] rounded transition"
+                    >
+                      🔒 Skip
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* ── Description Sync Panel ── */}
+      {descSyncOpen && (
+        <div className="bg-gray-900/98 border-b border-indigo-500/40 px-5 py-3 flex flex-col gap-2">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] text-indigo-400/70 uppercase tracking-widest font-semibold">
+              Descriptions not matching template
+            </span>
+            <button
+              onClick={() => setDescSyncOpen(false)}
+              className="px-2 py-1 text-gray-600 hover:text-gray-400 text-xs rounded transition"
+              title="Close"
+            >
+              ✕
+            </button>
+          </div>
+
+          {descriptionMismatches.length === 0 ? (
+            <p className="text-xs text-gray-600">Every loaded listing’s description matches its template. Nice.</p>
+          ) : (
+            <>
+              <div className="flex items-center gap-3">
+                <label className="flex items-center gap-1.5 cursor-pointer select-none text-xs text-gray-400">
+                  <input
+                    type="checkbox"
+                    checked={descSyncSelected.size === descriptionMismatches.length}
+                    ref={(el) => {
+                      if (el) el.indeterminate = descSyncSelected.size > 0 && descSyncSelected.size < descriptionMismatches.length;
+                    }}
+                    onChange={toggleDescSyncSelectAll}
+                    className="w-3.5 h-3.5 accent-indigo-500"
+                  />
+                  Select all ({descriptionMismatches.length.toLocaleString()})
+                  {allListings.length < total && (
+                    <span className="text-gray-700"> (in {allListings.length.toLocaleString()} loaded)</span>
+                  )}
+                </label>
+
+                <button
+                  onClick={applyDescSync}
+                  disabled={descSyncSelected.size === 0}
+                  className="ml-auto px-3 py-1.5 bg-indigo-500/15 hover:bg-indigo-500/25 border border-indigo-500/40 hover:border-indigo-400/60 text-indigo-300 text-xs rounded-lg font-medium transition disabled:opacity-30 disabled:cursor-not-allowed"
+                >
+                  Rewrite selected ({descSyncSelected.size})
+                </button>
+              </div>
+
+              <div className="max-h-64 overflow-y-auto rounded-lg border border-gray-800 divide-y divide-gray-800/70">
+                {descriptionMismatches.map((m) => (
                   <label
                     key={m.itemId}
                     className="flex items-start gap-2.5 px-3 py-2 hover:bg-gray-800/40 cursor-pointer"
                   >
                     <input
                       type="checkbox"
-                      checked={titleSyncSelected.has(m.itemId)}
-                      onChange={() => toggleTitleSyncSelected(m.itemId)}
-                      className="mt-0.5 w-3.5 h-3.5 accent-teal-500 shrink-0"
+                      checked={descSyncSelected.has(m.itemId)}
+                      onChange={() => toggleDescSyncSelected(m.itemId)}
+                      className="mt-0.5 w-3.5 h-3.5 accent-indigo-500 shrink-0"
                     />
                     <div className="min-w-0 flex-1 text-xs">
-                      <p className="text-gray-500 truncate" title={m.currentTitle}>
-                        <span className="text-gray-700">was</span> {m.currentTitle || <em className="text-gray-700">(empty)</em>}
+                      <p className="text-gray-500 truncate" title={stripHtmlPreview(m.currentDescription)}>
+                        <span className="text-gray-700">was</span> {stripHtmlPreview(m.currentDescription) || <em className="text-gray-700">(empty)</em>}
                       </p>
-                      <p className="text-teal-300 truncate" title={m.suggestedTitle}>
-                        <span className="text-teal-600">→</span> {m.suggestedTitle}
+                      <p className="text-indigo-300 truncate" title={stripHtmlPreview(m.suggestedDescription)}>
+                        <span className="text-indigo-600">→</span> {stripHtmlPreview(m.suggestedDescription)}
                       </p>
                     </div>
                   </label>
@@ -1483,7 +1716,7 @@ export default function ListingDetailsPage() {
                   return (
                     <tr
                       key={listing.itemId}
-                      className={`border-b border-gray-800/50 transition-colors ${
+                      className={`group border-b border-gray-800/50 transition-colors ${
                         isItemPending ? 'opacity-60' : 'hover:bg-gray-800/20'
                       }`}
                     >
@@ -1534,6 +1767,27 @@ export default function ListingDetailsPage() {
                             title="Title doesn't match the generated template — see Title Check"
                           />
                         )}
+                        {!('__description__' in itemEdits) && descSyncMismatchIds.has(listing.itemId) && (
+                          <span
+                            className="absolute bottom-1.5 right-1.5 w-1.5 h-1.5 bg-indigo-400 rounded-full"
+                            title="Description doesn't match the generated template — see Description Check"
+                          />
+                        )}
+                        <button
+                          onClick={() => toggleTitleLock(listing.itemId, !titleLocked[listing.itemId])}
+                          title={
+                            titleLocked[listing.itemId]
+                              ? 'Title locked — excluded from Title Check. Click to unlock.'
+                              : 'Lock this title so Title Check always skips it'
+                          }
+                          className={`absolute top-1.5 left-1.5 leading-none text-[11px] transition-opacity ${
+                            titleLocked[listing.itemId]
+                              ? 'opacity-100 text-amber-400'
+                              : 'opacity-0 group-hover:opacity-60 hover:!opacity-100 text-gray-600 hover:text-gray-300'
+                          }`}
+                        >
+                          {titleLocked[listing.itemId] ? '🔒' : '🔓'}
+                        </button>
                       </td>
 
                       {/* Specifics (editable) */}
