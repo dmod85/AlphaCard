@@ -441,9 +441,16 @@ export default function ListingDetailsPage() {
   // waiting for every page to finish first.
   const specQueueRef = useRef<string[]>([]);
   const pagesDoneRef = useRef(false);
+  // Bumped on every loadEverything() call. All shared refs above (fetchingRef,
+  // specQueueRef, pagesDoneRef) and the async work below are keyed off this —
+  // without it, a second call (StrictMode's double-invoke on mount, or hitting
+  // Refresh while a load is still in flight) races the first one on the same
+  // refs/state, double-counting listings and leaving the "loading…" indicator
+  // stuck since one call's finally block can clobber the other's flags.
+  const loadGenRef = useRef(0);
 
   // ── Fetch a batch of item specifics (server caches these in Supabase) ────
-  const fetchSpecifics = useCallback(async (itemIds: string[]) => {
+  const fetchSpecifics = useCallback(async (itemIds: string[], gen: number) => {
     const toFetch = itemIds.filter((id) => !fetchingRef.current.has(id));
     if (toFetch.length === 0) return;
     toFetch.forEach((id) => fetchingRef.current.add(id));
@@ -456,6 +463,7 @@ export default function ListingDetailsPage() {
       const res = await fetch(`/api/ebay/listing-details?itemIds=${toFetch.join(',')}`);
       const data = await res.json();
       if (!res.ok || data.error) throw new Error(data.error || 'Failed');
+      if (gen !== loadGenRef.current) return; // superseded by a newer load — drop the result
       const results = data.results as { itemId: string; specifics: NameValuePair[]; titleLocked: boolean }[];
       setSpecificMap((prev) => {
         const next = { ...prev };
@@ -484,6 +492,7 @@ export default function ListingDetailsPage() {
         return changed ? next : prev;
       });
     } catch {
+      if (gen !== loadGenRef.current) return; // superseded — nothing to reconcile
       setSpecificMap((prev) => {
         const next = { ...prev };
         toFetch.forEach((id) => { next[id] = 'error'; fetchingRef.current.delete(id); });
@@ -494,13 +503,15 @@ export default function ListingDetailsPage() {
 
   // Persistent pool of workers that drain specQueueRef as items land in it —
   // started once per load, they keep pulling batches until every page has
-  // been fetched *and* the queue is empty.
-  const runSpecificsWorkers = useCallback(async () => {
+  // been fetched *and* the queue is empty. Each worker bails immediately once
+  // a newer load has started (gen mismatch), instead of continuing to drain
+  // a queue/ref set that the new load has already reset out from under it.
+  const runSpecificsWorkers = useCallback(async (gen: number) => {
     async function worker() {
-      while (true) {
+      while (gen === loadGenRef.current) {
         const batch = specQueueRef.current.splice(0, SPEC_BATCH);
         if (batch.length > 0) {
-          await fetchSpecifics(batch);
+          await fetchSpecifics(batch, gen);
         } else if (pagesDoneRef.current) {
           return;
         } else {
@@ -513,6 +524,8 @@ export default function ListingDetailsPage() {
 
   // ── Load listing pages and their specifics concurrently ──────────────────
   const loadEverything = useCallback(async () => {
+    const gen = ++loadGenRef.current;
+
     setLoading(true);
     setPagesLoading(true);
     setError(null);
@@ -524,14 +537,16 @@ export default function ListingDetailsPage() {
     specQueueRef.current = [];
     pagesDoneRef.current = false;
 
-    const specificsDone = runSpecificsWorkers();
+    const specificsDone = runSpecificsWorkers(gen);
 
     try {
       let page = 1;
       let totalPages = 1;
       while (page <= totalPages) {
+        if (gen !== loadGenRef.current) return; // superseded by a newer load — stop paging
         const res = await fetch(`/api/ebay/active-listings?page=${page}`);
         const data = await res.json();
+        if (gen !== loadGenRef.current) return; // superseded while the request was in flight
         if (res.status === 401 || data.error === 'EBAY_AUTH_REQUIRED') {
           setError('eBay auth required — please reconnect your account.');
           return;
@@ -548,10 +563,12 @@ export default function ListingDetailsPage() {
         page += 1;
       }
     } catch (err: any) {
-      setError(err.message);
+      if (gen === loadGenRef.current) setError(err.message);
     } finally {
-      setLoading(false);
-      setPagesLoading(false);
+      if (gen === loadGenRef.current) {
+        setLoading(false);
+        setPagesLoading(false);
+      }
       pagesDoneRef.current = true;
       await specificsDone;
     }
