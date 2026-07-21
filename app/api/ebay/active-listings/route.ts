@@ -53,6 +53,7 @@ function buildGetSellerListRequest(page: number, token: string): string {
     <EntriesPerPage>200</EntriesPerPage>
     <PageNumber>${page}</PageNumber>
   </Pagination>
+  <DetailLevel>ItemReturnDescription</DetailLevel>
   <IncludeItemSpecifics>true</IncludeItemSpecifics>
   <EndTimeFrom>${now.toISOString()}</EndTimeFrom>
   <EndTimeTo>${future.toISOString()}</EndTimeTo>
