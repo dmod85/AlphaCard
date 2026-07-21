@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getValidToken, isOAuthToken, getEbayApiHeaders, getEbayApiUrl, clearTokenCache } from '@/app/lib/ebay-auth';
+import { supabaseAdmin } from '@/app/lib/supabase-admin';
 
 // eBay Trading API error codes that indicate an invalid/expired token
 const EBAY_AUTH_ERROR_CODES = ['21917053', '21916984', '21917055'];
@@ -52,7 +53,6 @@ function buildGetSellerListRequest(page: number, token: string): string {
     <EntriesPerPage>200</EntriesPerPage>
     <PageNumber>${page}</PageNumber>
   </Pagination>
-  <DetailLevel>ItemReturnDescription</DetailLevel>
   <IncludeItemSpecifics>true</IncludeItemSpecifics>
   <EndTimeFrom>${now.toISOString()}</EndTimeFrom>
   <EndTimeTo>${future.toISOString()}</EndTimeTo>
@@ -78,7 +78,6 @@ interface ActiveListing {
   isSeoFriendly: boolean;
   sku?: string;
   specifics: NameValuePair[];
-  description: string;
 }
 
 interface ItemSpecifics {
@@ -151,22 +150,17 @@ function parseActiveListings(xml: string): ActiveListing[] {
     const quantityAvailable = parseInt(item.match(/<QuantityAvailable>(.*?)<\/QuantityAvailable>/)?.[1] || '1');
     const startTime = item.match(/<StartTime>(.*?)<\/StartTime>/)?.[1] || '';
     const sku = item.match(/<SKU>(.*?)<\/SKU>/)?.[1] || undefined;
-    const rawDescription = decodeXml(item.match(/<Description>([\s\S]*?)<\/Description>/)?.[1] || '');
 
     if (itemId) {
-      // Parse item specifics for SEO calculation
+      // Parse item specifics for SEO title check
       const specifics = parseItemSpecifics(item);
       const seoTitle = buildSeoTitle(specifics);
-      const expectedDesc = buildDescription(seoTitle);
-
-      const normalizeDesc = (d: string) => d.replace(/[\s\r\n]+/g, ' ').trim();
-      const isDescFriendly = normalizeDesc(rawDescription) === normalizeDesc(expectedDesc);
-      const isSeoFriendly = title === seoTitle && isDescFriendly;
+      const isSeoFriendly = title === seoTitle;
 
       // Parse all specifics as raw name-value pairs for display
       const allSpecifics = parseAllSpecifics(item);
 
-      listings.push({ itemId, title, price, url, pictureUrl, quantity, quantityAvailable, startTime, isSeoFriendly, sku, specifics: allSpecifics, description: rawDescription });
+      listings.push({ itemId, title, price, url, pictureUrl, quantity, quantityAvailable, startTime, isSeoFriendly, sku, specifics: allSpecifics });
     }
   }
 
@@ -382,6 +376,8 @@ export async function POST(request: NextRequest) {
       error?: string;
     }> = [];
 
+    const successfulItemIds: string[] = [];
+
     for (const item of items) {
       try {
         const specifics = specificsMap.get(item.itemId) || {};
@@ -405,6 +401,7 @@ export async function POST(request: NextRequest) {
         const ack = response.match(/<Ack>(.*?)<\/Ack>/)?.[1];
         if (ack === 'Success' || ack === 'Warning') {
           results.push({ itemId: item.itemId, success: true, seoTitle, sku: finalSku });
+          successfulItemIds.push(item.itemId);
         } else {
           const error = response.match(/<LongMessage>(.*?)<\/LongMessage>/)?.[1]
             || response.match(/<ShortMessage>(.*?)<\/ShortMessage>/)?.[1]
@@ -414,6 +411,16 @@ export async function POST(request: NextRequest) {
       } catch (err: any) {
         results.push({ itemId: item.itemId, success: false, error: err.message || 'Network error' });
       }
+    }
+
+    // Stamp description_ok = true in Supabase for all successfully revised items.
+    // This lets the Description Check read from cache instead of re-fetching live HTML.
+    // We use .update() (not upsert) so we only flip the flag without clobbering cached specifics.
+    if (successfulItemIds.length > 0) {
+      await supabaseAdmin
+        .from('ebay_item_specifics')
+        .update({ description_ok: true, updated_at: new Date().toISOString() })
+        .in('item_id', successfulItemIds);
     }
 
     return NextResponse.json({ results });

@@ -89,12 +89,19 @@ export async function GET(request: NextRequest) {
     }
 
     const [{ data: cached }, { data: locks }] = await Promise.all([
-      supabaseAdmin.from('ebay_item_specifics').select('item_id, specifics').in('item_id', itemIds),
+      supabaseAdmin.from('ebay_item_specifics').select('item_id, specifics, description_ok').in('item_id', itemIds),
       supabaseAdmin.from('ebay_title_locks').select('item_id').in('item_id', itemIds),
     ]);
 
-    const cachedMap = new Map<string, NameValuePair[]>(
-      (cached ?? []).map((row) => [row.item_id as string, row.specifics as NameValuePair[]])
+    const cachedMap = new Map<string, { specifics: NameValuePair[]; descriptionOk: boolean }>(
+      (cached ?? []).map((row) => [
+        row.item_id as string,
+        {
+          specifics: row.specifics as NameValuePair[],
+          // description_ok may be null if the column was just added — treat null as false
+          descriptionOk: (row.description_ok as boolean | null) ?? false,
+        },
+      ])
     );
     const lockedIds = new Set((locks ?? []).map((row) => row.item_id as string));
     const uncachedIds = itemIds.filter((id) => !cachedMap.has(id));
@@ -104,19 +111,25 @@ export async function GET(request: NextRequest) {
       const token = await getValidToken();
       fetched = await Promise.all(uncachedIds.map((id) => fetchSpecificsForItem(id, token)));
 
+      // New items: description_ok defaults to false (unknown — conservative until revised)
       await supabaseAdmin
         .from('ebay_item_specifics')
         .upsert(
-          fetched.map((r) => ({ item_id: r.itemId, specifics: r.specifics, updated_at: new Date().toISOString() })),
+          fetched.map((r) => ({ item_id: r.itemId, specifics: r.specifics, description_ok: false, updated_at: new Date().toISOString() })),
           { onConflict: 'item_id' }
         );
     }
 
-    const results = itemIds.map((id) => ({
-      itemId: id,
-      specifics: cachedMap.get(id) ?? fetched.find((r) => r.itemId === id)?.specifics ?? [],
-      titleLocked: lockedIds.has(id),
-    }));
+    const results = itemIds.map((id) => {
+      const cached = cachedMap.get(id);
+      const fetchedItem = fetched.find((r) => r.itemId === id);
+      return {
+        itemId: id,
+        specifics: cached?.specifics ?? fetchedItem?.specifics ?? [],
+        descriptionOk: cached?.descriptionOk ?? false,
+        titleLocked: lockedIds.has(id),
+      };
+    });
 
     return NextResponse.json({ results });
   } catch (err: any) {

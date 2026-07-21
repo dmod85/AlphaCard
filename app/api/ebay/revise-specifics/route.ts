@@ -101,12 +101,18 @@ export async function POST(request: NextRequest) {
           if (ack === 'Success' || ack === 'Warning') {
             // Keep the specifics cache in sync with what eBay now has, so the
             // Listing Details page doesn't need a fresh GetItem call to see it.
+            // If a description was included in this revision, mark description_ok = true.
+            const upsertRow: Record<string, unknown> = {
+              item_id: item.itemId,
+              specifics: item.specifics,
+              updated_at: new Date().toISOString(),
+            };
+            if (item.description) {
+              upsertRow.description_ok = true;
+            }
             await supabaseAdmin
               .from('ebay_item_specifics')
-              .upsert(
-                { item_id: item.itemId, specifics: item.specifics, updated_at: new Date().toISOString() },
-                { onConflict: 'item_id' }
-              );
+              .upsert(upsertRow, { onConflict: 'item_id' });
             return { itemId: item.itemId, success: true };
           }
 

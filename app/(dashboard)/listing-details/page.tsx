@@ -18,7 +18,6 @@ interface ActiveListing {
   startTime: string;
   isSeoFriendly: boolean;
   sku?: string;
-  description: string;
 }
 
 const PRIORITY_COLS = [
@@ -383,6 +382,9 @@ export default function ListingDetailsPage() {
   const [sortDir, setSortDir] = useState<SortDir>('asc');
 
   const [specificMap, setSpecificMap] = useState<SpecificMap>({});
+  // descriptionOkMap[itemId] = true when eBay description matches our template
+  // (stamped server-side after each successful ReviseItem — read from Supabase cache)
+  const [descriptionOkMap, setDescriptionOkMap] = useState<Record<string, boolean>>({});
   const [edits, setEdits] = useState<EditMap>({});
   const [editingCell, setEditingCell] = useState<{ itemId: string; col: string } | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -473,7 +475,7 @@ export default function ListingDetailsPage() {
       const data = await res.json();
       if (!res.ok || data.error) throw new Error(data.error || 'Failed');
       if (gen !== loadGenRef.current) return; // superseded by a newer load — drop the result
-      const results = data.results as { itemId: string; specifics: NameValuePair[]; titleLocked: boolean }[];
+      const results = data.results as { itemId: string; specifics: NameValuePair[]; descriptionOk: boolean; titleLocked: boolean }[];
       setSpecificMap((prev) => {
         const next = { ...prev };
         for (const r of results) {
@@ -485,6 +487,11 @@ export default function ListingDetailsPage() {
       setTitleLockedMap((prev) => {
         const next = { ...prev };
         for (const r of results) next[r.itemId] = r.titleLocked;
+        return next;
+      });
+      setDescriptionOkMap((prev) => {
+        const next = { ...prev };
+        for (const r of results) next[r.itemId] = r.descriptionOk;
         return next;
       });
       // Auto-fill Team = N/A for MMA listings that don't already have one
@@ -541,6 +548,7 @@ export default function ListingDetailsPage() {
     setAllListings([]);
     setSpecificMap({});
     setTitleLockedMap({});
+    setDescriptionOkMap({});
     setVisibleCount(ROW_BATCH);
     fetchingRef.current.clear();
     specQueueRef.current = [];
@@ -785,20 +793,26 @@ export default function ListingDetailsPage() {
   // built from whatever title is currently in effect (auto-generated, edited,
   // or locked) — independent of Title Check, so a locked custom title still
   // gets a properly formatted description.
+  // Description mismatches: listings whose Supabase cache flag says description_ok = false
+  // and that have no pending __description__ edit already queued.
+  // The flag is stamped true server-side after each successful ReviseItem call, so this
+  // reflects real state without re-fetching live HTML from eBay on every page load.
   const descriptionMismatches = useMemo(() => {
     const results: { itemId: string; currentDescription: string; suggestedDescription: string }[] = [];
     for (const listing of allListings) {
       const itemEdits = edits[listing.itemId] || {};
+      // Already has a pending description edit — skip, it's about to be fixed
+      if ('__description__' in itemEdits) continue;
+      // Only flag if we have a cache entry that explicitly says description_ok = false
+      // (undefined = not yet loaded from cache — treat as OK to avoid noise on first load)
+      if (descriptionOkMap[listing.itemId] !== false) continue;
       const currentTitle = (itemEdits['__title__'] ?? listing.title).trim();
       if (!currentTitle) continue;
-      const currentDescription = itemEdits['__description__'] ?? listing.description ?? '';
       const suggestedDescription = buildDescriptionFromTitle(currentTitle);
-      if (normalizeDescription(currentDescription) !== normalizeDescription(suggestedDescription)) {
-        results.push({ itemId: listing.itemId, currentDescription, suggestedDescription });
-      }
+      results.push({ itemId: listing.itemId, currentDescription: '', suggestedDescription });
     }
     return results;
-  }, [allListings, edits]);
+  }, [allListings, edits, descriptionOkMap]);
 
   const descSyncMismatchIds = useMemo(() => new Set(descriptionMismatches.map((m) => m.itemId)), [descriptionMismatches]);
 
@@ -1046,7 +1060,7 @@ export default function ListingDetailsPage() {
           }
           return next;
         });
-        // Sync updated titles/descriptions back into allListings
+        // Sync updated titles back into allListings
         setAllListings((prev) =>
           prev.map((l) => {
             if (!successIds.has(l.itemId)) return l;
@@ -1055,10 +1069,16 @@ export default function ListingDetailsPage() {
             return {
               ...l,
               ...(item.title ? { title: item.title } : {}),
-              ...(item.description ? { description: item.description } : {}),
             };
           })
         );
+        // Optimistically mark description as OK for successfully submitted items
+        // (the server stamps description_ok=true in Supabase — this keeps local state in sync)
+        setDescriptionOkMap((prev) => {
+          const next = { ...prev };
+          successIds.forEach((id) => { next[id] = true; });
+          return next;
+        });
         setEdits((prev) => {
           const next = { ...prev };
           successIds.forEach((id) => delete next[id]);
