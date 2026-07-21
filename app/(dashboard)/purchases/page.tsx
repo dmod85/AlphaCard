@@ -549,6 +549,7 @@ function EditableCell({
   }
 
   const display = purchase[field]?.toString();
+  const isCurrency = field === 'cost';
   return (
     <div
       onClick={startEdit}
@@ -556,7 +557,9 @@ function EditableCell({
       title={`Edit ${field}`}
     >
       <span className={display ? '' : 'text-gray-500 italic text-[11px]'}>
-        {type === 'number' && display ? `$${parseFloat(display).toFixed(2)}` : display || '—'}
+        {type === 'number' && display 
+          ? (isCurrency ? `$${parseFloat(display).toFixed(2)}` : display) 
+          : display || '—'}
       </span>
       <span className="text-blue-500 text-[10px] opacity-0 group-hover:opacity-100 transition">✎</span>
     </div>

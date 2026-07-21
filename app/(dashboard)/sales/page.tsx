@@ -176,6 +176,14 @@ export default function SalesPage() {
     }
   });
 
+  // Build a SKU -> total sales lookup
+  const skuTotalSalesMap = new Map<string, number>();
+  sales.forEach(s => {
+    if (s.sku) {
+      skuTotalSalesMap.set(s.sku, (skuTotalSalesMap.get(s.sku) ?? 0) + s.sold_for);
+    }
+  });
+
   // Load sales from DB (no eBay sync)
   const loadFromDb = useCallback(async () => {
     setLoading(true);
@@ -429,7 +437,8 @@ export default function SalesPage() {
                         if (!sale.sku || !skuTotalCostMap.has(sale.sku)) return <span className="text-gray-600">—</span>;
                         const cost = skuTotalCostMap.get(sale.sku)!;
                         if (cost === 0) return <span className="text-gray-600">—</span>;
-                        const roi = ((sale.sold_for - cost) / cost) * 100;
+                        const totalSalesForSku = skuTotalSalesMap.get(sale.sku) ?? 0;
+                        const roi = ((totalSalesForSku - cost) / cost) * 100;
                         const color = roi > 0 ? 'text-green-400' : roi < 0 ? 'text-red-400' : 'text-gray-400';
                         const sign = roi > 0 ? '+' : '';
                         return <span className={`font-medium ${color}`}>{sign}{roi.toFixed(1)}%</span>;
