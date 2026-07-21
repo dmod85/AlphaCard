@@ -400,6 +400,9 @@ export default function ListingDetailsPage() {
   const [descSyncOpen, setDescSyncOpen] = useState(false);
   const [descSyncSelected, setDescSyncSelected] = useState<Set<string>>(new Set());
 
+  // ── Duplicate check state ───────────────────────────────────────────────────
+  const [dupCheckOpen, setDupCheckOpen] = useState(false);
+
   // ── Advanced filter state ───────────────────────────────────────────────────
   const [filterPanelOpen, setFilterPanelOpen] = useState(false);
   const [filterConditions, setFilterConditions] = useState<FilterCondition[]>([]);
@@ -792,6 +795,36 @@ export default function ListingDetailsPage() {
 
   const descSyncMismatchIds = useMemo(() => new Set(descriptionMismatches.map((m) => m.itemId)), [descriptionMismatches]);
 
+  // ── Duplicate check: group listings by Set+Player+CardNumber+Parallel ────────
+  // Only considers listings whose specifics have fully loaded.
+  const duplicateGroups = useMemo(() => {
+    // Build a fingerprint for each listing
+    const grouped = new Map<string, { itemId: string; title: string; url: string }[]>();
+    for (const listing of allListings) {
+      const specs = specificMap[listing.itemId];
+      if (!Array.isArray(specs)) continue;
+      const itemEdits = edits[listing.itemId] || {};
+      const effective = (col: string) => itemEdits[col] ?? getSpecificValue(specs, col);
+      const key = [
+        effective('Set').trim().toLowerCase(),
+        effective('Player/Athlete').trim().toLowerCase(),
+        effective('Card Number').trim().replace(/^#/, '').toLowerCase(),
+        effective('Parallel/Variety').trim().toLowerCase(),
+      ].join('|');
+      // Skip listings with an empty key (all four specifics are blank)
+      if (key === '|||') continue;
+      if (!grouped.has(key)) grouped.set(key, []);
+      grouped.get(key)!.push({ itemId: listing.itemId, title: listing.title, url: listing.url });
+    }
+    // Return only groups with more than one listing
+    return Array.from(grouped.values()).filter((g) => g.length > 1);
+  }, [allListings, specificMap, edits]);
+
+  const duplicateItemIds = useMemo(
+    () => new Set(duplicateGroups.flatMap((g) => g.map((l) => l.itemId))),
+    [duplicateGroups]
+  );
+
   const toggleDescSyncSelected = useCallback((itemId: string) => {
     setDescSyncSelected((prev) => {
       const next = new Set(prev);
@@ -1138,6 +1171,24 @@ export default function ListingDetailsPage() {
           {descriptionMismatches.length > 0 && (
             <span className="inline-flex items-center justify-center w-4 h-4 bg-indigo-500/30 text-indigo-300 rounded-full text-[10px] font-bold">
               {descriptionMismatches.length}
+            </span>
+          )}
+        </button>
+
+        {/* Duplicate listing check toggle */}
+        <button
+          onClick={() => setDupCheckOpen((v) => !v)}
+          title="Find listings that appear to be duplicates (same Set, Player, Card Number, and Parallel/Variety)"
+          className={`flex items-center gap-1.5 px-3 py-1.5 border text-xs rounded-lg transition ${
+            dupCheckOpen
+              ? 'bg-orange-500/15 border-orange-500/40 text-orange-300 hover:bg-orange-500/25'
+              : 'bg-gray-800 hover:bg-gray-700 border-gray-700 text-gray-300'
+          }`}
+        >
+          🔎 Duplicate Check
+          {duplicateGroups.length > 0 && (
+            <span className="inline-flex items-center justify-center w-4 h-4 bg-orange-500/30 text-orange-300 rounded-full text-[10px] font-bold">
+              {duplicateGroups.length}
             </span>
           )}
         </button>
@@ -1625,6 +1676,65 @@ export default function ListingDetailsPage() {
         </div>
       )}
 
+      {/* ── Duplicate Check Panel ── */}
+      {dupCheckOpen && (
+        <div className="bg-gray-900/98 border-b border-orange-500/40 px-5 py-3 flex flex-col gap-2">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] text-orange-400/70 uppercase tracking-widest font-semibold">
+                Possible duplicate listings
+              </span>
+              <span className="text-[11px] text-gray-600">
+                Grouped by Set · Player · Card # · Parallel
+              </span>
+            </div>
+            <button
+              onClick={() => setDupCheckOpen(false)}
+              className="px-2 py-1 text-gray-600 hover:text-gray-400 text-xs rounded transition"
+              title="Close"
+            >
+              ✕
+            </button>
+          </div>
+
+          {specificsPending && duplicateGroups.length === 0 && (
+            <p className="text-xs text-gray-600">Still loading item specifics — checking as they come in…</p>
+          )}
+
+          {!specificsPending && duplicateGroups.length === 0 && (
+            <p className="text-xs text-gray-600">No duplicate listings detected. Nice.</p>
+          )}
+
+          {duplicateGroups.length > 0 && (
+            <div className="max-h-64 overflow-y-auto rounded-lg border border-gray-800 divide-y divide-gray-800/70">
+              {duplicateGroups.map((group, gi) => (
+                <div key={gi} className="px-3 py-2">
+                  <p className="text-[10px] text-orange-400/70 uppercase tracking-widest font-semibold mb-1">
+                    Group {gi + 1} — {group.length} listings
+                  </p>
+                  <div className="space-y-0.5">
+                    {group.map((item) => (
+                      <div key={item.itemId} className="flex items-center gap-2">
+                        <a
+                          href={item.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-xs text-orange-300/80 hover:text-orange-200 truncate flex-1 min-w-0 underline underline-offset-2 decoration-orange-500/30 hover:decoration-orange-300/60 transition-colors"
+                          title={`Open on eBay: ${item.title}`}
+                        >
+                          {item.title || <em className="text-gray-600">(no title)</em>}
+                        </a>
+                        <span className="text-[10px] text-gray-700 shrink-0">{item.itemId}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Legend */}
       {changedCount > 0 && (
         <div className="px-6 py-2 bg-amber-500/5 border-b border-amber-500/20 flex items-center gap-4 text-[11px] text-amber-400/80">
@@ -1788,6 +1898,12 @@ export default function ListingDetailsPage() {
                           <span
                             className="absolute bottom-1.5 right-1.5 w-1.5 h-1.5 bg-indigo-400 rounded-full"
                             title="Description doesn't match the generated template — see Description Check"
+                          />
+                        )}
+                        {duplicateItemIds.has(listing.itemId) && (
+                          <span
+                            className="absolute bottom-1.5 left-1.5 w-1.5 h-1.5 bg-orange-400 rounded-full"
+                            title="Possible duplicate listing — see Duplicate Check"
                           />
                         )}
                         <button
