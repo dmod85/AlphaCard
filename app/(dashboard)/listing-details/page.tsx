@@ -27,11 +27,12 @@ const PRIORITY_COLS = [
   'Team',
   'Manufacturer',
   'Set',
-  'Season',
-  'Year Manufactured',
   'Parallel/Variety',
+  'Insert',
   'Card Number',
   'League',
+  'Season',
+  'Year Manufactured',
 ];
 
 // Columns that should be flagged when left blank on a listing
@@ -103,9 +104,11 @@ function buildTitleFromSpecifics(fields: {
   player: string;
   cardNumber: string;
   parallel: string;
+  insert: string;
   team: string;
 }): string {
   const na = (v: string) => v.trim().toLowerCase() === 'n/a' ? '' : v.trim();
+  const notBase = (v: string) => v.replace(/[[\]]/g, '').trim().toLowerCase() === 'base' ? '' : v;
 
   const set = na(fields.set);
   const player = na(fields.player);
@@ -115,8 +118,8 @@ function buildTitleFromSpecifics(fields: {
     ? (cardNumberRaw.startsWith('#') ? cardNumberRaw.toUpperCase() : `#${cardNumberRaw.toUpperCase()}`)
     : '';
 
-  const parallelRaw = na(fields.parallel);
-  const parallel = parallelRaw.replace(/[[\]]/g, '').trim().toLowerCase() === 'base' ? '' : parallelRaw;
+  const parallel = notBase(na(fields.parallel));
+  const insert = notBase(na(fields.insert));
 
   const team = na(fields.team);
 
@@ -130,9 +133,10 @@ function buildTitleFromSpecifics(fields: {
 
   if (cardNumber) parts.push(cardNumber);
 
-  if (parallel) {
+  if (parallel || insert) {
     if (set || player) parts.push('-');
-    parts.push(parallel);
+    if (parallel) parts.push(parallel);
+    if (insert) parts.push(insert);
   }
 
   let title = parts.join(' ').replace(/\s{2,}/g, ' ').trim();
@@ -709,6 +713,7 @@ export default function ListingDetailsPage() {
         player: effective('Player/Athlete'),
         cardNumber: effective('Card Number'),
         parallel: effective('Parallel/Variety'),
+        insert: effective('Insert'),
         team: effective('Team'),
       });
       if (suggestedTitle && suggestedTitle !== currentTitle) {
@@ -797,7 +802,7 @@ export default function ListingDetailsPage() {
 
   const descSyncMismatchIds = useMemo(() => new Set(descriptionMismatches.map((m) => m.itemId)), [descriptionMismatches]);
 
-  // ── Duplicate check: group listings by Set+Player+CardNumber+Parallel ────────
+  // ── Duplicate check: group listings by Set+Player+CardNumber+Parallel+Insert ──
   // Only considers listings whose specifics have fully loaded.
   const duplicateGroups = useMemo(() => {
     // Build a fingerprint for each listing
@@ -812,9 +817,10 @@ export default function ListingDetailsPage() {
         effective('Player/Athlete').trim().toLowerCase(),
         effective('Card Number').trim().replace(/^#/, '').toLowerCase(),
         effective('Parallel/Variety').trim().toLowerCase(),
+        effective('Insert').trim().toLowerCase(),
       ].join('|');
-      // Skip listings with an empty key (all four specifics are blank)
-      if (key === '|||') continue;
+      // Skip listings with an empty key (all five specifics are blank)
+      if (key === '||||') continue;
       if (!grouped.has(key)) grouped.set(key, []);
       grouped.get(key)!.push({ itemId: listing.itemId, title: listing.title, url: listing.url });
     }

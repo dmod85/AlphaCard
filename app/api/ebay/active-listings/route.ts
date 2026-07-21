@@ -87,6 +87,7 @@ interface ItemSpecifics {
   set?: string;
   cardNumber?: string;
   parallel?: string;
+  insert?: string;
   sport?: string;
   player?: string;
   team?: string;
@@ -105,6 +106,7 @@ function parseItemSpecifics(xml: string): ItemSpecifics {
     else if (name === 'year manufactured' || name === 'season') result.year = value;
     else if (name === 'card number') result.cardNumber = value;
     else if (name === 'parallel/variety') result.parallel = value;
+    else if (name === 'insert') result.insert = value;
     else if (name === 'sport') result.sport = value;
     else if (name === 'manufacturer' || name === 'brand') result.brand = value;
     else if (name === 'player/athlete' || name === 'player') result.player = value;
@@ -190,6 +192,7 @@ function buildSeoTitle(specifics: ItemSpecifics): string {
   const MAX_LENGTH = 80;
 
   const na = (v: string) => v.trim().toLowerCase() === 'n/a' ? '' : v.trim();
+  const notBase = (v: string) => v.replace(/[\[\]]/g, '').trim().toLowerCase() === 'base' ? '' : v;
 
   const set = na(specifics.set || '');
   const player = na(specifics.player || '');
@@ -199,8 +202,8 @@ function buildSeoTitle(specifics: ItemSpecifics): string {
     ? (cardNumberRaw.startsWith('#') ? cardNumberRaw.toUpperCase() : `#${cardNumberRaw.toUpperCase()}`)
     : '';
 
-  const parallelRaw = na(specifics.parallel || '');
-  const parallel = parallelRaw.replace(/[\[\]]/g, '').trim().toLowerCase() === 'base' ? '' : parallelRaw;
+  const parallel = notBase(na(specifics.parallel || ''));
+  const insert = notBase(na(specifics.insert || ''));
 
   const team = na(specifics.team || '');
 
@@ -214,9 +217,10 @@ function buildSeoTitle(specifics: ItemSpecifics): string {
 
   if (cardNumber) parts.push(cardNumber);
 
-  if (parallel) {
+  if (parallel || insert) {
     if (set || player) parts.push('-');
-    parts.push(parallel);
+    if (parallel) parts.push(parallel);
+    if (insert) parts.push(insert);
   }
 
   let title = parts.join(' ').replace(/\s{2,}/g, ' ').trim();
