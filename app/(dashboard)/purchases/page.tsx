@@ -445,6 +445,123 @@ function Toast({ message, onDone }: { message: string; onDone: () => void }) {
   );
 }
 
+// ─── Inline Editable Cell ───────────────────────────────────────────────────────
+
+function EditableCell({
+  purchase,
+  field,
+  type = 'text',
+  options,
+  onSaved,
+}: {
+  purchase: Purchase;
+  field: keyof Purchase;
+  type?: 'text' | 'number' | 'date' | 'select';
+  options?: string[];
+  onSaved: () => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState<string>(purchase[field]?.toString() ?? '');
+  const [saving, setSaving] = useState(false);
+  const inputRef = useRef<any>(null);
+
+  useEffect(() => {
+    if (editing) {
+      inputRef.current?.focus();
+      if (type !== 'select' && type !== 'date') {
+        inputRef.current?.select();
+      }
+    }
+  }, [editing, type]);
+
+  useEffect(() => {
+    setValue(purchase[field]?.toString() ?? '');
+  }, [purchase, field]);
+
+  async function save() {
+    if (value === (purchase[field]?.toString() ?? '')) {
+      setEditing(false);
+      return;
+    }
+    setSaving(true);
+    try {
+      let parsedValue: any = value;
+      if (type === 'number') parsedValue = parseFloat(value) || 0;
+      if (value === '' && type !== 'text') parsedValue = null;
+      
+      const res = await fetch('/api/purchases', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: purchase.id, [field]: parsedValue }),
+      });
+      if (res.ok) onSaved();
+    } catch {
+      // silent
+    } finally {
+      setSaving(false);
+      setEditing(false);
+    }
+  }
+
+  function handleKeyDown(e: React.KeyboardEvent) {
+    if (e.key === 'Enter') save();
+    if (e.key === 'Escape') {
+      setValue(purchase[field]?.toString() ?? '');
+      setEditing(false);
+    }
+  }
+
+  const startEdit = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setEditing(true);
+  };
+
+  if (editing) {
+    const inputCls = "bg-gray-700 border border-blue-500 rounded px-1.5 py-0.5 text-xs text-white focus:outline-none w-full min-w-[60px]";
+    return (
+      <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
+        {type === 'select' ? (
+          <select
+            ref={inputRef}
+            className={inputCls}
+            value={value}
+            onChange={e => setValue(e.target.value)}
+            onBlur={save}
+            onKeyDown={handleKeyDown}
+          >
+            <option value="">—</option>
+            {options?.map(o => <option key={o} value={o}>{o}</option>)}
+          </select>
+        ) : (
+          <input
+            ref={inputRef}
+            type={type}
+            className={inputCls}
+            value={value}
+            onChange={e => setValue(e.target.value)}
+            onBlur={save}
+            onKeyDown={handleKeyDown}
+          />
+        )}
+      </div>
+    );
+  }
+
+  const display = purchase[field]?.toString();
+  return (
+    <div
+      onClick={startEdit}
+      className="group cursor-pointer hover:bg-gray-800/50 rounded px-1 -mx-1 py-0.5 flex items-center gap-1 min-h-[24px]"
+      title={`Edit ${field}`}
+    >
+      <span className={display ? '' : 'text-gray-500 italic text-[11px]'}>
+        {type === 'number' && display ? `$${parseFloat(display).toFixed(2)}` : display || '—'}
+      </span>
+      <span className="text-blue-500 text-[10px] opacity-0 group-hover:opacity-100 transition">✎</span>
+    </div>
+  );
+}
+
 // ─── SKU Pill with copy ───────────────────────────────────────────────────────
 
 function SkuPill({ sku, onCopy }: { sku: string | null; onCopy: (s: string) => void }) {
@@ -479,6 +596,7 @@ function SkuGroupRow({
   onDelete: (id: string) => void;
   onAddSub: (sku: string) => void;
   onCopySkU: (sku: string) => void;
+  onRefresh: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const hasSubs = group.purchases.length > 1;
@@ -497,28 +615,34 @@ function SkuGroupRow({
           )}
         </td>
         <td className="px-3 py-3 text-sm text-gray-300 whitespace-nowrap">
-          {first.purchase_date}
-          {hasSubs && (
-            <span className="ml-2 text-[10px] bg-gray-700 text-gray-400 px-1.5 py-0.5 rounded-full">
-              ×{group.purchases.length}
-            </span>
-          )}
+          <div className="flex items-center gap-2">
+            <EditableCell purchase={first} field="purchase_date" type="date" onSaved={onRefresh} />
+            {hasSubs && (
+              <span className="text-[10px] bg-gray-700 text-gray-400 px-1.5 py-0.5 rounded-full">
+                ×{group.purchases.length}
+              </span>
+            )}
+          </div>
         </td>
-        <td className="px-3 py-3 text-sm text-gray-300">{first.year ?? '—'}</td>
-        <td className="px-3 py-3 text-sm text-gray-200">{first.brand ?? '—'}</td>
-        <td className="px-3 py-3 text-sm text-blue-300">{first.series ?? '—'}</td>
-        <td className="px-3 py-3 text-sm text-gray-300">{first.sport ?? '—'}</td>
-        <td className="px-3 py-3 text-sm text-gray-400">{first.box_size ?? '—'}</td>
+        <td className="px-3 py-3 text-sm text-gray-300"><EditableCell purchase={first} field="year" type="number" onSaved={onRefresh} /></td>
+        <td className="px-3 py-3 text-sm text-gray-200"><EditableCell purchase={first} field="brand" type="select" options={BRANDS} onSaved={onRefresh} /></td>
+        <td className="px-3 py-3 text-sm text-blue-300"><EditableCell purchase={first} field="series" onSaved={onRefresh} /></td>
+        <td className="px-3 py-3 text-sm text-gray-300"><EditableCell purchase={first} field="sport" type="select" options={SPORTS} onSaved={onRefresh} /></td>
+        <td className="px-3 py-3 text-sm text-gray-400"><EditableCell purchase={first} field="box_size" type="select" options={BOX_SIZES} onSaved={onRefresh} /></td>
         <td className="px-3 py-3 text-sm text-green-400 font-medium tabular-nums">
-          ${group.totalCost.toFixed(2)}
-          {hasSubs && (
-            <span className="ml-1 text-[10px] text-green-600">total</span>
+          {hasSubs ? (
+            <div>
+              ${group.totalCost.toFixed(2)}
+              <span className="ml-1 text-[10px] text-green-600">total</span>
+            </div>
+          ) : (
+            <EditableCell purchase={first} field="cost" type="number" onSaved={onRefresh} />
           )}
         </td>
         <td className="px-3 py-3">
           <SkuPill sku={group.sku} onCopy={onCopySkU} />
         </td>
-        <td className="px-3 py-3 text-sm text-gray-400">{first.bought_from ?? '—'}</td>
+        <td className="px-3 py-3 text-sm text-gray-400"><EditableCell purchase={first} field="bought_from" type="select" options={SOURCES} onSaved={onRefresh} /></td>
         <td className="px-3 py-3">
           <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
             <button
@@ -546,17 +670,17 @@ function SkuGroupRow({
       {expanded && group.purchases.map((p) => (
         <tr key={p.id} className="bg-gray-800/10 border-b border-gray-800/30 hover:bg-gray-800/25 transition">
           <td className="px-4 py-2 w-6" />
-          <td className="px-3 py-2 text-xs text-gray-400 pl-8">{p.purchase_date}</td>
-          <td className="px-3 py-2 text-xs text-gray-400">{p.year ?? '—'}</td>
-          <td className="px-3 py-2 text-xs text-gray-300">{p.brand ?? '—'}</td>
-          <td className="px-3 py-2 text-xs text-blue-300/70">{p.series ?? '—'}</td>
-          <td className="px-3 py-2 text-xs text-gray-300">{p.sport ?? '—'}</td>
-          <td className="px-3 py-2 text-xs text-gray-400">{p.box_size ?? '—'}</td>
-          <td className="px-3 py-2 text-xs text-green-400 tabular-nums">${p.cost.toFixed(2)}</td>
+          <td className="px-3 py-2 text-xs text-gray-400 pl-8"><EditableCell purchase={p} field="purchase_date" type="date" onSaved={onRefresh} /></td>
+          <td className="px-3 py-2 text-xs text-gray-400"><EditableCell purchase={p} field="year" type="number" onSaved={onRefresh} /></td>
+          <td className="px-3 py-2 text-xs text-gray-300"><EditableCell purchase={p} field="brand" type="select" options={BRANDS} onSaved={onRefresh} /></td>
+          <td className="px-3 py-2 text-xs text-blue-300/70"><EditableCell purchase={p} field="series" onSaved={onRefresh} /></td>
+          <td className="px-3 py-2 text-xs text-gray-300"><EditableCell purchase={p} field="sport" type="select" options={SPORTS} onSaved={onRefresh} /></td>
+          <td className="px-3 py-2 text-xs text-gray-400"><EditableCell purchase={p} field="box_size" type="select" options={BOX_SIZES} onSaved={onRefresh} /></td>
+          <td className="px-3 py-2 text-xs text-green-400 tabular-nums"><EditableCell purchase={p} field="cost" type="number" onSaved={onRefresh} /></td>
           <td className="px-3 py-2">
             <SkuPill sku={p.sku} onCopy={onCopySkU} />
           </td>
-          <td className="px-3 py-2 text-xs text-gray-400">{p.bought_from ?? '—'}</td>
+          <td className="px-3 py-2 text-xs text-gray-400"><EditableCell purchase={p} field="bought_from" type="select" options={SOURCES} onSaved={onRefresh} /></td>
           <td className="px-3 py-2">
             <div className="flex items-center gap-1">
               <button onClick={() => onEdit(p)} title="Edit" className="text-[13px] text-gray-400 hover:text-white transition px-2 py-0.5 rounded hover:bg-gray-700">✎</button>
@@ -734,6 +858,7 @@ export default function PurchasesPage() {
                   onDelete={handleDelete}
                   onAddSub={handleAddSub}
                   onCopySkU={handleCopySku}
+                  onRefresh={() => load(search)}
                 />
               ))}
             </tbody>
