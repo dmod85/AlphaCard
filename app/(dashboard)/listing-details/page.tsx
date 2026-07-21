@@ -1247,7 +1247,7 @@ export default function ListingDetailsPage() {
         {/* Submit Changes */}
         {changedCount > 0 && (
           <button
-            onClick={submitChanges}
+            onClick={() => submitChanges()}
             disabled={submitting}
             className={`
               flex items-center gap-2 px-4 py-1.5 rounded-lg text-xs font-semibold border transition
