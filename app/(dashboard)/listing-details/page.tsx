@@ -915,10 +915,42 @@ export default function ListingDetailsPage() {
       });
       return;
     }
-    setEdits((prev) => ({
-      ...prev,
-      [itemId]: { ...(prev[itemId] || {}), [col]: newVal.trim() },
-    }));
+
+    // Columns whose changes should auto-rebuild the title
+    const TITLE_DRIVING_COLS = new Set(['Set', 'Player/Athlete', 'Card Number', 'Parallel/Variety', 'Insert', 'Team']);
+
+    setEdits((prev) => {
+      const next = {
+        ...prev,
+        [itemId]: { ...(prev[itemId] || {}), [col]: newVal.trim() },
+      };
+
+      // Auto-rebuild title from updated effective values when a key attribute changes
+      // Skip if: editing the title directly, title is locked, or user already manually set the title
+      if (TITLE_DRIVING_COLS.has(col) && !titleLocked[itemId] && !('__title__' in (next[itemId] || {}))) {
+        const specs = specificMap[itemId];
+        const itemEditsNow = next[itemId] || {};
+        const effective = (c: string) => itemEditsNow[c] ?? (Array.isArray(specs) ? getSpecificValue(specs, c) : '');
+        const newGeneratedTitle = buildTitleFromSpecifics({
+          set: effective('Set'),
+          player: effective('Player/Athlete'),
+          cardNumber: effective('Card Number'),
+          parallel: effective('Parallel/Variety'),
+          insert: effective('Insert'),
+          team: effective('Team'),
+        });
+        const currentTitle = allListings.find((l) => l.itemId === itemId)?.title ?? '';
+        if (newGeneratedTitle && newGeneratedTitle !== currentTitle) {
+          next[itemId] = { ...next[itemId], __title__: newGeneratedTitle };
+        } else if (newGeneratedTitle === currentTitle) {
+          // Generated title matches eBay — no need to store a __title__ edit
+          const { __title__: _, ...rest } = next[itemId];
+          next[itemId] = rest;
+        }
+      }
+
+      return next;
+    });
 
     // MMA has no Team — auto-fill it with N/A when Sport is set to MMA
     if (col === 'Sport' && isMma(newVal)) {
@@ -937,28 +969,29 @@ export default function ListingDetailsPage() {
       delete next[itemId];
       return next;
     });
-  }, [specificMap, allListings]);
+  }, [specificMap, allListings, titleLocked]);
 
   const cancelEdit = useCallback(() => {
     setEditingCell(null);
   }, []);
 
-  // ── Submit changes ────────────────────────────────────────────────────────
+  // ── Submit changes (all changed items, or a specific subset) ─────────────
   const changedItemIds = Object.keys(edits);
   const changedCount = changedItemIds.length;
 
-  const submitChanges = useCallback(async () => {
-    if (changedCount === 0 || submitting) return;
+  const submitChanges = useCallback(async (onlyItemIds?: string[]) => {
+    const idsToSubmit = onlyItemIds ?? changedItemIds;
+    if (idsToSubmit.length === 0 || submitting) return;
     setSubmitting(true);
 
-    // Mark all changed items as pending
+    // Mark items as pending
     setSubmitResults((prev) => {
       const next = { ...prev };
-      changedItemIds.forEach((id) => { next[id] = 'pending'; });
+      idsToSubmit.forEach((id) => { next[id] = 'pending'; });
       return next;
     });
 
-    const items = changedItemIds.map((itemId) => {
+    const items = idsToSubmit.map((itemId) => {
       const baseSpecs = Array.isArray(specificMap[itemId]) ? (specificMap[itemId] as NameValuePair[]) : [];
       const itemEdits = edits[itemId];
 
@@ -1002,7 +1035,7 @@ export default function ListingDetailsPage() {
         if (r.success) successIds.add(r.itemId);
       }
 
-      setSubmitResults(newResults);
+      setSubmitResults((prev) => ({ ...prev, ...newResults }));
 
       // Apply successful edits into specificMap / allListings and clear those edits
       if (successIds.size > 0) {
@@ -1034,12 +1067,12 @@ export default function ListingDetailsPage() {
       }
     } catch (err: any) {
       const errResult: SubmitResultMap = {};
-      changedItemIds.forEach((id) => { errResult[id] = err.message || 'Failed'; });
-      setSubmitResults(errResult);
+      idsToSubmit.forEach((id) => { errResult[id] = err.message || 'Failed'; });
+      setSubmitResults((prev) => ({ ...prev, ...errResult }));
     } finally {
       setSubmitting(false);
     }
-  }, [changedCount, changedItemIds, submitting, edits, specificMap]);
+  }, [changedItemIds, submitting, edits, specificMap]);
 
   // ── Filter + sort ─────────────────────────────────────────────────────────
   // Only conditions with a usable value (or a valueless operator) actually filter anything
@@ -1855,26 +1888,52 @@ export default function ListingDetailsPage() {
                         isItemPending ? 'opacity-60' : 'hover:bg-gray-800/20'
                       }`}
                     >
-                      {/* Thumbnail — opens the listing on eBay in a new tab */}
+                       {/* Thumbnail — opens the listing on eBay in a new tab */}
                       <td className="px-2 py-1.5 w-14">
-                        <a
-                          href={listing.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          title="Open listing on eBay"
-                          className="block w-10 h-10 rounded overflow-hidden bg-gray-800 border border-gray-800 hover:border-green-500/50 transition-colors shrink-0"
-                        >
-                          {listing.pictureUrl ? (
-                            <img
-                              src={listing.pictureUrl}
-                              alt=""
-                              className="w-full h-full object-cover"
-                              loading="lazy"
-                            />
-                          ) : (
-                            <span className="w-full h-full flex items-center justify-center text-gray-700 text-[9px]">—</span>
+                        <div className="relative w-10 h-10">
+                          <a
+                            href={listing.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            title="Open listing on eBay"
+                            className="block w-10 h-10 rounded overflow-hidden bg-gray-800 border border-gray-800 hover:border-green-500/50 transition-colors shrink-0"
+                          >
+                            {listing.pictureUrl ? (
+                              <img
+                                src={listing.pictureUrl}
+                                alt=""
+                                className="w-full h-full object-cover"
+                                loading="lazy"
+                              />
+                            ) : (
+                              <span className="w-full h-full flex items-center justify-center text-gray-700 text-[9px]">—</span>
+                            )}
+                          </a>
+                          {/* Per-row submit button — appears on hover when this row has unsaved edits */}
+                          {Object.keys(itemEdits).length > 0 && !isItemPending && (
+                            <button
+                              onClick={() => submitChanges([listing.itemId])}
+                              disabled={submitting}
+                              title="Submit changes for this listing"
+                              className="absolute inset-0 w-10 h-10 rounded flex items-center justify-center bg-amber-500/80 hover:bg-amber-400/90 text-white text-[10px] font-bold opacity-0 group-hover:opacity-100 transition-opacity disabled:cursor-not-allowed"
+                            >
+                              ↑
+                            </button>
                           )}
-                        </a>
+                          {submitResult === 'success' && (
+                            <span className="absolute inset-0 w-10 h-10 rounded flex items-center justify-center bg-green-500/80 text-white text-[11px] font-bold pointer-events-none">
+                              ✓
+                            </span>
+                          )}
+                          {submitResult && submitResult !== 'success' && submitResult !== 'pending' && (
+                            <span
+                              className="absolute inset-0 w-10 h-10 rounded flex items-center justify-center bg-red-500/80 text-white text-[11px] font-bold pointer-events-none"
+                              title={String(submitResult)}
+                            >
+                              ✗
+                            </span>
+                          )}
+                        </div>
                       </td>
 
                       {/* Title (editable) */}
