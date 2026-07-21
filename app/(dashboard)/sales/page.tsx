@@ -23,6 +23,7 @@ interface Purchase {
   brand: string | null;
   series: string | null;
   sport: string | null;
+  cost: number;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -40,15 +41,17 @@ function fmtDate(d: string | null) {
 
 function SkuCell({
   sale,
+  purchases,
   onSaved,
 }: {
   sale: Sale;
+  purchases: Purchase[];
   onSaved: (id: string, sku: string | null) => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [value, setValue] = useState(sale.sku ?? '');
   const [saving, setSaving] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLSelectElement>(null);
 
   useEffect(() => {
     if (editing) inputRef.current?.focus();
@@ -78,18 +81,28 @@ function SkuCell({
   }
 
   if (editing) {
+    const uniqueSkus = Array.from(new Map(purchases.filter(p => p.sku).map(p => [p.sku, p])).values());
+    if (sale.sku && !uniqueSkus.find(p => p.sku === sale.sku)) {
+      uniqueSkus.push({ sku: sale.sku, brand: 'Unknown', series: null, sport: null, cost: 0 });
+    }
+
     return (
       <div className="flex items-center gap-1">
-        <input
+        <select
           ref={inputRef}
-          type="text"
           className="bg-gray-700 border border-blue-500 rounded px-2 py-0.5 text-xs text-white font-mono w-44 focus:outline-none"
           value={value}
           onChange={e => setValue(e.target.value)}
           onKeyDown={handleKeyDown}
           onBlur={save}
-          placeholder="enter SKU…"
-        />
+        >
+          <option value="">-- Select Purchase --</option>
+          {uniqueSkus.map(p => (
+            <option key={p.sku!} value={p.sku!}>
+              {p.sku} - {[p.brand, p.series].filter(Boolean).join(' ') || 'Unknown'}
+            </option>
+          ))}
+        </select>
         {saving && <span className="text-gray-500 text-[10px]">…</span>}
       </div>
     );
@@ -151,9 +164,17 @@ export default function SalesPage() {
   const [days, setDays] = useState(90);
   const [lastSync, setLastSync] = useState<string | null>(null);
 
-  // Build a SKU -> purchase lookup for the match column
+  // Build a SKU -> total cost lookup
+  const skuTotalCostMap = new Map<string, number>();
   const skuMap = new Map<string, Purchase>();
-  purchases.forEach(p => { if (p.sku) skuMap.set(p.sku, p); });
+  purchases.forEach(p => {
+    if (p.sku) {
+      skuTotalCostMap.set(p.sku, (skuTotalCostMap.get(p.sku) ?? 0) + p.cost);
+      if (!skuMap.has(p.sku)) {
+        skuMap.set(p.sku, p);
+      }
+    }
+  });
 
   // Load sales from DB (no eBay sync)
   const loadFromDb = useCallback(async () => {
@@ -224,7 +245,7 @@ export default function SalesPage() {
   // Stats
   const totalRevenue = filtered.reduce((s, r) => s + r.sold_for, 0);
   const avgSale = filtered.length ? totalRevenue / filtered.length : 0;
-  const matched = filtered.filter(s => s.sku && skuMap.has(s.sku)).length;
+  const matched = filtered.filter(s => s.sku && skuTotalCostMap.has(s.sku)).length;
 
   return (
     <div className="h-full flex flex-col bg-gray-950 overflow-hidden">
@@ -331,6 +352,8 @@ export default function SalesPage() {
                 <th className="px-3 py-3">Matched Purchase</th>
                 <th className="px-3 py-3">Qty</th>
                 <th className="px-3 py-3">Sold For</th>
+                <th className="px-3 py-3">Lot Cost</th>
+                <th className="px-3 py-3">ROI</th>
               </tr>
             </thead>
             <tbody>
@@ -363,7 +386,7 @@ export default function SalesPage() {
 
                     {/* SKU — inline editable */}
                     <td className="px-3 py-3">
-                      <SkuCell sale={sale} onSaved={handleSkuSaved} />
+                      <SkuCell sale={sale} purchases={purchases} onSaved={handleSkuSaved} />
                     </td>
 
                     {/* Matched Purchase */}
@@ -389,6 +412,28 @@ export default function SalesPage() {
                     {/* Sold For */}
                     <td className="px-3 py-3 text-sm text-green-400 font-semibold tabular-nums">
                       {fmt$(sale.sold_for)}
+                    </td>
+
+                    {/* Lot Cost */}
+                    <td className="px-3 py-3 text-sm text-gray-300 tabular-nums">
+                      {sale.sku && skuTotalCostMap.has(sale.sku) ? (
+                        fmt$(skuTotalCostMap.get(sale.sku)!)
+                      ) : (
+                        <span className="text-gray-600 italic text-xs">no match</span>
+                      )}
+                    </td>
+
+                    {/* ROI */}
+                    <td className="px-3 py-3 text-sm tabular-nums">
+                      {(() => {
+                        if (!sale.sku || !skuTotalCostMap.has(sale.sku)) return <span className="text-gray-600">—</span>;
+                        const cost = skuTotalCostMap.get(sale.sku)!;
+                        if (cost === 0) return <span className="text-gray-600">—</span>;
+                        const roi = ((sale.sold_for - cost) / cost) * 100;
+                        const color = roi > 0 ? 'text-green-400' : roi < 0 ? 'text-red-400' : 'text-gray-400';
+                        const sign = roi > 0 ? '+' : '';
+                        return <span className={`font-medium ${color}`}>{sign}{roi.toFixed(1)}%</span>;
+                      })()}
                     </td>
                   </tr>
                 );

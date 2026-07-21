@@ -24,6 +24,7 @@ interface SkuGroup {
   sku: string | null;
   purchases: Purchase[];
   totalCost: number;
+  totalSales: number;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -640,6 +641,22 @@ function SkuGroupRow({
             <EditableCell purchase={first} field="cost" type="number" onSaved={onRefresh} />
           )}
         </td>
+        <td className="px-3 py-3 text-sm tabular-nums">
+          {group.totalSales > 0 ? (
+            <div className="flex items-center gap-2">
+              <span className="text-green-400 font-medium">${group.totalSales.toFixed(2)}</span>
+              {(() => {
+                if (group.totalCost === 0) return null;
+                const roi = ((group.totalSales - group.totalCost) / group.totalCost) * 100;
+                const color = roi > 0 ? 'text-green-400' : roi < 0 ? 'text-red-400' : 'text-gray-400';
+                const sign = roi > 0 ? '+' : '';
+                return <span className={`text-[10px] bg-gray-800 px-1.5 py-0.5 rounded ${color}`}>{sign}{roi.toFixed(1)}%</span>;
+              })()}
+            </div>
+          ) : (
+            <span className="text-gray-600">—</span>
+          )}
+        </td>
         <td className="px-3 py-3">
           <SkuPill sku={group.sku} onCopy={onCopySkU} />
         </td>
@@ -678,6 +695,7 @@ function SkuGroupRow({
           <td className="px-3 py-2 text-xs text-gray-300"><EditableCell purchase={p} field="sport" type="select" options={SPORTS} onSaved={onRefresh} /></td>
           <td className="px-3 py-2 text-xs text-gray-400"><EditableCell purchase={p} field="box_size" type="select" options={BOX_SIZES} onSaved={onRefresh} /></td>
           <td className="px-3 py-2 text-xs text-green-400 tabular-nums"><EditableCell purchase={p} field="cost" type="number" onSaved={onRefresh} /></td>
+          <td className="px-3 py-2" /> {/* empty Total Sales for sub-row */}
           <td className="px-3 py-2">
             <SkuPill sku={p.sku} onCopy={onCopySkU} />
           </td>
@@ -711,6 +729,8 @@ export default function PurchasesPage() {
   const [toast, setToast] = useState<string | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const [sales, setSales] = useState<any[]>([]);
+
   const load = useCallback(async (q = '') => {
     setLoading(true);
     try {
@@ -723,7 +743,15 @@ export default function PurchasesPage() {
     }
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  const loadSales = useCallback(async () => {
+    try {
+      const res = await fetch('/api/ebay/sold-orders?sync=false');
+      const data = await res.json();
+      setSales(data.sales ?? []);
+    } catch { /* silent */ }
+  }, []);
+
+  useEffect(() => { load(); loadSales(); }, [load, loadSales]);
 
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -732,6 +760,13 @@ export default function PurchasesPage() {
 
   // Group by sku
   const groups: SkuGroup[] = (() => {
+    const skuTotalSalesMap = new Map<string, number>();
+    sales.forEach(s => {
+      if (s.sku) {
+        skuTotalSalesMap.set(s.sku, (skuTotalSalesMap.get(s.sku) ?? 0) + s.sold_for);
+      }
+    });
+
     const map = new Map<string, Purchase[]>();
     purchases.forEach(p => {
       const key = p.sku ?? `__no_sku__${p.id}`;
@@ -742,6 +777,7 @@ export default function PurchasesPage() {
       sku: ps[0].sku,
       purchases: ps,
       totalCost: ps.reduce((s, p) => s + p.cost, 0),
+      totalSales: ps[0].sku ? (skuTotalSalesMap.get(ps[0].sku) ?? 0) : 0,
     }));
   })();
 
@@ -845,6 +881,7 @@ export default function PurchasesPage() {
                 <th className="px-3 py-3">Sport</th>
                 <th className="px-3 py-3">Box Size</th>
                 <th className="px-3 py-3">Cost</th>
+                <th className="px-3 py-3">Total Sales (ROI)</th>
                 <th className="px-3 py-3">SKU</th>
                 <th className="px-3 py-3">Source</th>
                 <th className="px-3 py-3">Actions</th>
