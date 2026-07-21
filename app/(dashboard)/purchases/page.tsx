@@ -174,6 +174,69 @@ function CsvImportModal({ onClose, onImported }: { onClose: () => void; onImport
   );
 }
 
+// ─── Form Helpers ─────────────────────────────────────────────────────────────
+
+const inputCls = 'w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-green-500 transition';
+
+function Field({
+  label,
+  value,
+  onChange,
+  type = 'text',
+  placeholder = '',
+  inputMode,
+  maxLength,
+}: {
+  label: string;
+  value: string;
+  onChange: (val: string) => void;
+  type?: string;
+  placeholder?: string;
+  inputMode?: React.HTMLAttributes<HTMLInputElement>['inputMode'];
+  maxLength?: number;
+}) {
+  return (
+    <div>
+      <label className="block text-xs text-gray-400 mb-1">{label}</label>
+      <input
+        type={type}
+        inputMode={inputMode}
+        maxLength={maxLength}
+        className={inputCls}
+        placeholder={placeholder}
+        value={value}
+        onChange={e => onChange(e.target.value)}
+      />
+    </div>
+  );
+}
+
+function Select({
+  label,
+  value,
+  onChange,
+  options,
+}: {
+  label: string;
+  value: string;
+  onChange: (val: string) => void;
+  options: string[];
+}) {
+  return (
+    <div>
+      <label className="block text-xs text-gray-400 mb-1">{label}</label>
+      <select
+        className={inputCls}
+        value={value}
+        onChange={e => onChange(e.target.value)}
+      >
+        <option value="">— select —</option>
+        {options.map(o => <option key={o} value={o}>{o}</option>)}
+      </select>
+    </div>
+  );
+}
+
 // ─── Purchase Form Modal ──────────────────────────────────────────────────────
 
 function PurchaseModal({
@@ -266,51 +329,6 @@ function PurchaseModal({
     }
   }
 
-  const inputCls = 'w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-green-500 transition';
-
-  const Field = ({
-    label,
-    name,
-    type = 'text',
-    placeholder = '',
-    inputMode,
-    maxLength,
-  }: {
-    label: string;
-    name: string;
-    type?: string;
-    placeholder?: string;
-    inputMode?: React.HTMLAttributes<HTMLInputElement>['inputMode'];
-    maxLength?: number;
-  }) => (
-    <div>
-      <label className="block text-xs text-gray-400 mb-1">{label}</label>
-      <input
-        type={type}
-        inputMode={inputMode}
-        maxLength={maxLength}
-        className={inputCls}
-        placeholder={placeholder}
-        value={(form as any)[name]}
-        onChange={e => set(name, e.target.value)}
-      />
-    </div>
-  );
-
-  const Select = ({ label, name, options }: { label: string; name: string; options: string[] }) => (
-    <div>
-      <label className="block text-xs text-gray-400 mb-1">{label}</label>
-      <select
-        className={inputCls}
-        value={(form as any)[name]}
-        onChange={e => set(name, e.target.value)}
-      >
-        <option value="">— select —</option>
-        {options.map(o => <option key={o} value={o}>{o}</option>)}
-      </select>
-    </div>
-  );
-
   return (
     <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
       <div className="bg-gray-900 border border-gray-700 rounded-xl w-full max-w-2xl shadow-2xl overflow-y-auto max-h-[90vh]">
@@ -320,8 +338,8 @@ function PurchaseModal({
         </div>
 
         <div className="p-5 grid grid-cols-2 gap-4">
-          <Field label="Purchase Date *" name="purchase_date" type="date" />
-          <Field label="Cost ($) *" name="cost" type="number" inputMode="decimal" placeholder="0.00" />
+          <Field label="Purchase Date *" value={form.purchase_date} onChange={v => set('purchase_date', v)} type="date" />
+          <Field label="Cost ($) *" value={form.cost} onChange={v => set('cost', v)} type="number" inputMode="decimal" placeholder="0.00" />
 
           {/* Year — text field, numeric keyboard, strips non-digits, max 4 chars */}
           <div>
@@ -342,13 +360,13 @@ function PurchaseModal({
           </div>
 
           {/* Brand */}
-          <Select label="Brand" name="brand" options={BRANDS} />
+          <Select label="Brand" value={form.brand} onChange={v => set('brand', v)} options={BRANDS} />
 
           {/* Series */}
-          <Field label="Series" name="series" placeholder="Optic, Chrome, Prizm WNBA…" />
+          <Field label="Series" value={form.series} onChange={v => set('series', v)} placeholder="Optic, Chrome, Prizm WNBA…" />
 
           {/* Sport */}
-          <Select label="Sport" name="sport" options={SPORTS} />
+          <Select label="Sport" value={form.sport} onChange={v => set('sport', v)} options={SPORTS} />
 
           {/* SKU — auto-filled from Year·Brand·Series·Sport, user can override */}
           <div className="col-span-2">
@@ -380,9 +398,9 @@ function PurchaseModal({
             />
           </div>
 
-          <Field label="Team" name="team" placeholder="optional" />
-          <Select label="Box Size" name="box_size" options={BOX_SIZES} />
-          <Select label="Bought From" name="bought_from" options={SOURCES} />
+          <Field label="Team" value={form.team} onChange={v => set('team', v)} placeholder="optional" />
+          <Select label="Box Size" value={form.box_size} onChange={v => set('box_size', v)} options={BOX_SIZES} />
+          <Select label="Bought From" value={form.bought_from} onChange={v => set('bought_from', v)} options={SOURCES} />
 
           <div className="col-span-2">
             <label className="block text-xs text-gray-400 mb-1">Notes</label>
