@@ -9,6 +9,8 @@ const NAV_ITEMS = [
   { href: '/', label: 'Leads', icon: '⚡' },
   { href: '/watchlist', label: 'Watchlist', icon: '👁' },
   { href: '/inventory', label: 'Inventory', icon: '📦' },
+  { href: '/purchases', label: 'Purchases', icon: '🛒' },
+  { href: '/sales', label: 'eBay Sales', icon: '💰' },
   { href: '/bulk-list', label: 'Bulk List ', icon: '🚀' },
   { href: '/active-listings', label: 'Active Listings', icon: '📋' },
   { href: '/listing-details', label: 'Listing Details', icon: '🔎' },
