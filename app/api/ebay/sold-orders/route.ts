@@ -56,6 +56,7 @@ function buildGetOrdersRequest(
   <CreateTimeFrom>${fromDate}</CreateTimeFrom>
   <CreateTimeTo>${toDate}</CreateTimeTo>
   <OrderStatus>Completed</OrderStatus>
+  <DetailLevel>ReturnAll</DetailLevel>
   <Pagination>
     <EntriesPerPage>100</EntriesPerPage>
     <PageNumber>${page}</PageNumber>
@@ -227,19 +228,22 @@ export async function GET(request: NextRequest) {
       return true;
     });
 
-    // Upsert into Supabase — conflict on (order_number, ebay_item_id)
+    // Insert only NEW rows — ignoreDuplicates:true skips existing (order_number, ebay_item_id)
+    // so we never overwrite manually-edited SKUs and the synced count reflects truly new rows.
     let synced = 0;
     if (uniqueRows.length > 0) {
-      const { error: upsertError } = await supabaseAdmin
+      const { data: inserted, error: upsertError } = await supabaseAdmin
         .from('ebay_sales')
         .upsert(
           uniqueRows.map((r) => ({ ...r, synced_at: new Date().toISOString() })),
-          { onConflict: 'order_number,ebay_item_id', ignoreDuplicates: false }
-        );
+          { onConflict: 'order_number,ebay_item_id', ignoreDuplicates: true }
+        )
+        .select('id');
       if (upsertError) {
         console.error('[sold-orders] upsert error:', upsertError.message);
       } else {
-        synced = uniqueRows.length;
+        // Only rows actually inserted (not skipped) are returned when ignoreDuplicates:true
+        synced = inserted?.length ?? 0;
       }
     }
 

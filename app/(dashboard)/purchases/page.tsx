@@ -204,8 +204,44 @@ function PurchaseModal({
   );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  // Track whether the user has manually edited the SKU so we don't overwrite it.
+  const [skuLocked, setSkuLocked] = useState(!!initial?.sku);
 
-  const set = (key: string, val: string) => setForm(f => ({ ...f, [key]: val }));
+  // ── SKU auto-generation: YEAR-BRAND-SERIES-SPORT (spaces→_, uppercase) ──
+  function buildAutoSku(year: string, brand: string, series: string, sport: string): string {
+    const clean = (s: string) => s.trim().toUpperCase().replace(/\s+/g, '_');
+    const parts = [year.trim(), clean(brand), clean(series), clean(sport)].filter(Boolean);
+    return parts.join('-');
+  }
+
+  // Unified field setter — auto-fills SKU when relevant fields change
+  function set(key: string, val: string) {
+    setForm(f => {
+      const next = { ...f, [key]: val };
+
+      // Rebuild SKU from formula whenever year/brand/series/sport change,
+      // unless the user has manually locked the SKU field.
+      if (['year', 'brand', 'series', 'sport'].includes(key) && !skuLocked) {
+        next.sku = buildAutoSku(next.year, next.brand, next.series, next.sport);
+      }
+
+      return next;
+    });
+  }
+
+  function handleSkuChange(val: string) {
+    setSkuLocked(true); // user is manually editing — stop auto-fill
+    setForm(f => ({ ...f, sku: val }));
+  }
+
+  function handleSkuClear() {
+    // If user clears the SKU field, re-enable auto-fill
+    setSkuLocked(false);
+    setForm(f => ({
+      ...f,
+      sku: buildAutoSku(f.year, f.brand, f.series, f.sport),
+    }));
+  }
 
   async function handleSave() {
     if (!form.purchase_date || !form.cost) { setError('Date and cost are required.'); return; }
@@ -230,22 +266,30 @@ function PurchaseModal({
     }
   }
 
+  const inputCls = 'w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-green-500 transition';
+
   const Field = ({
     label,
     name,
     type = 'text',
     placeholder = '',
+    inputMode,
+    maxLength,
   }: {
     label: string;
     name: string;
     type?: string;
     placeholder?: string;
+    inputMode?: React.HTMLAttributes<HTMLInputElement>['inputMode'];
+    maxLength?: number;
   }) => (
     <div>
       <label className="block text-xs text-gray-400 mb-1">{label}</label>
       <input
         type={type}
-        className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-green-500 transition"
+        inputMode={inputMode}
+        maxLength={maxLength}
+        className={inputCls}
         placeholder={placeholder}
         value={(form as any)[name]}
         onChange={e => set(name, e.target.value)}
@@ -257,7 +301,7 @@ function PurchaseModal({
     <div>
       <label className="block text-xs text-gray-400 mb-1">{label}</label>
       <select
-        className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-green-500 transition"
+        className={inputCls}
         value={(form as any)[name]}
         onChange={e => set(name, e.target.value)}
       >
@@ -277,15 +321,69 @@ function PurchaseModal({
 
         <div className="p-5 grid grid-cols-2 gap-4">
           <Field label="Purchase Date *" name="purchase_date" type="date" />
-          <Field label="Cost ($) *" name="cost" type="number" placeholder="0.00" />
-          <Field label="SKU / Reference #" name="sku" placeholder="2025-PANINI-OPTIC-FOOTBALL" />
-          <Field label="Card Year" name="year" type="number" placeholder="2025" />
+          <Field label="Cost ($) *" name="cost" type="number" inputMode="decimal" placeholder="0.00" />
+
+          {/* Year — text field, numeric keyboard, strips non-digits, max 4 chars */}
+          <div>
+            <label className="block text-xs text-gray-400 mb-1">Card Year</label>
+            <input
+              type="text"
+              inputMode="numeric"
+              maxLength={4}
+              pattern="[0-9]{4}"
+              className={inputCls}
+              placeholder="2025"
+              value={form.year}
+              onChange={e => {
+                const val = e.target.value.replace(/\D/g, '').slice(0, 4);
+                set('year', val);
+              }}
+            />
+          </div>
+
+          {/* Brand */}
           <Select label="Brand" name="brand" options={BRANDS} />
+
+          {/* Series */}
           <Field label="Series" name="series" placeholder="Optic, Chrome, Prizm WNBA…" />
+
+          {/* Sport */}
           <Select label="Sport" name="sport" options={SPORTS} />
+
+          {/* SKU — auto-filled from Year·Brand·Series·Sport, user can override */}
+          <div className="col-span-2">
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-xs text-gray-400">
+                SKU
+                {!skuLocked ? (
+                  <span className="ml-2 text-[10px] text-green-500">✦ auto-filling from Year · Brand · Series · Sport</span>
+                ) : (
+                  <span className="ml-2 text-[10px] text-yellow-500">✎ manually set</span>
+                )}
+              </label>
+              {skuLocked && (
+                <button
+                  type="button"
+                  onClick={handleSkuClear}
+                  className="text-[10px] text-gray-500 hover:text-green-400 transition"
+                >
+                  ↺ reset to auto
+                </button>
+              )}
+            </div>
+            <input
+              type="text"
+              className={`${inputCls} font-mono ${skuLocked ? 'border-yellow-600/50' : 'border-green-700/50'}`}
+              placeholder="2025-PANINI-OPTIC-FOOTBALL"
+              value={form.sku}
+              onChange={e => handleSkuChange(e.target.value)}
+            />
+          </div>
+
           <Field label="Team" name="team" placeholder="optional" />
           <Select label="Box Size" name="box_size" options={BOX_SIZES} />
           <Select label="Bought From" name="bought_from" options={SOURCES} />
+
           <div className="col-span-2">
             <label className="block text-xs text-gray-400 mb-1">Notes</label>
             <textarea
@@ -315,6 +413,40 @@ function PurchaseModal({
   );
 }
 
+// ─── Toast ───────────────────────────────────────────────────────────────────
+
+function Toast({ message, onDone }: { message: string; onDone: () => void }) {
+  useEffect(() => {
+    const t = setTimeout(onDone, 1800);
+    return () => clearTimeout(t);
+  }, [onDone]);
+  return (
+    <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-gray-800 border border-gray-700 text-white text-sm px-4 py-2 rounded-lg shadow-xl animate-fade-in">
+      {message}
+    </div>
+  );
+}
+
+// ─── SKU Pill with copy ───────────────────────────────────────────────────────
+
+function SkuPill({ sku, onCopy }: { sku: string | null; onCopy: (s: string) => void }) {
+  if (!sku) return <span className="text-gray-700 text-xs italic">—</span>;
+  return (
+    <div className="flex items-center gap-1 group">
+      <span className="text-[11px] text-gray-400 font-mono bg-gray-800 px-2 py-0.5 rounded">
+        {sku}
+      </span>
+      <button
+        onClick={e => { e.stopPropagation(); onCopy(sku); }}
+        title="Copy SKU"
+        className="opacity-0 group-hover:opacity-100 transition text-gray-500 hover:text-green-400 text-[11px] px-1"
+      >
+        📋
+      </button>
+    </div>
+  );
+}
+
 // ─── SKU Group Row ────────────────────────────────────────────────────────────
 
 function SkuGroupRow({
@@ -322,11 +454,13 @@ function SkuGroupRow({
   onEdit,
   onDelete,
   onAddSub,
+  onCopySkU,
 }: {
   group: SkuGroup;
   onEdit: (p: Purchase) => void;
   onDelete: (id: string) => void;
   onAddSub: (sku: string) => void;
+  onCopySkU: (sku: string) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const hasSubs = group.purchases.length > 1;
@@ -364,36 +498,34 @@ function SkuGroupRow({
           )}
         </td>
         <td className="px-3 py-3">
-          <span className="text-[11px] text-gray-500 font-mono bg-gray-800 px-2 py-0.5 rounded">
-            {group.sku ?? '—'}
-          </span>
+          <SkuPill sku={group.sku} onCopy={onCopySkU} />
         </td>
         <td className="px-3 py-3 text-sm text-gray-400">{first.bought_from ?? '—'}</td>
         <td className="px-3 py-3">
-          <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
+          <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
             <button
               onClick={() => onAddSub(group.sku ?? '')}
-              className="text-[11px] text-blue-400 hover:text-blue-300 transition px-2 py-1 rounded hover:bg-blue-500/10"
               title="Add another purchase with this SKU"
+              className="text-[11px] text-blue-400 hover:text-blue-300 transition px-2 py-1 rounded hover:bg-blue-500/10"
             >+ sub</button>
             <button
               onClick={() => onEdit(first)}
-              className="text-[11px] text-gray-400 hover:text-white transition px-2 py-1 rounded hover:bg-gray-700"
-            >Edit</button>
+              title="Edit"
+              className="text-[13px] text-gray-400 hover:text-white transition px-2 py-1 rounded hover:bg-gray-700"
+            >✎</button>
             {!hasSubs && (
               <button
-                onClick={() => {
-                  if (confirm('Delete this purchase?')) onDelete(first.id);
-                }}
+                onClick={() => { if (confirm('Delete this purchase?')) onDelete(first.id); }}
+                title="Delete"
                 className="text-[11px] text-red-500 hover:text-red-400 transition px-2 py-1 rounded hover:bg-red-500/10"
-              >Del</button>
+              >✕</button>
             )}
           </div>
         </td>
       </tr>
 
       {/* Sub-purchase rows */}
-      {expanded && group.purchases.map((p, idx) => (
+      {expanded && group.purchases.map((p) => (
         <tr key={p.id} className="bg-gray-800/10 border-b border-gray-800/30 hover:bg-gray-800/25 transition">
           <td className="px-4 py-2 w-6" />
           <td className="px-3 py-2 text-xs text-gray-400 pl-8">{p.purchase_date}</td>
@@ -403,15 +535,18 @@ function SkuGroupRow({
           <td className="px-3 py-2 text-xs text-gray-300">{p.sport ?? '—'}</td>
           <td className="px-3 py-2 text-xs text-gray-400">{p.box_size ?? '—'}</td>
           <td className="px-3 py-2 text-xs text-green-400 tabular-nums">${p.cost.toFixed(2)}</td>
-          <td className="px-3 py-2 text-xs text-gray-500 font-mono">{p.sku ?? '—'}</td>
+          <td className="px-3 py-2">
+            <SkuPill sku={p.sku} onCopy={onCopySkU} />
+          </td>
           <td className="px-3 py-2 text-xs text-gray-400">{p.bought_from ?? '—'}</td>
           <td className="px-3 py-2">
-            <div className="flex items-center gap-2">
-              <button onClick={() => onEdit(p)} className="text-[11px] text-gray-400 hover:text-white transition px-2 py-0.5 rounded hover:bg-gray-700">Edit</button>
+            <div className="flex items-center gap-1">
+              <button onClick={() => onEdit(p)} title="Edit" className="text-[13px] text-gray-400 hover:text-white transition px-2 py-0.5 rounded hover:bg-gray-700">✎</button>
               <button
                 onClick={() => { if (confirm('Delete this purchase?')) onDelete(p.id); }}
+                title="Delete"
                 className="text-[11px] text-red-500 hover:text-red-400 transition px-2 py-0.5 rounded hover:bg-red-500/10"
-              >Del</button>
+              >✕</button>
             </div>
           </td>
         </tr>
@@ -430,6 +565,7 @@ export default function PurchasesPage() {
   const [editPurchase, setEditPurchase] = useState<Purchase | null>(null);
   const [showCsv, setShowCsv] = useState(false);
   const [preFillSku, setPreFillSku] = useState<string | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const load = useCallback(async (q = '') => {
@@ -485,6 +621,12 @@ export default function PurchasesPage() {
     setEditPurchase(null);
     setPreFillSku(sku);
     setShowModal(true);
+  }
+
+  function handleCopySku(sku: string) {
+    navigator.clipboard.writeText(sku).then(() => {
+      setToast(`Copied: ${sku}`);
+    });
   }
 
   return (
@@ -573,6 +715,7 @@ export default function PurchasesPage() {
                   onEdit={handleEdit}
                   onDelete={handleDelete}
                   onAddSub={handleAddSub}
+                  onCopySkU={handleCopySku}
                 />
               ))}
             </tbody>
@@ -608,6 +751,7 @@ export default function PurchasesPage() {
           onImported={() => load(search)}
         />
       )}
+      {toast && <Toast message={toast} onDone={() => setToast(null)} />}
     </div>
   );
 }
