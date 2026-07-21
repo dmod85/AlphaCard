@@ -590,6 +590,7 @@ function SkuGroupRow({
   onDelete,
   onAddSub,
   onCopySkU,
+  onRefresh,
 }: {
   group: SkuGroup;
   onEdit: (p: Purchase) => void;
