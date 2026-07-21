@@ -105,18 +105,20 @@ function buildTitleFromSpecifics(fields: {
   parallel: string;
   team: string;
 }): string {
-  const set = fields.set.trim();
-  const player = fields.player.trim();
+  const na = (v: string) => v.trim().toLowerCase() === 'n/a' ? '' : v.trim();
 
-  const cardNumberRaw = fields.cardNumber.trim();
+  const set = na(fields.set);
+  const player = na(fields.player);
+
+  const cardNumberRaw = na(fields.cardNumber);
   const cardNumber = cardNumberRaw
     ? (cardNumberRaw.startsWith('#') ? cardNumberRaw.toUpperCase() : `#${cardNumberRaw.toUpperCase()}`)
     : '';
 
-  const parallelRaw = fields.parallel.trim();
+  const parallelRaw = na(fields.parallel);
   const parallel = parallelRaw.replace(/[[\]]/g, '').trim().toLowerCase() === 'base' ? '' : parallelRaw;
 
-  const team = fields.team.trim();
+  const team = na(fields.team);
 
   const parts: string[] = [];
   if (set) parts.push(set);

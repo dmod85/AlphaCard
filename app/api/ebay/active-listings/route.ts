@@ -189,18 +189,20 @@ function extractBrandFromTitle(title: string): string | undefined {
 function buildSeoTitle(specifics: ItemSpecifics): string {
   const MAX_LENGTH = 80;
 
-  const set = (specifics.set || '').trim();
-  const player = (specifics.player || '').trim();
+  const na = (v: string) => v.trim().toLowerCase() === 'n/a' ? '' : v.trim();
 
-  const cardNumberRaw = (specifics.cardNumber || '').trim();
+  const set = na(specifics.set || '');
+  const player = na(specifics.player || '');
+
+  const cardNumberRaw = na(specifics.cardNumber || '');
   const cardNumber = cardNumberRaw
     ? (cardNumberRaw.startsWith('#') ? cardNumberRaw.toUpperCase() : `#${cardNumberRaw.toUpperCase()}`)
     : '';
 
-  const parallelRaw = (specifics.parallel || '').trim();
-  const parallel = parallelRaw.replace(/[[\]]/g, '').trim().toLowerCase() === 'base' ? '' : parallelRaw;
+  const parallelRaw = na(specifics.parallel || '');
+  const parallel = parallelRaw.replace(/[\[\]]/g, '').trim().toLowerCase() === 'base' ? '' : parallelRaw;
 
-  const team = (specifics.team || '').trim();
+  const team = na(specifics.team || '');
 
   const parts: string[] = [];
   if (set) parts.push(set);
