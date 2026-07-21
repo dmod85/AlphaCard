@@ -12,10 +12,13 @@ import { supabaseAdmin } from '@/app/lib/supabase-admin';
 // eBay Trading API: GetOrders with OrderStatus=Completed
 // Pulls sold orders, upserts into ebay_sales, returns all DB rows.
 //
-// GET /api/ebay/sold-orders
-//   ?days=90        — lookback window in days (default 90, max 90 per eBay)
-//   ?page=1         — page of results from eBay
-//   ?sync=true      — whether to also save to Supabase (default true)
+// GET  /api/ebay/sold-orders          — sync from eBay + return DB rows
+//   ?days=90   — lookback in days (default 90, max 90 per eBay limit)
+//   ?page=1    — eBay page of results
+//   ?sync=false — skip eBay call, just return DB rows
+//
+// PATCH /api/ebay/sold-orders         — update a single sale's SKU
+//   body: { id, sku }
 // -----------------------------------------------------------------------
 
 const EBAY_AUTH_ERROR_CODES = ['21917053', '21916984', '21917055'];
@@ -74,6 +77,7 @@ interface SaleRow {
   ebay_item_id: string | null;
   buyer: string | null;
   quantity_sold: number;
+  picture_url: string | null;
 }
 
 function parseOrders(xml: string): SaleRow[] {
@@ -106,6 +110,7 @@ function parseOrders(xml: string): SaleRow[] {
       const itemId =
         tx.match(/<ItemID>(.*?)<\/ItemID>/)?.[1] ||
         `synthetic-${orderNumber}-${++txCounter}`; // fallback so UNIQUE never hits null
+
       const title = decodeXml(
         tx.match(/<Title>(.*?)<\/Title>/)?.[1] || ''
       );
@@ -114,6 +119,12 @@ function parseOrders(xml: string): SaleRow[] {
         tx.match(/<CustomLabel>(.*?)<\/CustomLabel>/)?.[1] ||
         ''
       ) || null;
+
+      // Picture URL — eBay returns it inside <Item><PictureDetails> or <GalleryURL>
+      const pictureUrl =
+        tx.match(/<GalleryURL>(.*?)<\/GalleryURL>/)?.[1] ||
+        tx.match(/<PictureURL>(.*?)<\/PictureURL>/)?.[1] ||
+        null;
 
       // TransactionPrice is the per-item sale price
       const txPrice = parseFloat(
@@ -134,6 +145,7 @@ function parseOrders(xml: string): SaleRow[] {
           ebay_item_id: itemId,
           buyer,
           quantity_sold: qty,
+          picture_url: pictureUrl,
         });
       }
     }
@@ -143,7 +155,7 @@ function parseOrders(xml: string): SaleRow[] {
 }
 
 // -----------------------------------------------------------------------
-// GET handler
+// GET handler — sync from eBay and/or return DB rows
 // -----------------------------------------------------------------------
 export async function GET(request: NextRequest) {
   try {
@@ -162,10 +174,13 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ sales: data ?? [], synced: 0 });
     }
 
-    // Build date range
+    // Build date range:
+    // toDate   = right now
+    // fromDate = midnight (start of day) X days ago — so the full day is included
     const toDate = new Date();
     const fromDate = new Date();
     fromDate.setDate(fromDate.getDate() - days);
+    fromDate.setHours(0, 0, 0, 0); // include the entire starting day
 
     const token = await getValidToken();
     const xml = buildGetOrdersRequest(
@@ -249,5 +264,28 @@ export async function GET(request: NextRequest) {
       { error: err.message || 'Internal server error' },
       { status: 500 }
     );
+  }
+}
+
+// -----------------------------------------------------------------------
+// PATCH handler — update sku (and optionally other fields) on a sale row
+// body: { id: string; sku: string }
+// -----------------------------------------------------------------------
+export async function PATCH(request: NextRequest) {
+  try {
+    const { id, sku } = await request.json();
+    if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 });
+
+    const { data, error } = await supabaseAdmin
+      .from('ebay_sales')
+      .update({ sku: sku ?? null })
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) throw error;
+    return NextResponse.json({ sale: data });
+  } catch (err: any) {
+    return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }

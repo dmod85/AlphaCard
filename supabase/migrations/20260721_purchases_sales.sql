@@ -36,6 +36,7 @@ CREATE TABLE IF NOT EXISTS ebay_sales (
   ebay_item_id  TEXT,
   buyer         TEXT,
   quantity_sold INTEGER DEFAULT 1,
+  picture_url   TEXT,                    -- eBay GalleryURL
   synced_at     TIMESTAMPTZ DEFAULT NOW(),
   created_at    TIMESTAMPTZ DEFAULT NOW(),
   UNIQUE (order_number, ebay_item_id)

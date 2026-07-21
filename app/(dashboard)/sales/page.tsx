@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -14,6 +14,7 @@ interface Sale {
   ebay_item_id: string | null;
   buyer: string | null;
   quantity_sold: number;
+  picture_url: string | null;
   synced_at: string;
 }
 
@@ -33,6 +34,109 @@ function fmt$(n: number) {
 function fmtDate(d: string | null) {
   if (!d) return '—';
   return new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+// ─── Inline SKU Editor ────────────────────────────────────────────────────────
+
+function SkuCell({
+  sale,
+  onSaved,
+}: {
+  sale: Sale;
+  onSaved: (id: string, sku: string | null) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(sale.sku ?? '');
+  const [saving, setSaving] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (editing) inputRef.current?.focus();
+  }, [editing]);
+
+  async function save() {
+    if (saving) return;
+    setSaving(true);
+    try {
+      const res = await fetch('/api/ebay/sold-orders', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: sale.id, sku: value.trim() || null }),
+      });
+      if (res.ok) {
+        onSaved(sale.id, value.trim() || null);
+      }
+    } finally {
+      setSaving(false);
+      setEditing(false);
+    }
+  }
+
+  function handleKeyDown(e: React.KeyboardEvent) {
+    if (e.key === 'Enter') save();
+    if (e.key === 'Escape') { setValue(sale.sku ?? ''); setEditing(false); }
+  }
+
+  if (editing) {
+    return (
+      <div className="flex items-center gap-1">
+        <input
+          ref={inputRef}
+          type="text"
+          className="bg-gray-700 border border-blue-500 rounded px-2 py-0.5 text-xs text-white font-mono w-44 focus:outline-none"
+          value={value}
+          onChange={e => setValue(e.target.value)}
+          onKeyDown={handleKeyDown}
+          onBlur={save}
+          placeholder="enter SKU…"
+        />
+        {saving && <span className="text-gray-500 text-[10px]">…</span>}
+      </div>
+    );
+  }
+
+  return (
+    <button
+      onClick={() => setEditing(true)}
+      className="group flex items-center gap-1"
+      title="Click to edit SKU"
+    >
+      {sale.sku ? (
+        <span className="text-[11px] text-gray-400 font-mono bg-gray-800 px-2 py-0.5 rounded group-hover:bg-gray-700 group-hover:text-white transition">
+          {sale.sku}
+        </span>
+      ) : (
+        <span className="text-[11px] text-gray-600 italic group-hover:text-gray-400 transition">
+          + add SKU
+        </span>
+      )}
+      <span className="text-gray-600 text-[10px] opacity-0 group-hover:opacity-100 transition">✎</span>
+    </button>
+  );
+}
+
+// ─── Image Thumbnail ──────────────────────────────────────────────────────────
+
+function ItemImage({ url, title }: { url: string | null; title: string }) {
+  const [err, setErr] = useState(false);
+
+  if (!url || err) {
+    return (
+      <div className="w-10 h-10 rounded bg-gray-800 flex items-center justify-center text-gray-600 text-lg flex-shrink-0">
+        🃏
+      </div>
+    );
+  }
+
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={url}
+      alt={title}
+      className="w-10 h-10 rounded object-cover flex-shrink-0 bg-gray-800"
+      onError={() => setErr(true)}
+    />
+  );
 }
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
@@ -89,13 +193,20 @@ export default function SalesPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
       setSales(data.sales ?? []);
-      setSyncMsg(`✓ Synced ${data.synced} new orders from the last ${days} days.`);
+      setSyncMsg(`✓ Synced ${data.synced} orders from the last ${days} days.`);
       setLastSync(new Date().toISOString());
     } catch (e: any) {
       setSyncMsg(`✗ Sync failed: ${e.message}`);
     } finally {
       setSyncing(false);
     }
+  }
+
+  // Called when a SKU is edited inline
+  function handleSkuSaved(id: string, sku: string | null) {
+    setSales(prev => prev.map(s => s.id === id ? { ...s, sku } : s));
+    // Refresh purchase map if sku changed
+    loadPurchases();
   }
 
   // Filter
@@ -135,7 +246,7 @@ export default function SalesPage() {
             <div className="flex items-center gap-2 bg-gray-900 border border-gray-800 rounded-lg px-3 py-1.5">
               <span className="text-xs text-gray-500">Days back:</span>
               <select
-                className="bg-transparent text-sm text-gray-200 focus:outline-none"
+                className="bg-transparent text-sm text-gray-200 focus:outline-none cursor-pointer"
                 value={days}
                 onChange={e => setDays(parseInt(e.target.value))}
               >
@@ -212,14 +323,14 @@ export default function SalesPage() {
           <table className="w-full text-left border-collapse">
             <thead className="sticky top-0 bg-gray-900/95 backdrop-blur z-10">
               <tr className="text-[11px] text-gray-500 uppercase tracking-wider border-b border-gray-800">
-                <th className="px-4 py-3">Order #</th>
+                <th className="px-3 py-3 w-14">Image</th>
+                <th className="px-3 py-3">Order #</th>
                 <th className="px-3 py-3">Sale Date</th>
                 <th className="px-3 py-3">Item Title</th>
-                <th className="px-3 py-3">SKU</th>
+                <th className="px-3 py-3">SKU <span className="normal-case text-gray-600 font-normal">(click to edit)</span></th>
                 <th className="px-3 py-3">Matched Purchase</th>
                 <th className="px-3 py-3">Qty</th>
                 <th className="px-3 py-3">Sold For</th>
-                <th className="px-3 py-3">Buyer</th>
               </tr>
             </thead>
             <tbody>
@@ -230,24 +341,32 @@ export default function SalesPage() {
                     key={sale.id}
                     className="border-b border-gray-800/60 hover:bg-gray-800/25 transition"
                   >
-                    <td className="px-4 py-3 text-xs text-gray-400 font-mono whitespace-nowrap">
+                    {/* Image */}
+                    <td className="px-3 py-2">
+                      <ItemImage url={sale.picture_url} title={sale.item_title} />
+                    </td>
+
+                    {/* Order # */}
+                    <td className="px-3 py-3 text-xs text-gray-400 font-mono whitespace-nowrap">
                       {sale.order_number}
                     </td>
+
+                    {/* Sale Date */}
                     <td className="px-3 py-3 text-sm text-gray-400 whitespace-nowrap">
                       {fmtDate(sale.sale_date)}
                     </td>
+
+                    {/* Title */}
                     <td className="px-3 py-3 text-sm text-gray-200 max-w-xs">
                       <span className="line-clamp-2">{sale.item_title}</span>
                     </td>
+
+                    {/* SKU — inline editable */}
                     <td className="px-3 py-3">
-                      {sale.sku ? (
-                        <span className="text-[11px] text-gray-500 font-mono bg-gray-800 px-2 py-0.5 rounded">
-                          {sale.sku}
-                        </span>
-                      ) : (
-                        <span className="text-gray-700 text-xs">—</span>
-                      )}
+                      <SkuCell sale={sale} onSaved={handleSkuSaved} />
                     </td>
+
+                    {/* Matched Purchase */}
                     <td className="px-3 py-3">
                       {match ? (
                         <a
@@ -255,20 +374,21 @@ export default function SalesPage() {
                           className="inline-flex items-center gap-1 bg-green-500/15 text-green-400 border border-green-500/30 text-[11px] font-medium px-2 py-0.5 rounded-full hover:bg-green-500/25 transition"
                         >
                           <span>✓</span>
-                          <span>{match.brand ?? ''} {match.series ?? sale.sku}</span>
+                          <span>{[match.brand, match.series].filter(Boolean).join(' ') || sale.sku}</span>
                         </a>
                       ) : (
                         <span className="text-gray-700 text-xs">—</span>
                       )}
                     </td>
+
+                    {/* Qty */}
                     <td className="px-3 py-3 text-sm text-gray-400 tabular-nums">
                       {sale.quantity_sold}
                     </td>
+
+                    {/* Sold For */}
                     <td className="px-3 py-3 text-sm text-green-400 font-semibold tabular-nums">
                       {fmt$(sale.sold_for)}
-                    </td>
-                    <td className="px-3 py-3 text-sm text-gray-400">
-                      {sale.buyer ?? '—'}
                     </td>
                   </tr>
                 );
