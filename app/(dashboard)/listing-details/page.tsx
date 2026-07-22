@@ -940,8 +940,8 @@ export default function ListingDetailsPage() {
       };
 
       // Auto-rebuild title from updated effective values when a key attribute changes
-      // Skip if: editing the title directly, title is locked, or user already manually set the title
-      if (TITLE_DRIVING_COLS.has(col) && !titleLocked[itemId] && !('__title__' in (next[itemId] || {}))) {
+      // Skip if: editing the title directly, or title is locked
+      if (TITLE_DRIVING_COLS.has(col) && !titleLocked[itemId]) {
         const specs = specificMap[itemId];
         const itemEditsNow = next[itemId] || {};
         const effective = (c: string) => itemEditsNow[c] ?? (Array.isArray(specs) ? getSpecificValue(specs, c) : '');

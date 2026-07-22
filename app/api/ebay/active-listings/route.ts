@@ -151,6 +151,12 @@ function parseActiveListings(xml: string): ActiveListing[] {
     const quantityAvailable = parseInt(item.match(/<QuantityAvailable>(.*?)<\/QuantityAvailable>/)?.[1] || '1');
     const startTime = item.match(/<StartTime>(.*?)<\/StartTime>/)?.[1] || '';
     const sku = item.match(/<SKU>(.*?)<\/SKU>/)?.[1] || undefined;
+    const trackingMethod = item.match(/<InventoryTrackingMethod>(.*?)<\/InventoryTrackingMethod>/)?.[1];
+
+    // Filter out inventory-based listings because they cannot be managed via the Trading API (ReviseItem)
+    if (trackingMethod === 'SKU') {
+      continue;
+    }
 
     if (itemId) {
       // Parse item specifics for SEO title check
