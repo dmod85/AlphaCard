@@ -91,6 +91,7 @@ interface ItemSpecifics {
   sport?: string;
   player?: string;
   team?: string;
+  printRun?: string;
 }
 
 function parseItemSpecifics(xml: string): ItemSpecifics {
@@ -111,6 +112,7 @@ function parseItemSpecifics(xml: string): ItemSpecifics {
     else if (name === 'manufacturer' || name === 'brand') result.brand = value;
     else if (name === 'player/athlete' || name === 'player') result.player = value;
     else if (name === 'team') result.team = value;
+    else if (name === 'print run') result.printRun = value;
   }
   return result;
 }
@@ -207,6 +209,8 @@ function buildSeoTitle(specifics: ItemSpecifics): string {
   const insert = notBase(na(specifics.insert || ''));
 
   const team = na(specifics.team || '');
+  const printRunRaw = na(specifics.printRun || '');
+  const printRun = printRunRaw ? `/${printRunRaw}` : '';
 
   const parts: string[] = [];
   if (set) parts.push(set);
@@ -231,6 +235,13 @@ function buildSeoTitle(specifics: ItemSpecifics): string {
     const withTeam = `${title} ${team}`.replace(/\s{2,}/g, ' ').trim();
     if (withTeam.length <= MAX_LENGTH) {
       title = withTeam;
+    }
+  }
+
+  if (printRun) {
+    const withPrintRun = `${title} ${printRun}`.replace(/\s{2,}/g, ' ').trim();
+    if (withPrintRun.length <= MAX_LENGTH) {
+      title = withPrintRun;
     }
   }
 

@@ -105,6 +105,7 @@ function buildTitleFromSpecifics(fields: {
   parallel: string;
   insert: string;
   team: string;
+  printRun?: string;
 }): string {
   const na = (v: string) => v.trim().toLowerCase() === 'n/a' ? '' : v.trim();
   const notBase = (v: string) => v.replace(/[[\]]/g, '').trim().toLowerCase() === 'base' ? '' : v;
@@ -121,6 +122,8 @@ function buildTitleFromSpecifics(fields: {
   const insert = notBase(na(fields.insert));
 
   const team = na(fields.team);
+  const printRunRaw = na(fields.printRun || '');
+  const printRun = printRunRaw ? `/${printRunRaw}` : '';
 
   const parts: string[] = [];
   if (set) parts.push(set);
@@ -145,6 +148,13 @@ function buildTitleFromSpecifics(fields: {
     const withTeam = `${title} ${team}`.replace(/\s{2,}/g, ' ').trim();
     if (withTeam.length <= TITLE_MAX_LENGTH) {
       title = withTeam;
+    }
+  }
+
+  if (printRun) {
+    const withPrintRun = `${title} ${printRun}`.replace(/\s{2,}/g, ' ').trim();
+    if (withPrintRun.length <= TITLE_MAX_LENGTH) {
+      title = withPrintRun;
     }
   }
 
@@ -723,6 +733,7 @@ export default function ListingDetailsPage() {
         parallel: effective('Parallel/Variety'),
         insert: effective('Insert'),
         team: effective('Team'),
+        printRun: effective('Print Run'),
       });
       if (suggestedTitle && suggestedTitle !== currentTitle) {
         results.push({ itemId: listing.itemId, currentTitle, suggestedTitle });
@@ -931,7 +942,7 @@ export default function ListingDetailsPage() {
     }
 
     // Columns whose changes should auto-rebuild the title
-    const TITLE_DRIVING_COLS = new Set(['Set', 'Player/Athlete', 'Card Number', 'Parallel/Variety', 'Insert', 'Team']);
+    const TITLE_DRIVING_COLS = new Set(['Set', 'Player/Athlete', 'Card Number', 'Parallel/Variety', 'Insert', 'Team', 'Print Run']);
 
     setEdits((prev) => {
       const next = {
@@ -952,6 +963,7 @@ export default function ListingDetailsPage() {
           parallel: effective('Parallel/Variety'),
           insert: effective('Insert'),
           team: effective('Team'),
+          printRun: effective('Print Run'),
         });
         const currentTitle = allListings.find((l) => l.itemId === itemId)?.title ?? '';
         if (newGeneratedTitle && newGeneratedTitle !== currentTitle) {
