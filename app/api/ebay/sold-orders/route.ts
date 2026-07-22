@@ -156,6 +156,40 @@ function parseOrders(xml: string): SaleRow[] {
 }
 
 // -----------------------------------------------------------------------
+// Fetch Images via Shopping API (GetMultipleItems)
+// -----------------------------------------------------------------------
+async function fetchImagesForItems(itemIds: string[]): Promise<Record<string, string>> {
+  const appId = process.env.EBAY_APP_ID;
+  if (!appId || itemIds.length === 0) return {};
+
+  const map: Record<string, string> = {};
+  
+  // Shopping API allows max 20 items per call
+  for (let i = 0; i < itemIds.length; i += 20) {
+    const chunk = itemIds.slice(i, i + 20);
+    const url = `https://open.api.ebay.com/shopping?callname=GetMultipleItems&responseencoding=JSON&appid=${appId}&siteid=0&version=1199&ItemID=${chunk.join(',')}`;
+    
+    try {
+      const res = await fetch(url);
+      const data = await res.json();
+      if (data.Item) {
+        for (const item of data.Item) {
+          if (item.GalleryURL) {
+            map[item.ItemID] = item.GalleryURL;
+          } else if (item.PictureURL && item.PictureURL.length > 0) {
+            map[item.ItemID] = item.PictureURL[0];
+          }
+        }
+      }
+    } catch {
+      // ignore errors for image fetching
+    }
+  }
+
+  return map;
+}
+
+// -----------------------------------------------------------------------
 // GET handler — sync from eBay and/or return DB rows
 // -----------------------------------------------------------------------
 export async function GET(request: NextRequest) {
@@ -227,6 +261,22 @@ export async function GET(request: NextRequest) {
       seen.add(key);
       return true;
     });
+
+    // Fetch images for valid ItemIDs via Shopping API
+    const realItemIds = Array.from(new Set(
+      uniqueRows
+        .map(r => r.ebay_item_id)
+        .filter((id): id is string => id !== null && !id.startsWith('synthetic-'))
+    ));
+    
+    if (realItemIds.length > 0) {
+      const imageMap = await fetchImagesForItems(realItemIds);
+      for (const row of uniqueRows) {
+        if (row.ebay_item_id && imageMap[row.ebay_item_id]) {
+          row.picture_url = imageMap[row.ebay_item_id];
+        }
+      }
+    }
 
     // Insert only NEW rows — ignoreDuplicates:true skips existing (order_number, ebay_item_id)
     // so we never overwrite manually-edited SKUs and the synced count reflects truly new rows.
