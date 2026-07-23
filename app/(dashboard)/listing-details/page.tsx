@@ -1122,8 +1122,25 @@ export default function ListingDetailsPage() {
       result = result.filter((l) => evaluateConditions(l, activeFilterConditions, specificMap, edits));
     }
 
+    if (titleSyncOpen) {
+      result = result.filter((l) => titleSyncMismatchIds.has(l.itemId));
+    }
+
+    if (descSyncOpen) {
+      result = result.filter((l) => descSyncMismatchIds.has(l.itemId));
+    }
+
+    if (dupCheckOpen) {
+      result = result.filter((l) => duplicateItemIds.has(l.itemId));
+    }
+
     return result;
-  }, [allListings, search, activeFilterConditions, specificMap, edits]);
+  }, [
+    allListings, search, activeFilterConditions, specificMap, edits,
+    titleSyncOpen, titleSyncMismatchIds,
+    descSyncOpen, descSyncMismatchIds,
+    dupCheckOpen, duplicateItemIds
+  ]);
 
   const sortedFiltered = useMemo(() => {
     if (!sortCol) return filtered;
