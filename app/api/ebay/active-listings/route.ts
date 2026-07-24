@@ -54,7 +54,6 @@ function buildGetSellerListRequest(page: number, token: string): string {
     <PageNumber>${page}</PageNumber>
   </Pagination>
   <DetailLevel>ItemReturnDescription</DetailLevel>
-  <IncludeItemSpecifics>true</IncludeItemSpecifics>
   <EndTimeFrom>${now.toISOString()}</EndTimeFrom>
   <EndTimeTo>${future.toISOString()}</EndTimeTo>
   <ErrorLanguage>en_US</ErrorLanguage>
