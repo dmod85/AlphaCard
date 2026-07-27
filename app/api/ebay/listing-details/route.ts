@@ -88,9 +88,10 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'itemIds is required' }, { status: 400 });
     }
 
-    const [{ data: cached }, { data: locks }] = await Promise.all([
+    const [{ data: cached }, { data: locks }, { data: hidden }] = await Promise.all([
       supabaseAdmin.from('ebay_item_specifics').select('item_id, specifics, description_ok').in('item_id', itemIds),
       supabaseAdmin.from('ebay_title_locks').select('item_id').in('item_id', itemIds),
+      supabaseAdmin.from('ebay_hidden_listings').select('item_id').in('item_id', itemIds),
     ]);
 
     const cachedMap = new Map<string, { specifics: NameValuePair[]; descriptionOk: boolean }>(
@@ -104,6 +105,7 @@ export async function GET(request: NextRequest) {
       ])
     );
     const lockedIds = new Set((locks ?? []).map((row) => row.item_id as string));
+    const hiddenIds = new Set((hidden ?? []).map((row) => row.item_id as string));
     const uncachedIds = itemIds.filter((id) => !cachedMap.has(id));
 
     let fetched: { itemId: string; specifics: NameValuePair[] }[] = [];
@@ -128,6 +130,7 @@ export async function GET(request: NextRequest) {
         specifics: cached?.specifics ?? fetchedItem?.specifics ?? [],
         descriptionOk: cached?.descriptionOk ?? false,
         titleLocked: lockedIds.has(id),
+        hidden: hiddenIds.has(id),
       };
     });
 

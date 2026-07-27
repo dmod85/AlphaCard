@@ -414,6 +414,12 @@ export default function ListingDetailsPage() {
   // auto-template (persisted in Supabase — see /api/ebay/title-locks)
   const [titleLocked, setTitleLockedMap] = useState<Record<string, boolean>>({});
 
+  // ── Hidden listings state ────────────────────────────────────────────────
+  // itemId -> true once manually hidden from the page and all checks
+  // (persisted in Supabase — see /api/ebay/hidden-listings)
+  const [hiddenMap, setHiddenMap] = useState<Record<string, boolean>>({});
+  const [hiddenPanelOpen, setHiddenPanelOpen] = useState(false);
+
   // ── Description sync state ──────────────────────────────────────────────────
   const [descSyncOpen, setDescSyncOpen] = useState(false);
   const [descSyncSelected, setDescSyncSelected] = useState<Set<string>>(new Set());
@@ -485,7 +491,7 @@ export default function ListingDetailsPage() {
       const data = await res.json();
       if (!res.ok || data.error) throw new Error(data.error || 'Failed');
       if (gen !== loadGenRef.current) return; // superseded by a newer load — drop the result
-      const results = data.results as { itemId: string; specifics: NameValuePair[]; descriptionOk: boolean; titleLocked: boolean }[];
+      const results = data.results as { itemId: string; specifics: NameValuePair[]; descriptionOk: boolean; titleLocked: boolean; hidden: boolean }[];
       setSpecificMap((prev) => {
         const next = { ...prev };
         for (const r of results) {
@@ -497,6 +503,11 @@ export default function ListingDetailsPage() {
       setTitleLockedMap((prev) => {
         const next = { ...prev };
         for (const r of results) next[r.itemId] = r.titleLocked;
+        return next;
+      });
+      setHiddenMap((prev) => {
+        const next = { ...prev };
+        for (const r of results) next[r.itemId] = r.hidden;
         return next;
       });
       setDescriptionOkMap((prev) => {
@@ -558,6 +569,7 @@ export default function ListingDetailsPage() {
     setAllListings([]);
     setSpecificMap({});
     setTitleLockedMap({});
+    setHiddenMap({});
     setDescriptionOkMap({});
     setVisibleCount(ROW_BATCH);
     fetchingRef.current.clear();
@@ -613,6 +625,11 @@ export default function ListingDetailsPage() {
     return () => observer.disconnect();
   }, []);
 
+  // Listings excluded from the page and every check (Title/Description/Duplicate)
+  // via the hide toggle. hiddenListings backs the "Hidden" review panel.
+  const visibleListings = useMemo(() => allListings.filter((l) => !hiddenMap[l.itemId]), [allListings, hiddenMap]);
+  const hiddenListings = useMemo(() => allListings.filter((l) => hiddenMap[l.itemId]), [allListings, hiddenMap]);
+
   // ── Sort ──────────────────────────────────────────────────────────────────
   const handleSort = useCallback((col: string) => {
     if (sortCol === col) {
@@ -628,7 +645,7 @@ export default function ListingDetailsPage() {
     const newEdits: EditMap = { ...edits };
     let affected = 0;
 
-    for (const listing of allListings) {
+    for (const listing of visibleListings) {
       const specs = specificMap[listing.itemId];
       if (!Array.isArray(specs)) continue;
       const original = getSpecificValue(specs, col);
@@ -642,7 +659,7 @@ export default function ListingDetailsPage() {
       setEdits(newEdits);
       setSubmitResults({});
     }
-  }, [allListings, specificMap, edits]);
+  }, [visibleListings, specificMap, edits]);
 
   // ── Open S&R for a column ─────────────────────────────────────────────────
   const openSr = useCallback((col: string) => {
@@ -656,7 +673,7 @@ export default function ListingDetailsPage() {
   const srMatchCount = useMemo(() => {
     if (!srCol || !srFind) return 0;
     let count = 0;
-    for (const listing of allListings) {
+    for (const listing of visibleListings) {
       let current = '';
       if (srCol === '__title__') {
         current = edits[listing.itemId]?.['__title__'] ?? listing.title;
@@ -672,7 +689,7 @@ export default function ListingDetailsPage() {
       if (regex.test(current)) count++;
     }
     return count;
-  }, [srCol, srFind, srCase, allListings, specificMap, edits]);
+  }, [srCol, srFind, srCase, visibleListings, specificMap, edits]);
 
   // ── Replace All ───────────────────────────────────────────────────────────
   const handleReplaceAll = useCallback(() => {
@@ -680,7 +697,7 @@ export default function ListingDetailsPage() {
     const newEdits: EditMap = { ...edits };
     let affected = 0;
 
-    for (const listing of allListings) {
+    for (const listing of visibleListings) {
       let current = '';
       let original = '';
 
@@ -714,12 +731,12 @@ export default function ListingDetailsPage() {
       setEdits(newEdits);
       setSubmitResults({});
     }
-  }, [srCol, srFind, srReplace, srCase, allListings, specificMap, edits]);
+  }, [srCol, srFind, srReplace, srCase, visibleListings, specificMap, edits]);
 
   // ── Title sync: listings whose title doesn't match the generated template ──
   const titleMismatches = useMemo(() => {
     const results: { itemId: string; currentTitle: string; suggestedTitle: string }[] = [];
-    for (const listing of allListings) {
+    for (const listing of visibleListings) {
       if (titleLocked[listing.itemId]) continue;
       const specs = specificMap[listing.itemId];
       if (!Array.isArray(specs)) continue;
@@ -740,7 +757,7 @@ export default function ListingDetailsPage() {
       }
     }
     return results;
-  }, [allListings, specificMap, edits, titleLocked]);
+  }, [visibleListings, specificMap, edits, titleLocked]);
 
   const titleSyncMismatchIds = useMemo(() => new Set(titleMismatches.map((m) => m.itemId)), [titleMismatches]);
   const lockedCount = useMemo(() => Object.values(titleLocked).filter(Boolean).length, [titleLocked]);
@@ -800,6 +817,23 @@ export default function ListingDetailsPage() {
     }
   }, []);
 
+  // Hide (or unhide) a listing — persisted in Supabase so it stays excluded
+  // from the page and all checks (Title/Description/Duplicate) across reloads.
+  // Optimistic with rollback.
+  const toggleHidden = useCallback(async (itemId: string, hidden: boolean) => {
+    setHiddenMap((prev) => ({ ...prev, [itemId]: hidden }));
+    try {
+      const res = await fetch('/api/ebay/hidden-listings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ itemId, hidden }),
+      });
+      if (!res.ok) throw new Error('Failed to update hidden listing');
+    } catch {
+      setHiddenMap((prev) => ({ ...prev, [itemId]: !hidden }));
+    }
+  }, []);
+
   // ── Description sync: listings whose description doesn't match the template
   // built from whatever title is currently in effect (auto-generated, edited,
   // or locked) — independent of Title Check, so a locked custom title still
@@ -810,7 +844,7 @@ export default function ListingDetailsPage() {
   // reflects real state without re-fetching live HTML from eBay on every page load.
   const descriptionMismatches = useMemo(() => {
     const results: { itemId: string; currentDescription: string; suggestedDescription: string }[] = [];
-    for (const listing of allListings) {
+    for (const listing of visibleListings) {
       const itemEdits = edits[listing.itemId] || {};
       // Already has a pending description edit — skip, it's about to be fixed
       if ('__description__' in itemEdits) continue;
@@ -823,7 +857,7 @@ export default function ListingDetailsPage() {
       results.push({ itemId: listing.itemId, currentDescription: '', suggestedDescription });
     }
     return results;
-  }, [allListings, edits, descriptionOkMap]);
+  }, [visibleListings, edits, descriptionOkMap]);
 
   const descSyncMismatchIds = useMemo(() => new Set(descriptionMismatches.map((m) => m.itemId)), [descriptionMismatches]);
 
@@ -832,7 +866,7 @@ export default function ListingDetailsPage() {
   const duplicateGroups = useMemo(() => {
     // Build a fingerprint for each listing
     const grouped = new Map<string, { itemId: string; title: string; url: string }[]>();
-    for (const listing of allListings) {
+    for (const listing of visibleListings) {
       const specs = specificMap[listing.itemId];
       if (!Array.isArray(specs)) continue;
       const itemEdits = edits[listing.itemId] || {};
@@ -851,7 +885,7 @@ export default function ListingDetailsPage() {
     }
     // Return only groups with more than one listing
     return Array.from(grouped.values()).filter((g) => g.length > 1);
-  }, [allListings, specificMap, edits]);
+  }, [visibleListings, specificMap, edits]);
 
   const duplicateItemIds = useMemo(
     () => new Set(duplicateGroups.flatMap((g) => g.map((l) => l.itemId))),
@@ -1114,9 +1148,14 @@ export default function ListingDetailsPage() {
   );
 
   const filtered = useMemo(() => {
+    // Hidden panel reviews exactly the hidden set — every other filter/check
+    // below only ever applies to visible (non-hidden) listings.
+    const base = hiddenPanelOpen ? hiddenListings : visibleListings;
     let result = search.trim()
-      ? allListings.filter((l) => l.title.toLowerCase().includes(search.toLowerCase()))
-      : allListings;
+      ? base.filter((l) => l.title.toLowerCase().includes(search.toLowerCase()))
+      : base;
+
+    if (hiddenPanelOpen) return result;
 
     if (activeFilterConditions.length > 0) {
       result = result.filter((l) => evaluateConditions(l, activeFilterConditions, specificMap, edits));
@@ -1136,7 +1175,7 @@ export default function ListingDetailsPage() {
 
     return result;
   }, [
-    allListings, search, activeFilterConditions, specificMap, edits,
+    visibleListings, hiddenListings, hiddenPanelOpen, search, activeFilterConditions, specificMap, edits,
     titleSyncOpen, titleSyncMismatchIds,
     descSyncOpen, descSyncMismatchIds,
     dupCheckOpen, duplicateItemIds
@@ -1279,6 +1318,24 @@ export default function ListingDetailsPage() {
           {duplicateGroups.length > 0 && (
             <span className="inline-flex items-center justify-center w-4 h-4 bg-orange-500/30 text-orange-300 rounded-full text-[10px] font-bold">
               {duplicateGroups.length}
+            </span>
+          )}
+        </button>
+
+        {/* Hidden listings toggle — review/unhide items excluded from the page and all checks */}
+        <button
+          onClick={() => setHiddenPanelOpen((v) => !v)}
+          title="Listings hidden from this page and every check (Title/Description/Duplicate). Click to review and unhide."
+          className={`flex items-center gap-1.5 px-3 py-1.5 border text-xs rounded-lg transition ${
+            hiddenPanelOpen
+              ? 'bg-gray-500/20 border-gray-500/40 text-gray-200 hover:bg-gray-500/30'
+              : 'bg-gray-800 hover:bg-gray-700 border-gray-700 text-gray-300'
+          }`}
+        >
+          🙈 Hidden
+          {hiddenListings.length > 0 && (
+            <span className="inline-flex items-center justify-center w-4 h-4 bg-gray-500/40 text-gray-200 rounded-full text-[10px] font-bold">
+              {hiddenListings.length}
             </span>
           )}
         </button>
@@ -1905,7 +1962,7 @@ export default function ListingDetailsPage() {
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
-                        if (confirm(`Clear "${col}" for all ${allListings.length.toLocaleString()} loaded listings?`)) {
+                        if (confirm(`Clear "${col}" for all ${visibleListings.length.toLocaleString()} loaded listings?`)) {
                           handleClearColumn(col);
                         }
                       }}
@@ -1982,6 +2039,21 @@ export default function ListingDetailsPage() {
                               ✗
                             </span>
                           )}
+                          <button
+                            onClick={() => toggleHidden(listing.itemId, !hiddenMap[listing.itemId])}
+                            title={
+                              hiddenMap[listing.itemId]
+                                ? 'Hidden from this page and every check — click to unhide'
+                                : 'Hide this listing from the page and every check (Title/Description/Duplicate)'
+                            }
+                            className={`absolute -top-1 -right-1 w-4 h-4 rounded-full flex items-center justify-center text-[9px] leading-none transition-opacity ${
+                              hiddenMap[listing.itemId]
+                                ? 'opacity-100 bg-gray-600 text-gray-200'
+                                : 'opacity-0 group-hover:opacity-100 bg-gray-800 border border-gray-700 text-gray-400 hover:text-white hover:bg-gray-700'
+                            }`}
+                          >
+                            {hiddenMap[listing.itemId] ? '👁' : '🙈'}
+                          </button>
                         </div>
                       </td>
 
