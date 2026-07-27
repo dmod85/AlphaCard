@@ -98,6 +98,7 @@ export default function ActiveListingsPage() {
   const selectAllRef = useRef<HTMLInputElement>(null);
   const [comparables, setComparables] = useState<Record<string, ComparableState>>({});
   const [openComparable, setOpenComparable] = useState<string | null>(null);
+  const asOfRef = useRef<string | null>(null);
 
   // fetchDescriptions removed as requested by user
 
@@ -130,7 +131,7 @@ export default function ActiveListingsPage() {
   const fetchListings = useCallback(async (pageNum = 1, append = false) => {
     if (append) setLoadingMore(true);
     else setLoading(true);
-    
+
     if (!append) {
       setError(null);
       setNeedsAuth(false);
@@ -138,10 +139,14 @@ export default function ActiveListingsPage() {
       setItemStates({});
       setSummary(null);
       setDescriptions({});
+      // Anchor eBay's EndTimeFrom/EndTimeTo window to the start of this scroll
+      // session — reused for every subsequent page as the user scrolls, so the
+      // underlying result set can't drift between pages (see /api/ebay/active-listings).
+      asOfRef.current = new Date().toISOString();
     }
 
     try {
-      const res = await fetch(`/api/ebay/active-listings?page=${pageNum}`);
+      const res = await fetch(`/api/ebay/active-listings?page=${pageNum}&asOf=${encodeURIComponent(asOfRef.current!)}`);
       const data = await res.json();
       if (res.status === 401 || data.error === 'EBAY_AUTH_REQUIRED') {
         setNeedsAuth(true);

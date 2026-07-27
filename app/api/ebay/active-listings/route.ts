@@ -37,13 +37,13 @@ async function callEbayApi(xmlBody: string, callName: string, token: string): Pr
   return response.text();
 }
 
-function buildGetSellerListRequest(page: number, token: string): string {
+function buildGetSellerListRequest(page: number, token: string, asOf: Date): string {
   const credentials = isOAuthToken(token)
     ? ''
     : `<RequesterCredentials><eBayAuthToken>${token}</eBayAuthToken></RequesterCredentials>`;
 
-  const now = new Date();
-  const future = new Date();
+  const now = asOf;
+  const future = new Date(asOf);
   future.setDate(future.getDate() + 120);
 
   return `<?xml version="1.0" encoding="utf-8"?>
@@ -324,9 +324,15 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const page = parseInt(searchParams.get('page') || '1', 10);
+    // Anchor the EndTimeFrom/EndTimeTo window to a single point in time shared across
+    // every page of a multi-page load (passed by the client) — recomputing "now" per
+    // page call lets eBay's underlying result set drift between pages (as GTC listings'
+    // EndTime renews mid-load), silently dropping items across page boundaries.
+    const asOfParam = searchParams.get('asOf');
+    const asOf = asOfParam && !isNaN(Date.parse(asOfParam)) ? new Date(asOfParam) : new Date();
     const token = await getValidToken();
 
-    const firstXml = buildGetSellerListRequest(page, token);
+    const firstXml = buildGetSellerListRequest(page, token, asOf);
     const firstResponse = await callEbayApi(firstXml, 'GetSellerList', token);
 
     const ack = firstResponse.match(/<Ack>(.*?)<\/Ack>/)?.[1];

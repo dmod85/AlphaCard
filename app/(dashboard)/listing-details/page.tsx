@@ -578,12 +578,17 @@ export default function ListingDetailsPage() {
 
     const specificsDone = runSpecificsWorkers(gen);
 
+    // Anchors eBay's EndTimeFrom/EndTimeTo window to the moment this load started —
+    // shared across every page request so the underlying result set can't drift
+    // mid-load (see /api/ebay/active-listings), which was silently dropping items.
+    const asOf = new Date().toISOString();
+
     try {
       let page = 1;
       let totalPages = 1;
       while (page <= totalPages) {
         if (gen !== loadGenRef.current) return; // superseded by a newer load — stop paging
-        const res = await fetch(`/api/ebay/active-listings?page=${page}`);
+        const res = await fetch(`/api/ebay/active-listings?page=${page}&asOf=${encodeURIComponent(asOf)}`);
         const data = await res.json();
         if (gen !== loadGenRef.current) return; // superseded while the request was in flight
         if (res.status === 401 || data.error === 'EBAY_AUTH_REQUIRED') {
@@ -1182,7 +1187,10 @@ export default function ListingDetailsPage() {
   ]);
 
   const sortedFiltered = useMemo(() => {
-    if (!sortCol) return filtered;
+    if (!sortCol) {
+      // Default: most recently posted listings first
+      return [...filtered].sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime());
+    }
     return [...filtered].sort((a, b) => {
       let aVal = '', bVal = '';
       if (sortCol === '__title__') { aVal = a.title; bVal = b.title; }
