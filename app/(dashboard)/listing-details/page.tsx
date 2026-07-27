@@ -183,6 +183,16 @@ function normalizeDescription(html: string): string {
   return html.replace(/[\s\r\n]+/g, ' ').trim();
 }
 
+// eBay gallery thumbnails are served at a fixed small size (e.g. ".../s-l140.jpg",
+// sometimes under a "/thumbs/" path) — bumping the size suffix and dropping "/thumbs/"
+// gets the same image at full resolution for the lightbox, with the thumbnail URL as
+// a safe fallback if the pattern doesn't match.
+function getLargeImageUrl(url: string): string {
+  return url
+    .replace('/thumbs/', '/')
+    .replace(/s-l\d+(\.(jpg|jpeg|png|webp))/i, 's-l1600$1');
+}
+
 /** Strips HTML tags down to a compact plain-text preview for the Description Check panel */
 function stripHtmlPreview(html: string): string {
   return html
@@ -427,6 +437,9 @@ export default function ListingDetailsPage() {
   // ── Duplicate check state ───────────────────────────────────────────────────
   const [dupCheckOpen, setDupCheckOpen] = useState(false);
 
+  // ── Image lightbox ──────────────────────────────────────────────────────
+  const [lightboxListing, setLightboxListing] = useState<ActiveListing | null>(null);
+
   // ── Advanced filter state ───────────────────────────────────────────────────
   const [filterPanelOpen, setFilterPanelOpen] = useState(false);
   const [filterConditions, setFilterConditions] = useState<FilterCondition[]>([]);
@@ -629,6 +642,16 @@ export default function ListingDetailsPage() {
     if (sentinelRef.current) observer.observe(sentinelRef.current);
     return () => observer.disconnect();
   }, []);
+
+  // ── Close the image lightbox on Escape ────────────────────────────────────
+  useEffect(() => {
+    if (!lightboxListing) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setLightboxListing(null);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [lightboxListing]);
 
   // Listings excluded from the page and every check (Title/Description/Duplicate)
   // via the hide toggle. hiddenListings backs the "Hidden" review panel.
@@ -2002,15 +2025,15 @@ export default function ListingDetailsPage() {
                         isItemPending ? 'opacity-60' : 'hover:bg-gray-800/20'
                       }`}
                     >
-                       {/* Thumbnail — opens the listing on eBay in a new tab */}
+                       {/* Thumbnail — click to enlarge; the lightbox links out to the live listing */}
                       <td className="px-2 py-1.5 w-14">
                         <div className="relative w-10 h-10">
-                          <a
-                            href={listing.url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            title="Open listing on eBay"
-                            className="block w-10 h-10 rounded overflow-hidden bg-gray-800 border border-gray-800 hover:border-green-500/50 transition-colors shrink-0"
+                          <button
+                            type="button"
+                            onClick={() => listing.pictureUrl && setLightboxListing(listing)}
+                            title={listing.pictureUrl ? 'Click to enlarge' : 'No image'}
+                            disabled={!listing.pictureUrl}
+                            className="block w-10 h-10 rounded overflow-hidden bg-gray-800 border border-gray-800 hover:border-green-500/50 transition-colors shrink-0 disabled:cursor-default disabled:hover:border-gray-800"
                           >
                             {listing.pictureUrl ? (
                               <img
@@ -2022,7 +2045,7 @@ export default function ListingDetailsPage() {
                             ) : (
                               <span className="w-full h-full flex items-center justify-center text-gray-700 text-[9px]">—</span>
                             )}
-                          </a>
+                          </button>
                           {/* Per-row submit button — appears on hover when this row has unsaved edits */}
                           {Object.keys(itemEdits).length > 0 && !isItemPending && (
                             <button
@@ -2174,6 +2197,47 @@ export default function ListingDetailsPage() {
           )}
         </div>
       </div>
+
+      {/* ── Image lightbox ── */}
+      {lightboxListing && (
+        <div
+          className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-6"
+          onClick={() => setLightboxListing(null)}
+        >
+          <div
+            className="bg-gray-900 border border-gray-700 rounded-xl max-w-2xl w-full max-h-[85vh] flex flex-col overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between gap-3 p-3 border-b border-gray-800 shrink-0">
+              <p className="text-xs text-gray-300 truncate">{lightboxListing.title}</p>
+              <button
+                onClick={() => setLightboxListing(null)}
+                className="text-gray-500 hover:text-gray-300 text-lg leading-none shrink-0"
+              >
+                ×
+              </button>
+            </div>
+            <div className="flex-1 min-h-0 overflow-auto flex items-center justify-center bg-black/30 p-4">
+              <img
+                src={getLargeImageUrl(lightboxListing.pictureUrl || '')}
+                alt={lightboxListing.title}
+                className="max-w-full max-h-full object-contain"
+              />
+            </div>
+            <div className="flex items-center justify-between gap-3 p-3 border-t border-gray-800 shrink-0">
+              <span className="text-xs text-gray-500">Item #{lightboxListing.itemId}</span>
+              <a
+                href={lightboxListing.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-green-500/15 hover:bg-green-500/25 border border-green-500/40 text-green-300 text-xs rounded-lg transition"
+              >
+                View listing on eBay ↗
+              </a>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
