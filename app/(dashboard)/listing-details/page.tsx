@@ -294,7 +294,7 @@ function SortIndicator({ col, sortCol, sortDir }: { col: string; sortCol: string
 function SkeletonRow({ cols }: { cols: number }) {
   return (
     <tr className="border-b border-gray-800/50 animate-pulse">
-      <td className="px-3 py-2 w-14">
+      <td className="px-3 py-2 w-14 sticky left-0 z-10 bg-gray-950">
         <div className="h-10 w-10 bg-gray-800 rounded" />
       </td>
       <td className="px-3 py-2 min-w-[260px] max-w-[340px]">
@@ -1943,8 +1943,8 @@ export default function ListingDetailsPage() {
         <table className="w-full text-sm border-collapse min-w-max">
           <thead className="sticky top-0 z-10">
             <tr className="bg-gray-900 border-b border-gray-700">
-              {/* Thumbnail header */}
-              <th className="px-3 py-3 w-14"></th>
+              {/* Thumbnail header — frozen so the image stays visible while scrolling right */}
+              <th className="px-3 py-3 w-14 sticky left-0 z-30 bg-gray-900"></th>
               {/* Title header */}
               <th className="px-3 py-3 text-left text-xs uppercase tracking-widest font-semibold min-w-[260px] max-w-[340px] whitespace-nowrap">
                 <div className="flex items-center gap-1 group/hdr">
@@ -2025,8 +2025,8 @@ export default function ListingDetailsPage() {
                         isItemPending ? 'opacity-60' : 'hover:bg-gray-800/20'
                       }`}
                     >
-                       {/* Thumbnail — click to enlarge; the lightbox links out to the live listing */}
-                      <td className="px-2 py-1.5 w-14">
+                       {/* Thumbnail — click to enlarge; the lightbox links out to the live listing. Frozen while scrolling right */}
+                      <td className="px-2 py-1.5 w-14 sticky left-0 z-10 bg-gray-950 group-hover:bg-gray-800/20">
                         <div className="relative w-10 h-10">
                           <button
                             type="button"
