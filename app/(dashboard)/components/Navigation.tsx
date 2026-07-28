@@ -42,10 +42,10 @@ export default function Navigation({
 
   return (
     <>
-      {/* Overlay — only below the xl breakpoint, where the sidebar is an off-canvas drawer */}
+      {/* Overlay — only below the nav breakpoint, where the sidebar is an off-canvas drawer */}
       {open && (
         <div
-          className="xl:hidden fixed inset-0 bg-black/60 z-40"
+          className="nav:hidden fixed inset-0 bg-black/60 z-40"
           onClick={onClose}
           aria-hidden="true"
         />
@@ -54,14 +54,14 @@ export default function Navigation({
       <nav
         className={`w-56 bg-gray-950 border-r border-gray-800 h-screen p-4 flex flex-col shrink-0
           fixed top-0 left-0 z-50 transition-transform duration-200 ease-out
-          xl:static xl:translate-x-0
+          nav:static nav:translate-x-0
           ${open ? 'translate-x-0' : '-translate-x-full'}`}
       >
         {/* Close button — only below the xl breakpoint */}
         <button
           onClick={onClose}
           aria-label="Close menu"
-          className="xl:hidden self-end -mr-1 -mt-1 mb-2 p-1.5 rounded-lg text-gray-500 hover:text-white hover:bg-gray-900 transition"
+          className="nav:hidden self-end -mr-1 -mt-1 mb-2 p-1.5 rounded-lg text-gray-500 hover:text-white hover:bg-gray-900 transition"
         >
           ✕
         </button>

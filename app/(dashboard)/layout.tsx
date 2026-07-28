@@ -7,9 +7,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [navOpen, setNavOpen] = useState(false);
 
   return (
-    <div className="flex flex-col xl:flex-row h-screen overflow-hidden bg-gray-950">
-      {/* Top bar — shown below the xl breakpoint in place of the always-visible sidebar */}
-      <div className="xl:hidden flex items-center gap-3 px-4 py-2.5 border-b border-gray-800 bg-gray-950 shrink-0">
+    <div className="flex flex-col nav:flex-row h-screen overflow-hidden bg-gray-950">
+      {/* Top bar — shown below the nav breakpoint in place of the always-visible sidebar */}
+      <div className="nav:hidden flex items-center gap-3 px-4 py-2.5 border-b border-gray-800 bg-gray-950 shrink-0">
         <button
           onClick={() => setNavOpen(true)}
           aria-label="Open menu"

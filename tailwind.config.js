@@ -4,6 +4,9 @@ module.exports = {
   darkMode: 'class',
   theme: {
     extend: {
+      screens: {
+        nav: '1680px',
+      },
       fontFamily: {
         mono: ['JetBrains Mono', 'monospace'],
         sans: ['Space Grotesk', 'sans-serif'],
