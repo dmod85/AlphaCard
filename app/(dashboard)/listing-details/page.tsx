@@ -319,6 +319,7 @@ function EditableCell({
   onStartEdit,
   onCommit,
   onCancel,
+  onNavigate,
 }: {
   value: string;
   edited: boolean;
@@ -328,6 +329,7 @@ function EditableCell({
   onStartEdit: () => void;
   onCommit: (val: string) => void;
   onCancel: () => void;
+  onNavigate?: (dir: 'up' | 'down' | 'left' | 'right') => void;
 }) {
   const [draft, setDraft] = useState(value);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -347,8 +349,9 @@ function EditableCell({
         onChange={(e) => setDraft(e.target.value)}
         onBlur={() => onCommit(draft)}
         onKeyDown={(e) => {
-          if (e.key === 'Enter') { e.preventDefault(); onCommit(draft); }
+          if (e.key === 'Enter') { e.preventDefault(); onCommit(draft); onNavigate?.(e.shiftKey ? 'up' : 'down'); }
           if (e.key === 'Escape') { e.preventDefault(); onCancel(); }
+          if (e.key === 'Tab') { e.preventDefault(); onCommit(draft); onNavigate?.(e.shiftKey ? 'left' : 'right'); }
         }}
         className="w-full min-w-[80px] max-w-[200px] bg-gray-800 border border-green-500/60 rounded px-2 py-0.5 text-xs text-white outline-none focus:border-green-400"
         autoFocus
@@ -642,16 +645,6 @@ export default function ListingDetailsPage() {
     if (sentinelRef.current) observer.observe(sentinelRef.current);
     return () => observer.disconnect();
   }, []);
-
-  // ── Close the image lightbox on Escape ────────────────────────────────────
-  useEffect(() => {
-    if (!lightboxListing) return;
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setLightboxListing(null);
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [lightboxListing]);
 
   // Listings excluded from the page and every check (Title/Description/Duplicate)
   // via the hide toggle. hiddenListings backs the "Hidden" review panel.
@@ -1228,8 +1221,61 @@ export default function ListingDetailsPage() {
     });
   }, [filtered, sortCol, sortDir, specificMap]);
 
+  // Listings the lightbox can browse to — same order as the grid, image-only
+  // since there's nothing to show for listings without a picture.
+  const lightboxNavigable = useMemo(
+    () => sortedFiltered.slice(0, visibleCount).filter((l) => l.pictureUrl),
+    [sortedFiltered, visibleCount]
+  );
+
+  const goToLightbox = useCallback((dir: 'prev' | 'next') => {
+    setLightboxListing((current) => {
+      if (!current) return current;
+      const idx = lightboxNavigable.findIndex((l) => l.itemId === current.itemId);
+      if (idx === -1) return current;
+      const newIdx = idx + (dir === 'next' ? 1 : -1);
+      if (newIdx < 0 || newIdx >= lightboxNavigable.length) return current;
+      return lightboxNavigable[newIdx];
+    });
+  }, [lightboxNavigable]);
+
+  // ── Lightbox keyboard controls: Escape closes, ←/→ browse listings ────────
+  useEffect(() => {
+    if (!lightboxListing) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setLightboxListing(null);
+      else if (e.key === 'ArrowLeft') goToLightbox('prev');
+      else if (e.key === 'ArrowRight') goToLightbox('next');
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [lightboxListing, goToLightbox]);
+
+  const lightboxIndex = lightboxListing
+    ? lightboxNavigable.findIndex((l) => l.itemId === lightboxListing.itemId)
+    : -1;
+  const lightboxHasPrev = lightboxIndex > 0;
+  const lightboxHasNext = lightboxIndex !== -1 && lightboxIndex < lightboxNavigable.length - 1;
+
   const visible = sortedFiltered.slice(0, visibleCount);
   const columns = buildColumns(specificMap);
+
+  // Move the active edit box to an adjacent cell, Excel-style: Tab/Shift+Tab
+  // steps across columns on the same row, Enter/Shift+Enter steps up/down
+  // within the same column. No-ops at the grid's edges.
+  const navigateCell = (itemId: string, col: string, dir: 'up' | 'down' | 'left' | 'right') => {
+    const allCols = ['__title__', ...columns];
+    const rowIdx = visible.findIndex((l) => l.itemId === itemId);
+    const colIdx = allCols.indexOf(col);
+    if (rowIdx === -1 || colIdx === -1) return;
+
+    const newRowIdx = rowIdx + (dir === 'up' ? -1 : dir === 'down' ? 1 : 0);
+    const newColIdx = colIdx + (dir === 'left' ? -1 : dir === 'right' ? 1 : 0);
+    if (newRowIdx < 0 || newRowIdx >= visible.length) return;
+    if (newColIdx < 0 || newColIdx >= allCols.length) return;
+
+    startEdit(visible[newRowIdx].itemId, allCols[newColIdx]);
+  };
 
   const specificsLoadedCount = useMemo(
     () => allListings.reduce((n, l) => n + (Array.isArray(specificMap[l.itemId]) ? 1 : 0), 0),
@@ -2104,6 +2150,7 @@ export default function ListingDetailsPage() {
                               onStartEdit={() => !isItemPending && startEdit(listing.itemId, '__title__')}
                               onCommit={(v) => commitEdit(listing.itemId, '__title__', v)}
                               onCancel={cancelEdit}
+                              onNavigate={(dir) => navigateCell(listing.itemId, '__title__', dir)}
                             />
                           );
                         })()}
@@ -2174,6 +2221,7 @@ export default function ListingDetailsPage() {
                               onStartEdit={() => !isItemPending && startEdit(listing.itemId, col)}
                               onCommit={(v) => commitEdit(listing.itemId, col, v)}
                               onCancel={cancelEdit}
+                              onNavigate={(dir) => navigateCell(listing.itemId, col, dir)}
                             />
                           </td>
                         );
@@ -2204,6 +2252,24 @@ export default function ListingDetailsPage() {
           className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-6"
           onClick={() => setLightboxListing(null)}
         >
+          {lightboxHasPrev && (
+            <button
+              onClick={(e) => { e.stopPropagation(); goToLightbox('prev'); }}
+              title="Previous listing"
+              className="absolute left-4 top-1/2 -translate-y-1/2 w-10 h-10 flex items-center justify-center rounded-full bg-gray-900/80 border border-gray-700 text-gray-300 hover:text-white hover:bg-gray-800 transition text-2xl leading-none z-10"
+            >
+              ‹
+            </button>
+          )}
+          {lightboxHasNext && (
+            <button
+              onClick={(e) => { e.stopPropagation(); goToLightbox('next'); }}
+              title="Next listing"
+              className="absolute right-4 top-1/2 -translate-y-1/2 w-10 h-10 flex items-center justify-center rounded-full bg-gray-900/80 border border-gray-700 text-gray-300 hover:text-white hover:bg-gray-800 transition text-2xl leading-none z-10"
+            >
+              ›
+            </button>
+          )}
           <div
             className="bg-gray-900 border border-gray-700 rounded-xl max-w-2xl w-full max-h-[85vh] flex flex-col overflow-hidden"
             onClick={(e) => e.stopPropagation()}
