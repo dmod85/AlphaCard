@@ -229,18 +229,18 @@ function buildSeoTitle(specifics: ItemSpecifics): string {
 
   let title = parts.join(' ').replace(/\s{2,}/g, ' ').trim();
 
-  // Attributes: only add the full team name if there's room within the title limit
-  if (team) {
-    const withTeam = `${title} ${team}`.replace(/\s{2,}/g, ' ').trim();
-    if (withTeam.length <= MAX_LENGTH) {
-      title = withTeam;
-    }
-  }
-
+  // Print run takes priority over team: only add each if there's room within the title limit
   if (printRun) {
     const withPrintRun = `${title} ${printRun}`.replace(/\s{2,}/g, ' ').trim();
     if (withPrintRun.length <= MAX_LENGTH) {
       title = withPrintRun;
+    }
+  }
+
+  if (team) {
+    const withTeam = `${title} ${team}`.replace(/\s{2,}/g, ' ').trim();
+    if (withTeam.length <= MAX_LENGTH) {
+      title = withTeam;
     }
   }
 
