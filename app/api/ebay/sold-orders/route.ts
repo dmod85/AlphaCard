@@ -79,6 +79,29 @@ interface SaleRow {
   buyer: string | null;
   quantity_sold: number;
   picture_url: string | null;
+  ship_to_name: string | null;
+  ship_to_street1: string | null;
+  ship_to_street2: string | null;
+  ship_to_city: string | null;
+  ship_to_state: string | null;
+  ship_to_zip: string | null;
+  ship_to_country: string | null;
+  ship_to_phone: string | null;
+  sales_record_number: string | null;
+  shipping_service: string | null;
+  order_subtotal: number | null;
+  order_shipping_cost: number | null;
+  order_tax: number | null;
+  order_total: number | null;
+  tracking_number: string | null;
+  carrier: string | null;
+  shipped_at: string | null;
+}
+
+/** Parses a numeric XML field, returning null (not 0) when absent so we don't overwrite unknowns. */
+function parseNumOrNull(str: string, tag: string): number | null {
+  const m = str.match(new RegExp(`<${tag}[^>]*>(.*?)<\\/${tag}>`));
+  return m ? parseFloat(m[1]) : null;
 }
 
 function parseOrders(xml: string): SaleRow[] {
@@ -100,6 +123,34 @@ function parseOrders(xml: string): SaleRow[] {
       decodeXml(order.match(/<UserID>(.*?)<\/UserID>/)?.[1] || '') || null;
     const createdTime =
       order.match(/<CreatedTime>(.*?)<\/CreatedTime>/)?.[1] || null;
+
+    // Ship-to address — order-level, shared by every line item on the order
+    const addrMatch = order.match(/<ShippingAddress>([\s\S]*?)<\/ShippingAddress>/);
+    const addr = addrMatch ? addrMatch[1] : '';
+    const shipToName = decodeXml(addr.match(/<Name>(.*?)<\/Name>/)?.[1] || '') || null;
+    const shipToStreet1 = decodeXml(addr.match(/<Street1>(.*?)<\/Street1>/)?.[1] || '') || null;
+    const shipToStreet2 = decodeXml(addr.match(/<Street2>(.*?)<\/Street2>/)?.[1] || '') || null;
+    const shipToCity = decodeXml(addr.match(/<CityName>(.*?)<\/CityName>/)?.[1] || '') || null;
+    const shipToState = decodeXml(addr.match(/<StateOrProvince>(.*?)<\/StateOrProvince>/)?.[1] || '') || null;
+    const shipToZip = decodeXml(addr.match(/<PostalCode>(.*?)<\/PostalCode>/)?.[1] || '') || null;
+    const shipToCountry = decodeXml(
+      addr.match(/<CountryName>(.*?)<\/CountryName>/)?.[1] ||
+      addr.match(/<Country>(.*?)<\/Country>/)?.[1] || ''
+    ) || null;
+    const shipToPhone = decodeXml(addr.match(/<Phone>(.*?)<\/Phone>/)?.[1] || '') || null;
+
+    // Order-level totals + shipping service + tracking (shared across line items)
+    const shippingService = decodeXml(
+      order.match(/<ShippingServiceSelected>[\s\S]*?<ShippingService>(.*?)<\/ShippingService>/)?.[1] || ''
+    ) || null;
+    const orderSubtotal = parseNumOrNull(order, 'Subtotal');
+    const orderShippingCost = parseNumOrNull(order, 'ShippingServiceCost');
+    const orderTax = parseNumOrNull(order, 'SalesTaxAmount');
+    const orderTotal = parseNumOrNull(order, 'Total');
+    const trackingNumber = order.match(/<ShipmentTrackingNumber>(.*?)<\/ShipmentTrackingNumber>/)?.[1] || null;
+    const carrier = order.match(/<ShippingCarrierUsed>(.*?)<\/ShippingCarrierUsed>/)?.[1] || null;
+    const shippedAt = order.match(/<ShippedTime>(.*?)<\/ShippedTime>/)?.[1] || null;
+    const salesRecordNumber = order.match(/<SalesRecordNumber>(.*?)<\/SalesRecordNumber>/)?.[1] || null;
 
     // Each order may contain multiple line items
     const transactionRegex = /<Transaction>([\s\S]*?)<\/Transaction>/g;
@@ -147,6 +198,24 @@ function parseOrders(xml: string): SaleRow[] {
           buyer,
           quantity_sold: qty,
           picture_url: pictureUrl,
+          ship_to_name: shipToName,
+          ship_to_street1: shipToStreet1,
+          ship_to_street2: shipToStreet2,
+          ship_to_city: shipToCity,
+          ship_to_state: shipToState,
+          ship_to_zip: shipToZip,
+          ship_to_country: shipToCountry,
+          ship_to_phone: shipToPhone,
+          sales_record_number:
+            tx.match(/<SalesRecordNumber>(.*?)<\/SalesRecordNumber>/)?.[1] || salesRecordNumber,
+          shipping_service: shippingService,
+          order_subtotal: orderSubtotal,
+          order_shipping_cost: orderShippingCost,
+          order_tax: orderTax,
+          order_total: orderTotal,
+          tracking_number: trackingNumber,
+          carrier,
+          shipped_at: shippedAt,
         });
       }
     }
