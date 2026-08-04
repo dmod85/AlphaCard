@@ -3,8 +3,5 @@
   "buildCommand": "next build",
   "devCommand": "next dev",
   "installCommand": "npm install",
-  "outputDirectory": ".next",
-  "crons": [
-    { "path": "/api/index", "schedule": "*/15 * * * *" }
-  ]
+  "outputDirectory": ".next"
 }
