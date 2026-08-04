@@ -159,6 +159,7 @@ async function handleItemMarkedShipped(orderId: string, data: ItemMarkedShippedD
     orderNumber: first.order_number,
     salesRecordNumber: first.sales_record_number,
     saleDate: first.sale_date,
+    buyer: first.buyer,
     shipTo: {
       name: first.ship_to_name,
       street1: first.ship_to_street1,
