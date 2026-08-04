@@ -1,0 +1,159 @@
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
+import { execFile } from 'child_process';
+import { createClient } from '@supabase/supabase-js';
+
+// -----------------------------------------------------------------------
+// Local packing-slip print agent.
+//
+// Runs on a machine that can see both Supabase (internet) and the printer
+// (local network/WiFi) — the two things Vercel's serverless webhook can't
+// reach at once. Listens on Supabase Realtime for ebay_sales rows that get
+// a packing_slip_url set (i.e. the webhook just generated a slip) and sends
+// the PDF straight to the printer via SumatraPDF's silent CLI printing.
+// Also does a one-time catch-up scan on startup for anything generated
+// while this script wasn't running.
+//
+// Required env vars (reads from .env.local in the repo root):
+//   NEXT_PUBLIC_SUPABASE_URL
+//   SUPABASE_SERVICE_KEY
+//   PRINTER_NAME   — exact Windows printer name (Settings > Printers & Scanners)
+//   SUMATRA_PATH   — path to SumatraPDF.exe (https://www.sumatrapdfreader.org,
+//                    portable build, no install needed)
+//
+// Run with: node scripts/print-agent.mjs   (leave the window open, or wire
+// it to Task Scheduler "at log on" with "restart on failure" to survive
+// reboots).
+// -----------------------------------------------------------------------
+
+function loadEnvLocal() {
+  const envPath = path.join(process.cwd(), '.env.local');
+  if (!fs.existsSync(envPath)) return;
+  for (const line of fs.readFileSync(envPath, 'utf8').split(/\r?\n/)) {
+    const m = line.match(/^([A-Z_]+)=(.*)$/);
+    if (m && !process.env[m[1]]) {
+      process.env[m[1]] = m[2].trim().replace(/^'|'$/g, '');
+    }
+  }
+}
+loadEnvLocal();
+
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY;
+const PRINTER_NAME = process.env.PRINTER_NAME;
+const SUMATRA_PATH = process.env.SUMATRA_PATH;
+
+for (const [name, val] of Object.entries({ SUPABASE_URL, SUPABASE_KEY, PRINTER_NAME, SUMATRA_PATH })) {
+  if (!val) {
+    console.error(`[print-agent] Missing required env var: ${name} (set it in .env.local)`);
+    process.exit(1);
+  }
+}
+
+const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+
+// In-flight guard so a burst of realtime events for the same order (one per
+// line item) doesn't try to print it twice concurrently before the DB claim
+// (printed_at) round-trips.
+const printing = new Set();
+
+async function claimOrder(orderNumber) {
+  const { data, error } = await supabase
+    .from('ebay_sales')
+    .update({ printed_at: new Date().toISOString() })
+    .eq('order_number', orderNumber)
+    .is('printed_at', null)
+    .not('packing_slip_url', 'is', null)
+    .select('id, packing_slip_url');
+  if (error) {
+    console.error(`[print-agent] claim failed for ${orderNumber}:`, error.message);
+    return null;
+  }
+  if (!data || data.length === 0) return null; // already claimed/printed elsewhere
+  return data[0].packing_slip_url;
+}
+
+function printPdf(filePath) {
+  return new Promise((resolve, reject) => {
+    execFile(
+      SUMATRA_PATH,
+      ['-print-to', PRINTER_NAME, '-print-settings', 'noscale', '-silent', filePath],
+      (err, stdout, stderr) => {
+        if (err) reject(new Error(stderr || err.message));
+        else resolve();
+      }
+    );
+  });
+}
+
+async function printOrder(orderNumber) {
+  if (printing.has(orderNumber)) return;
+  printing.add(orderNumber);
+  try {
+    const slipUrl = await claimOrder(orderNumber);
+    if (!slipUrl) return; // nothing to do — already printed or no slip yet
+
+    console.log(`[print-agent] printing order ${orderNumber}...`);
+    const res = await fetch(slipUrl);
+    if (!res.ok) throw new Error(`download failed: HTTP ${res.status}`);
+    const bytes = Buffer.from(await res.arrayBuffer());
+
+    const tempFile = path.join(os.tmpdir(), `packing-slip-${orderNumber.replace(/[^a-z0-9-]/gi, '_')}.pdf`);
+    fs.writeFileSync(tempFile, bytes);
+
+    await printPdf(tempFile);
+    fs.unlinkSync(tempFile);
+
+    console.log(`[print-agent] printed order ${orderNumber}`);
+  } catch (err) {
+    console.error(`[print-agent] failed to print order ${orderNumber}:`, err.message || err);
+    // Roll back the claim so it gets retried (next realtime event, or next startup catch-up).
+    await supabase.from('ebay_sales').update({ printed_at: null }).eq('order_number', orderNumber);
+  } finally {
+    printing.delete(orderNumber);
+  }
+}
+
+async function catchUpPending() {
+  const { data, error } = await supabase
+    .from('ebay_sales')
+    .select('order_number')
+    .not('packing_slip_url', 'is', null)
+    .is('printed_at', null);
+  if (error) {
+    console.error('[print-agent] catch-up query failed:', error.message);
+    return;
+  }
+  const orders = [...new Set((data ?? []).map((r) => r.order_number))];
+  if (orders.length > 0) {
+    console.log(`[print-agent] catch-up: ${orders.length} pending slip(s)`);
+  }
+  for (const orderNumber of orders) {
+    await printOrder(orderNumber);
+  }
+}
+
+function subscribe() {
+  const channel = supabase
+    .channel('packing-slip-print')
+    .on(
+      'postgres_changes',
+      { event: 'UPDATE', schema: 'public', table: 'ebay_sales' },
+      (payload) => {
+        const row = payload.new;
+        if (row.packing_slip_url && !row.printed_at) {
+          printOrder(row.order_number);
+        }
+      }
+    )
+    .subscribe((status) => {
+      console.log(`[print-agent] realtime status: ${status}`);
+    });
+  return channel;
+}
+
+console.log(`[print-agent] starting — printer "${PRINTER_NAME}"`);
+await catchUpPending();
+subscribe();
+console.log('[print-agent] listening for new packing slips (Ctrl+C to stop)...');
