@@ -165,7 +165,12 @@ async function drawSlip(
   const boxFill = rgb(0.95, 0.96, 0.97);
   const accent = rgb(0.13, 0.29, 0.72); // brand-blue accent for section labels
 
-  const M = 8; // tight outer margin — minimize white space
+  // Margin around the slip's logical edges. This maps to the PHYSICAL page's
+  // left/right/top edges once rotated (only the logical-left edge lands on
+  // the cut line, not a real page edge) — most printers can't physically
+  // print within ~0.2"-0.25" of a sheet edge regardless of what the PDF
+  // says, so this needs real breathing room, not just visual tightness.
+  const M = 18; // 0.25"
   const centerLineX = LOGICAL_W / 2;
   let y = LOGICAL_H - M;
 
