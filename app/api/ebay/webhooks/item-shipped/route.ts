@@ -3,6 +3,7 @@ import crypto from 'crypto';
 import { supabaseAdmin } from '@/app/lib/supabase-admin';
 import { verifyEbayNotificationSignature } from '@/app/lib/ebay-webhook-verify';
 import { generatePackingSlipPdf, PackingSlipOrder } from '@/app/lib/packing-slip';
+import { fetchAndUpsertOrder } from '@/app/lib/ebay-orders';
 
 // -----------------------------------------------------------------------
 // eBay Commerce Notification API webhook — topic ITEM_MARKED_SHIPPED.
@@ -116,6 +117,23 @@ export async function POST(request: NextRequest) {
 }
 
 async function handleItemMarkedShipped(orderId: string, data: ItemMarkedShippedData) {
+  // A label can be bought before this order has ever gone through the
+  // periodic sold-orders sync (e.g. shipped within seconds of the sale) —
+  // in that case there's no local row to attach tracking/address/slip to,
+  // so fetch it fresh from eBay first.
+  const { data: existing } = await supabaseAdmin
+    .from('ebay_sales')
+    .select('id')
+    .eq('order_number', orderId)
+    .limit(1);
+  if (!existing || existing.length === 0) {
+    try {
+      await fetchAndUpsertOrder(orderId);
+    } catch (err: any) {
+      console.error(`[item-shipped webhook] failed to fetch order ${orderId} from eBay:`, err.message || err);
+    }
+  }
+
   // Persist tracking info on every line item belonging to this order.
   await supabaseAdmin
     .from('ebay_sales')
