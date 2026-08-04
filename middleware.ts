@@ -10,6 +10,13 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
+  // The cron-triggered search scan (api/index.py) is called by cron-job.org
+  // with no browser session — it authenticates itself via the CRON_SECRET
+  // bearer header instead, so it must bypass the session check too.
+  if (request.nextUrl.pathname === '/api/index') {
+    return NextResponse.next();
+  }
+
   let response = NextResponse.next({ request });
 
   const supabase = createServerClient(
