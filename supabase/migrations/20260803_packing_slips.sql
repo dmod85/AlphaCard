@@ -56,14 +56,23 @@ VALUES (
 )
 ON CONFLICT (id) DO NOTHING;
 
-CREATE POLICY IF NOT EXISTS "packing_slips_public_read"
-  ON storage.objects FOR SELECT
-  USING (bucket_id = 'packing-slips');
+DO $$ BEGIN
+  CREATE POLICY "packing_slips_public_read"
+    ON storage.objects FOR SELECT
+    USING (bucket_id = 'packing-slips');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
-CREATE POLICY IF NOT EXISTS "packing_slips_service_upload"
-  ON storage.objects FOR INSERT
-  WITH CHECK (bucket_id = 'packing-slips');
+DO $$ BEGIN
+  CREATE POLICY "packing_slips_service_upload"
+    ON storage.objects FOR INSERT
+    WITH CHECK (bucket_id = 'packing-slips');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
-CREATE POLICY IF NOT EXISTS "packing_slips_service_update"
-  ON storage.objects FOR UPDATE
-  USING (bucket_id = 'packing-slips');
+DO $$ BEGIN
+  CREATE POLICY "packing_slips_service_update"
+    ON storage.objects FOR UPDATE
+    USING (bucket_id = 'packing-slips');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
