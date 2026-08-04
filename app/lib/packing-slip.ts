@@ -12,18 +12,23 @@ import {
   concatTransformationMatrix,
 } from 'pdf-lib';
 
-// Physical page = the label stock actually loaded in the printer: 4.25" x 5.5".
-const PAGE_W = 4.25 * 72; // 306pt
+// Physical page = a half-letter landscape sheet: 8.5" x 5.5". Two of these
+// print top/bottom on one 8.5x11 sheet, which you then cut ONCE across the
+// middle — no quartering needed.
+const PAGE_W = 8.5 * 72; // 612pt
 const PAGE_H = 5.5 * 72; // 396pt
 
-// The printer feeds this stock such that content needs to be rotated 90°
-// to print right-side-up, so instead of relying on the PDF's page-level
-// /Rotate flag (support for which varies across print pipelines/drivers),
-// the whole layout below is authored in normal upright coordinates and
-// baked into the content stream pre-rotated via a single transform matrix
-// pushed once at the top of the page. Flip ROTATE_CW to reverse direction
-// if it comes out backwards on your printer.
+// The printed half-sheet gets physically rotated 90° in hand to be read
+// (that's the whole point of the layout below), so instead of relying on
+// the PDF's page-level /Rotate flag (support for which varies across print
+// pipelines/drivers), content is authored on a portrait "logical" canvas —
+// the dimensions swapped from the physical page — and baked into the
+// content stream pre-rotated via a single transform matrix pushed once at
+// the top of the page. Flip ROTATE_CW to reverse direction if it comes out
+// backwards on your printer.
 const ROTATE_CW = true;
+const LOGICAL_W = PAGE_H; // 396pt (5.5") — logical canvas width
+const LOGICAL_H = PAGE_W; // 612pt (8.5") — logical canvas height
 
 // Drop a logo at one of these paths (relative to the repo's public/ dir) to
 // have it appear centered in the header. Falls back to store-name text only
@@ -133,7 +138,9 @@ function wrapText(text: string, font: PDFFont, size: number, maxWidth: number): 
 }
 
 /**
- * Generates a 4.25"x5.5" packing slip PDF for one order, content rotated 90°.
+ * Generates an 8.5"x5.5" (half-letter landscape) packing slip PDF for one
+ * order, content rotated 90° so the printed half-sheet reads correctly when
+ * turned in hand.
  */
 export async function generatePackingSlipPdf(order: PackingSlipOrder): Promise<Uint8Array> {
   const pdfDoc = await PDFDocument.create();
@@ -143,8 +150,8 @@ export async function generatePackingSlipPdf(order: PackingSlipOrder): Promise<U
   const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
 
   const matrix: [number, number, number, number, number, number] = ROTATE_CW
-    ? [0, 1, -1, 0, PAGE_H, 0]
-    : [0, -1, 1, 0, 0, PAGE_W];
+    ? [0, 1, -1, 0, LOGICAL_H, 0]
+    : [0, -1, 1, 0, 0, LOGICAL_W];
   page.pushOperators(pushGraphicsState(), concatTransformationMatrix(...matrix));
 
   const gray = rgb(0.45, 0.45, 0.45);
@@ -154,8 +161,8 @@ export async function generatePackingSlipPdf(order: PackingSlipOrder): Promise<U
   const accent = rgb(0.13, 0.29, 0.72); // brand-blue accent for section labels
 
   const M = 8; // tight outer margin — minimize white space
-  const centerLineX = PAGE_W / 2;
-  let y = PAGE_H - M;
+  const centerLineX = LOGICAL_W / 2;
+  let y = LOGICAL_H - M;
 
   // ---- Header: logo + store name centered, QR top-right --------------------
   const qrImage = order.storeUrl ? await embedQrCode(pdfDoc, order.storeUrl) : null;
@@ -184,10 +191,10 @@ export async function generatePackingSlipPdf(order: PackingSlipOrder): Promise<U
   });
 
   if (qrImage) {
-    page.drawImage(qrImage, { x: PAGE_W - M - qrSize, y: headerTop - qrSize, width: qrSize, height: qrSize });
+    page.drawImage(qrImage, { x: LOGICAL_W - M - qrSize, y: headerTop - qrSize, width: qrSize, height: qrSize });
     const caption = 'Visit Our Store';
     page.drawText(caption, {
-      x: rightX(font, caption, 5.5, PAGE_W - M),
+      x: rightX(font, caption, 5.5, LOGICAL_W - M),
       y: headerTop - qrSize - 8,
       size: 5.5,
       font,
@@ -197,13 +204,13 @@ export async function generatePackingSlipPdf(order: PackingSlipOrder): Promise<U
 
   y = Math.min(storeNameY, headerTop - qrSize - 8) - 8;
 
-  page.drawLine({ start: { x: M, y }, end: { x: PAGE_W - M, y }, thickness: 1, color: accent });
+  page.drawLine({ start: { x: M, y }, end: { x: LOGICAL_W - M, y }, thickness: 1, color: accent });
   y -= 12;
 
   // ---- Order meta (left) + Ship To box (right) ------------------------------
   const colGutter = 8;
   const rightColW = 138;
-  const rightColX = PAGE_W - M - rightColW;
+  const rightColX = LOGICAL_W - M - rightColW;
   const leftColRight = rightColX - colGutter;
   const metaTop = y;
 
@@ -260,12 +267,12 @@ export async function generatePackingSlipPdf(order: PackingSlipOrder): Promise<U
 
   y = Math.min(leftY, boxBottom) - 6;
 
-  page.drawLine({ start: { x: M, y }, end: { x: PAGE_W - M, y }, thickness: 0.75, color: lightGray });
+  page.drawLine({ start: { x: M, y }, end: { x: LOGICAL_W - M, y }, thickness: 0.75, color: lightGray });
   y -= 12;
 
   // ---- Items ----------------------------------------------------------------
   const imgSize = 32;
-  const totalColRight = PAGE_W - M;
+  const totalColRight = LOGICAL_W - M;
   const priceColRight = totalColRight - 40;
   const qtyColRight = priceColRight - 32;
   const textX = M + imgSize + 6;
@@ -276,7 +283,7 @@ export async function generatePackingSlipPdf(order: PackingSlipOrder): Promise<U
   page.drawText('Price', { x: rightX(font, 'Price', 6, priceColRight), y, size: 6, font, color: gray });
   page.drawText('Total', { x: rightX(font, 'Total', 6, totalColRight), y, size: 6, font, color: gray });
   y -= 9;
-  page.drawLine({ start: { x: M, y }, end: { x: PAGE_W - M, y }, thickness: 0.75, color: lightGray });
+  page.drawLine({ start: { x: M, y }, end: { x: LOGICAL_W - M, y }, thickness: 0.75, color: lightGray });
   y -= 9;
 
   for (const item of order.items) {
@@ -314,7 +321,7 @@ export async function generatePackingSlipPdf(order: PackingSlipOrder): Promise<U
     y = rowTop - imgSize - 5;
   }
 
-  page.drawLine({ start: { x: M, y }, end: { x: PAGE_W - M, y }, thickness: 0.75, color: lightGray });
+  page.drawLine({ start: { x: M, y }, end: { x: LOGICAL_W - M, y }, thickness: 0.75, color: lightGray });
   y -= 10;
 
   // ---- Shipping service -------------------------------------------------------
