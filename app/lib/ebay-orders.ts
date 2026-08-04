@@ -6,6 +6,7 @@ import {
   clearTokenCache,
 } from '@/app/lib/ebay-auth';
 import { supabaseAdmin } from '@/app/lib/supabase-admin';
+import { getAppAccessToken, ebayApiRoot } from '@/app/lib/ebay-app-token';
 
 // -----------------------------------------------------------------------
 // Shared eBay Trading API (GetOrders / GetOrder) parsing + sync helpers.
@@ -231,34 +232,44 @@ export function parseOrders(xml: string): SaleRow[] {
 }
 
 // -----------------------------------------------------------------------
-// Fetch images via Shopping API (GetMultipleItems)
+// Fetch images via the Browse API (get_item_by_legacy_id).
+// The Trading API's GetOrders/GetOrder responses don't include item photos,
+// and the old Shopping API (GetMultipleItems) that used to backfill them
+// was decommissioned by eBay in Feb 2025 — this replaces it. Browse API has
+// no batch-by-legacy-id lookup, so items are fetched individually with
+// bounded concurrency.
 // -----------------------------------------------------------------------
-export async function fetchImagesForItems(itemIds: string[]): Promise<Record<string, string>> {
-  const appId = process.env.EBAY_APP_ID;
-  if (!appId || itemIds.length === 0) return {};
+const IMAGE_FETCH_CONCURRENCY = 5;
 
+export async function fetchImagesForItems(itemIds: string[]): Promise<Record<string, string>> {
+  if (itemIds.length === 0) return {};
+
+  const token = await getAppAccessToken();
   const map: Record<string, string> = {};
 
-  // Shopping API allows max 20 items per call
-  for (let i = 0; i < itemIds.length; i += 20) {
-    const chunk = itemIds.slice(i, i + 20);
-    const url = `https://open.api.ebay.com/shopping?callname=GetMultipleItems&responseencoding=JSON&appid=${appId}&siteid=0&version=1199&ItemID=${chunk.join(',')}`;
-
+  async function fetchOne(itemId: string) {
     try {
-      const res = await fetch(url);
-      const data = await res.json();
-      if (data.Item) {
-        for (const item of data.Item) {
-          if (item.GalleryURL) {
-            map[item.ItemID] = item.GalleryURL;
-          } else if (item.PictureURL && item.PictureURL.length > 0) {
-            map[item.ItemID] = item.PictureURL[0];
-          }
+      const res = await fetch(
+        `${ebayApiRoot()}/buy/browse/v1/item/get_item_by_legacy_id?legacy_item_id=${itemId}`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'X-EBAY-C-MARKETPLACE-ID': 'EBAY_US',
+          },
         }
-      }
+      );
+      if (!res.ok) return;
+      const data = await res.json();
+      const url = data?.image?.imageUrl;
+      if (url) map[itemId] = url;
     } catch {
-      // ignore errors for image fetching
+      // ignore errors for image fetching — packing slip just renders without a photo
     }
+  }
+
+  for (let i = 0; i < itemIds.length; i += IMAGE_FETCH_CONCURRENCY) {
+    const chunk = itemIds.slice(i, i + IMAGE_FETCH_CONCURRENCY);
+    await Promise.all(chunk.map(fetchOne));
   }
 
   return map;
