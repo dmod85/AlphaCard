@@ -1,11 +1,5 @@
 import { NextResponse } from 'next/server';
-
-const EBAY_SCOPES = [
-  'https://api.ebay.com/oauth/api_scope',
-  'https://api.ebay.com/oauth/api_scope/sell.inventory',
-  'https://api.ebay.com/oauth/api_scope/sell.fulfillment',
-  'https://api.ebay.com/oauth/api_scope/sell.marketing',
-].join(' ');
+import { EBAY_SCOPES } from '@/app/lib/ebay-auth';
 
 export async function GET() {
   const isProd = process.env.EBAY_ENVIRONMENT?.trim() === 'PRODUCTION';

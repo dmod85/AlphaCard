@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
-import { getAppAccessToken, ebayApiRoot } from '@/app/lib/ebay-app-token';
+import { ebayApiRoot } from '@/app/lib/ebay-app-token';
+import { getValidToken } from '@/app/lib/ebay-auth';
 
 // -----------------------------------------------------------------------
 // One-time (idempotent) setup for the ITEM_MARKED_SHIPPED webhook.
@@ -9,6 +10,15 @@ import { getAppAccessToken, ebayApiRoot } from '@/app/lib/ebay-app-token';
 // ITEM_MARKED_SHIPPED. eBay will immediately GET EBAY_WEBHOOK_URL with a
 // challenge_code to verify ownership — that must resolve (i.e. this app
 // must already be deployed and reachable) before this call will succeed.
+//
+// ITEM_MARKED_SHIPPED is a USER-scoped topic (per getTopic's "scope":
+// "USER", requiring the commerce.shipping authorization scope) — not an
+// application-scoped one — so this must run as the seller's own OAuth
+// user token (same one used for order syncing), not a client_credentials
+// app token. The seller must have re-authorized at /ebay-connect after
+// commerce.notification.subscription + commerce.shipping were added to
+// EBAY_SCOPES in ebay-auth.ts, or this will fail with EBAY_AUTH_REQUIRED
+// or a scope-related 401/403 from eBay.
 // -----------------------------------------------------------------------
 
 const TOPIC_ID = 'ITEM_MARKED_SHIPPED';
@@ -102,7 +112,7 @@ export async function POST() {
   try {
     const endpoint = requireEnv('EBAY_WEBHOOK_URL');
     const verificationToken = requireEnv('EBAY_WEBHOOK_VERIFICATION_TOKEN');
-    const token = await getAppAccessToken();
+    const token = await getValidToken();
 
     let destinationId = await findExistingDestination(token, endpoint);
     let destinationReused = true;

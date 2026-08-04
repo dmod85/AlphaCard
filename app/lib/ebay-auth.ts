@@ -12,11 +12,17 @@
 
 import { supabaseAdmin } from './supabase-admin';
 
-const EBAY_SCOPES = [
+export const EBAY_SCOPES = [
   'https://api.ebay.com/oauth/api_scope',
   'https://api.ebay.com/oauth/api_scope/sell.inventory',
   'https://api.ebay.com/oauth/api_scope/sell.fulfillment',
   'https://api.ebay.com/oauth/api_scope/sell.marketing',
+  // Required for the ITEM_MARKED_SHIPPED webhook subscription — that topic
+  // is USER-scoped (per-seller), not application-scoped, so managing its
+  // Notification API destination/subscription needs a user token carrying
+  // both of these, not just the generic client_credentials app token.
+  'https://api.ebay.com/oauth/api_scope/commerce.notification.subscription',
+  'https://api.ebay.com/oauth/api_scope/commerce.shipping',
 ].join(' ');
 
 /** In-memory cache so we don't refresh on every single API call */
