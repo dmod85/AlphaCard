@@ -127,6 +127,7 @@ function sanitize(raw: Record<string, any>) {
     ...(raw.team !== undefined && { team: raw.team || null }),
     ...(raw.box_size !== undefined && { box_size: raw.box_size || null }),
     ...(raw.cost !== undefined && { cost: parseFloat(raw.cost) || 0 }),
+    ...(raw.quantity !== undefined && { quantity: parseInt(raw.quantity) || 1 }),
     ...(raw.sku !== undefined && { sku: raw.sku || null }),
     ...(raw.bought_from !== undefined && { bought_from: raw.bought_from || 'eBay' }),
     ...(raw.notes !== undefined && { notes: raw.notes || null }),

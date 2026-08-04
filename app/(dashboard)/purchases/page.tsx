@@ -14,6 +14,7 @@ interface Purchase {
   team: string | null;
   box_size: string | null;
   cost: number;
+  quantity: number;
   sku: string | null;
   bought_from: string | null;
   notes: string | null;
@@ -25,6 +26,8 @@ interface SkuGroup {
   purchases: Purchase[];
   totalCost: number;
   totalSales: number;
+  totalQuantity: number;
+  quantitySold: number;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -43,6 +46,7 @@ const EMPTY_FORM = {
   team: '',
   box_size: '',
   cost: '',
+  quantity: '1',
   sku: '',
   bought_from: 'eBay',
   notes: '',
@@ -56,7 +60,7 @@ function CsvImportModal({ onClose, onImported }: { onClose: () => void; onImport
   const [importing, setImporting] = useState(false);
   const [error, setError] = useState('');
 
-  const HEADERS = ['purchase_date', 'year', 'brand', 'series', 'sport', 'team', 'box_size', 'cost', 'sku', 'bought_from'];
+  const HEADERS = ['purchase_date', 'year', 'brand', 'series', 'sport', 'team', 'box_size', 'cost', 'quantity', 'sku', 'bought_from'];
 
   function parseCSV(raw: string) {
     const lines = raw.trim().split('\n').filter(Boolean);
@@ -91,6 +95,7 @@ function CsvImportModal({ onClose, onImported }: { onClose: () => void; onImport
         team: r.team || null,
         box_size: r.box_size || null,
         cost: parseFloat(r.cost?.replace(/[^0-9.]/g, '') || '0') || 0,
+        quantity: parseInt(r.quantity || '1') || 1,
         sku: r.sku || r.reference_number || null,
         bought_from: r.bought_from || 'eBay',
         notes: r.notes || null,
@@ -260,6 +265,7 @@ function PurchaseModal({
           team: initial.team ?? '',
           box_size: initial.box_size ?? '',
           cost: initial.cost?.toString() ?? '',
+          quantity: initial.quantity?.toString() ?? '1',
           sku: initial.sku ?? '',
           bought_from: initial.bought_from ?? 'eBay',
           notes: initial.notes ?? '',
@@ -341,6 +347,7 @@ function PurchaseModal({
         <div className="p-5 grid grid-cols-2 gap-4">
           <Field label="Purchase Date *" value={form.purchase_date} onChange={v => set('purchase_date', v)} type="date" />
           <Field label="Cost ($) *" value={form.cost} onChange={v => set('cost', v)} type="number" inputMode="decimal" placeholder="0.00" />
+          <Field label="# of Cards" value={form.quantity} onChange={v => set('quantity', v.replace(/\D/g, ''))} type="number" inputMode="numeric" placeholder="1" />
 
           {/* Year — text field, numeric keyboard, strips non-digits, max 4 chars */}
           <div>
@@ -566,6 +573,31 @@ function EditableCell({
   );
 }
 
+// ─── Sold Progress Badge ────────────────────────────────────────────────────────
+
+function SoldBadge({ sold, total }: { sold: number; total: number }) {
+  if (total <= 0) return <span className="text-gray-600">—</span>;
+  const capped = Math.min(sold, total);
+  const pct = capped / total;
+  const color =
+    sold === 0 ? 'text-gray-500 bg-gray-800' :
+    pct >= 1 ? 'text-green-400 bg-green-500/10' :
+    'text-yellow-400 bg-yellow-500/10';
+  return (
+    <div className="flex items-center gap-2">
+      <span className={`text-[11px] font-medium px-1.5 py-0.5 rounded ${color}`}>
+        {sold} / {total}
+      </span>
+      <div className="w-12 h-1.5 bg-gray-800 rounded-full overflow-hidden">
+        <div
+          className={`h-full rounded-full ${pct >= 1 ? 'bg-green-500' : sold > 0 ? 'bg-yellow-500' : 'bg-gray-700'}`}
+          style={{ width: `${Math.min(pct, 1) * 100}%` }}
+        />
+      </div>
+    </div>
+  );
+}
+
 // ─── SKU Pill with copy ───────────────────────────────────────────────────────
 
 function SkuPill({ sku, onCopy }: { sku: string | null; onCopy: (s: string) => void }) {
@@ -644,6 +676,19 @@ function SkuGroupRow({
             <EditableCell purchase={first} field="cost" type="number" onSaved={onRefresh} />
           )}
         </td>
+        <td className="px-3 py-3 text-sm text-gray-300 tabular-nums">
+          {hasSubs ? (
+            <div>
+              {group.totalQuantity}
+              <span className="ml-1 text-[10px] text-gray-600">total</span>
+            </div>
+          ) : (
+            <EditableCell purchase={first} field="quantity" type="number" onSaved={onRefresh} />
+          )}
+        </td>
+        <td className="px-3 py-3">
+          <SoldBadge sold={group.quantitySold} total={group.totalQuantity} />
+        </td>
         <td className="px-3 py-3 text-sm tabular-nums">
           {group.totalSales > 0 ? (
             <div className="flex items-center gap-2">
@@ -698,6 +743,8 @@ function SkuGroupRow({
           <td className="px-3 py-2 text-xs text-gray-300"><EditableCell purchase={p} field="sport" type="select" options={SPORTS} onSaved={onRefresh} /></td>
           <td className="px-3 py-2 text-xs text-gray-400"><EditableCell purchase={p} field="box_size" type="select" options={BOX_SIZES} onSaved={onRefresh} /></td>
           <td className="px-3 py-2 text-xs text-green-400 tabular-nums"><EditableCell purchase={p} field="cost" type="number" onSaved={onRefresh} /></td>
+          <td className="px-3 py-2 text-xs text-gray-300 tabular-nums"><EditableCell purchase={p} field="quantity" type="number" onSaved={onRefresh} /></td>
+          <td className="px-3 py-2" /> {/* empty Sold for sub-row (rolled up in parent) */}
           <td className="px-3 py-2" /> {/* empty Total Sales for sub-row */}
           <td className="px-3 py-2">
             <SkuPill sku={p.sku} onCopy={onCopySkU} />
@@ -764,9 +811,11 @@ export default function PurchasesPage() {
   // Group by sku
   const groups: SkuGroup[] = (() => {
     const skuTotalSalesMap = new Map<string, number>();
+    const skuQuantitySoldMap = new Map<string, number>();
     sales.forEach(s => {
       if (s.sku) {
         skuTotalSalesMap.set(s.sku, (skuTotalSalesMap.get(s.sku) ?? 0) + s.sold_for);
+        skuQuantitySoldMap.set(s.sku, (skuQuantitySoldMap.get(s.sku) ?? 0) + (s.quantity_sold ?? 1));
       }
     });
 
@@ -781,6 +830,8 @@ export default function PurchasesPage() {
       purchases: ps,
       totalCost: ps.reduce((s, p) => s + p.cost, 0),
       totalSales: ps[0].sku ? (skuTotalSalesMap.get(ps[0].sku) ?? 0) : 0,
+      totalQuantity: ps.reduce((s, p) => s + (p.quantity ?? 1), 0),
+      quantitySold: ps[0].sku ? (skuQuantitySoldMap.get(ps[0].sku) ?? 0) : 0,
     }));
   })();
 
@@ -884,6 +935,8 @@ export default function PurchasesPage() {
                 <th className="px-3 py-3">Sport</th>
                 <th className="px-3 py-3">Box Size</th>
                 <th className="px-3 py-3">Cost</th>
+                <th className="px-3 py-3"># Cards</th>
+                <th className="px-3 py-3">Sold</th>
                 <th className="px-3 py-3">Total Sales (ROI)</th>
                 <th className="px-3 py-3">SKU</th>
                 <th className="px-3 py-3">Source</th>
@@ -920,6 +973,7 @@ export default function PurchasesPage() {
             team: null,
             box_size: null,
             cost: 0,
+            quantity: 1,
             sku: preFillSku,
             bought_from: 'eBay',
             notes: null,
