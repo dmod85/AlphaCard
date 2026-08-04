@@ -120,6 +120,14 @@ export interface WatchlistPlayer {
   active: boolean;
 }
 
+export interface SearchQuery {
+  id: string;
+  query: string;
+  max_price: number;
+  active: boolean;
+  created_at: string;
+}
+
 export interface DashboardStats {
   total_leads: number;
   new_leads: number;
