@@ -2,6 +2,14 @@ import { createServerClient, type CookieOptions } from '@supabase/ssr';
 import { NextRequest, NextResponse } from 'next/server';
 
 export async function middleware(request: NextRequest) {
+  // eBay's servers call these directly (challenge handshake + notification
+  // delivery) with no way to hold a logged-in session, so they must bypass
+  // the auth check entirely — otherwise every call gets redirected to
+  // /login and the webhook never fires.
+  if (request.nextUrl.pathname.startsWith('/api/ebay/webhooks/')) {
+    return NextResponse.next();
+  }
+
   let response = NextResponse.next({ request });
 
   const supabase = createServerClient(
