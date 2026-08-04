@@ -3,6 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import {
   PDFDocument,
+  PDFPage,
   PDFFont,
   PDFImage,
   StandardFonts,
@@ -12,23 +13,30 @@ import {
   concatTransformationMatrix,
 } from 'pdf-lib';
 
-// Physical page = a half-letter landscape sheet: 8.5" x 5.5". Two of these
-// print top/bottom on one 8.5x11 sheet, which you then cut ONCE across the
-// middle — no quartering needed.
-const PAGE_W = 8.5 * 72; // 612pt
-const PAGE_H = 5.5 * 72; // 396pt
+// The physical PDF page is a full, plain portrait Letter sheet (8.5"x11").
+// It's deliberately NOT shaped like the 8.5"x5.5" half-slip itself — a
+// landscape-shaped page makes browsers/print drivers auto-switch physical
+// print orientation to Landscape, which stacks a second, unwanted rotation
+// on top of the one already baked into the content below and clips content
+// off the edge. A plain portrait Letter page needs no orientation guessing:
+// it's the standard shape every printer expects by default.
+const LETTER_W = 8.5 * 72; // 612pt
+const LETTER_H = 11 * 72; // 792pt
+const HALF_H = 5.5 * 72; // 396pt — height of each half-sheet slip
 
-// The printed half-sheet gets physically rotated 90° in hand to be read
-// (that's the whole point of the layout below), so instead of relying on
-// the PDF's page-level /Rotate flag (support for which varies across print
-// pipelines/drivers), content is authored on a portrait "logical" canvas —
-// the dimensions swapped from the physical page — and baked into the
-// content stream pre-rotated via a single transform matrix pushed once at
-// the top of the page. Flip ROTATE_CW to reverse direction if it comes out
-// backwards on your printer.
+// Print this at 100% ("Actual size", not "Fit to page") on a standard
+// portrait Letter sheet, then cut once across the middle — no quartering.
+// The top half is the slip; the bottom half is intentionally left blank
+// (a spot for a second slip if this is ever extended to 2-up printing).
+//
+// Each half's content is authored on a portrait "logical" canvas — the
+// half's dimensions swapped — and baked into the content stream
+// pre-rotated via a transform matrix, so it reads correctly once you
+// physically turn the cut half-sheet 90° in hand. Flip ROTATE_CW to
+// reverse direction if it comes out backwards on your printer.
 const ROTATE_CW = true;
-const LOGICAL_W = PAGE_H; // 396pt (5.5") — logical canvas width
-const LOGICAL_H = PAGE_W; // 612pt (8.5") — logical canvas height
+const LOGICAL_W = HALF_H; // 396pt (5.5") — logical canvas width
+const LOGICAL_H = LETTER_W; // 612pt (8.5") — logical canvas height
 
 // Drop a logo at one of these paths (relative to the repo's public/ dir) to
 // have it appear centered in the header. Falls back to store-name text only
@@ -137,21 +145,18 @@ function wrapText(text: string, font: PDFFont, size: number, maxWidth: number): 
   return lines;
 }
 
-/**
- * Generates an 8.5"x5.5" (half-letter landscape) packing slip PDF for one
- * order, content rotated 90° so the printed half-sheet reads correctly when
- * turned in hand.
- */
-export async function generatePackingSlipPdf(order: PackingSlipOrder): Promise<Uint8Array> {
-  const pdfDoc = await PDFDocument.create();
-  const page = pdfDoc.addPage([PAGE_W, PAGE_H]);
-
-  const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
-  const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
-
+/** Draws one order's slip content into a half-sheet region, rotated 90°, with its physical bottom edge at y=offsetY. */
+async function drawSlip(
+  page: PDFPage,
+  pdfDoc: PDFDocument,
+  order: PackingSlipOrder,
+  font: PDFFont,
+  fontBold: PDFFont,
+  offsetY: number
+) {
   const matrix: [number, number, number, number, number, number] = ROTATE_CW
-    ? [0, 1, -1, 0, LOGICAL_H, 0]
-    : [0, -1, 1, 0, 0, LOGICAL_W];
+    ? [0, 1, -1, 0, LOGICAL_H, offsetY]
+    : [0, -1, 1, 0, offsetY, LOGICAL_W];
   page.pushOperators(pushGraphicsState(), concatTransformationMatrix(...matrix));
 
   const gray = rgb(0.45, 0.45, 0.45);
@@ -211,7 +216,6 @@ export async function generatePackingSlipPdf(order: PackingSlipOrder): Promise<U
   const colGutter = 8;
   const rightColW = 138;
   const rightColX = LOGICAL_W - M - rightColW;
-  const leftColRight = rightColX - colGutter;
   const metaTop = y;
 
   const dateStr = order.saleDate
@@ -355,6 +359,29 @@ export async function generatePackingSlipPdf(order: PackingSlipOrder): Promise<U
   }
 
   page.pushOperators(popGraphicsState());
+}
+
+/**
+ * Generates a plain portrait Letter (8.5"x11") PDF with one order's packing
+ * slip rotated 90° into the top half. Print at 100% ("Actual size") and cut
+ * once across the middle to get an 8.5"x5.5" slip. Pass a second order to
+ * fill the bottom half too (e.g. for batch printing two orders per sheet);
+ * otherwise it's left blank.
+ */
+export async function generatePackingSlipPdf(
+  order: PackingSlipOrder,
+  secondOrder?: PackingSlipOrder | null
+): Promise<Uint8Array> {
+  const pdfDoc = await PDFDocument.create();
+  const page = pdfDoc.addPage([LETTER_W, LETTER_H]);
+
+  const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+  const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+
+  await drawSlip(page, pdfDoc, order, font, fontBold, HALF_H);
+  if (secondOrder) {
+    await drawSlip(page, pdfDoc, secondOrder, font, fontBold, 0);
+  }
 
   return pdfDoc.save();
 }
