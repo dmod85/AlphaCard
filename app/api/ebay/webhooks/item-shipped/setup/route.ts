@@ -41,6 +41,26 @@ async function ebayFetch(path: string, token: string, init?: RequestInit) {
   return res;
 }
 
+// The Notification API refuses ALL destination/subscription calls — even
+// read-only ones — with a generic 195003 "Please provide configurations
+// required for notifications" until an account-level alert config exists.
+// This is undocumented on the createDestination/createSubscription pages
+// themselves; it only turns up on the separate config resource's docs.
+async function ensureAlertConfig(token: string): Promise<void> {
+  const getRes = await ebayFetch('/commerce/notification/v1/config', token);
+  if (getRes.ok) return; // already configured
+
+  const alertEmail = process.env.STORE_ALERT_EMAIL?.trim() || 'dmod85@gmail.com';
+  const putRes = await ebayFetch('/commerce/notification/v1/config', token, {
+    method: 'PUT',
+    body: JSON.stringify({ alertEmail }),
+  });
+  if (!putRes.ok) {
+    const text = await putRes.text();
+    throw new Error(`updateConfig failed: ${putRes.status} ${text}`);
+  }
+}
+
 async function findExistingDestination(token: string, endpoint: string): Promise<string | null> {
   const res = await ebayFetch('/commerce/notification/v1/destination?limit=100', token);
   if (!res.ok) return null;
@@ -113,6 +133,8 @@ export async function POST() {
     const endpoint = requireEnv('EBAY_WEBHOOK_URL');
     const verificationToken = requireEnv('EBAY_WEBHOOK_VERIFICATION_TOKEN');
     const token = await getValidToken();
+
+    await ensureAlertConfig(token);
 
     let destinationId = await findExistingDestination(token, endpoint);
     let destinationReused = true;
