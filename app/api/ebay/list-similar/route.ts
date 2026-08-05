@@ -28,6 +28,7 @@ function buildGetItemRequest(itemId: string, token: string): string {
   ${credentials}
   <ItemID>${itemId}</ItemID>
   <IncludeItemSpecifics>true</IncludeItemSpecifics>
+  <DetailLevel>ItemReturnDescription</DetailLevel>
   <ErrorLanguage>en_US</ErrorLanguage>
   <WarningLevel>High</WarningLevel>
 </GetItemRequest>`;
