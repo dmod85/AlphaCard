@@ -48,9 +48,9 @@ const SPEC_BATCH = 20;
 const SPEC_CONCURRENCY = 4;
 
 type SpecificMap = Record<string, NameValuePair[] | 'loading' | 'error'>;
-// Views (HitCount) / Watchers (WatchCount) — fetched alongside specifics but
-// kept in their own map since, unlike specifics, they're never cached forever.
-type ListingStats = { hitCount: number | null; watchCount: number | null };
+// Watchers (WatchCount) — fetched alongside specifics but kept in its own
+// map since, unlike specifics, it's never cached forever.
+type ListingStats = { watchCount: number | null };
 type StatsMap = Record<string, ListingStats | 'loading' | 'error'>;
 type SortDir = 'asc' | 'desc';
 // edits[itemId][colName] = new value
@@ -211,10 +211,10 @@ function getFieldValue(listing: ActiveListing, col: string, specificMap: Specifi
   if (col === '__title__') {
     return edits[listing.itemId]?.['__title__'] ?? listing.title;
   }
-  if (col === '__views__' || col === '__watchers__') {
+  if (col === '__watchers__') {
     const stats = statsMap?.[listing.itemId];
     if (!stats || stats === 'loading' || stats === 'error') return '';
-    const n = col === '__views__' ? stats.hitCount : stats.watchCount;
+    const n = stats.watchCount;
     return n === null || n === undefined ? '' : String(n);
   }
   const specs = specificMap[listing.itemId];
@@ -312,7 +312,6 @@ function SkeletonRow({ cols }: { cols: number }) {
       <td className="px-3 py-2 min-w-[260px] max-w-[340px]">
         <div className="h-3 bg-gray-800 rounded w-5/6 mb-1.5" />
       </td>
-      <td className="px-3 py-2"><div className="h-2.5 w-8 bg-gray-800 rounded" /></td>
       <td className="px-3 py-2"><div className="h-2.5 w-8 bg-gray-800 rounded" /></td>
       {Array.from({ length: cols }).map((_, i) => (
         <td key={i} className="px-3 py-2">
@@ -469,6 +468,10 @@ export default function ListingDetailsPage() {
   // ── Duplicate check state ───────────────────────────────────────────────────
   const [dupCheckOpen, setDupCheckOpen] = useState(false);
 
+  // ── Old listings check state ────────────────────────────────────────────────
+  const [oldListingsOpen, setOldListingsOpen] = useState(false);
+  const [oldListingsDays, setOldListingsDays] = useState(20);
+
   // ── Image lightbox ──────────────────────────────────────────────────────
   const [lightboxListing, setLightboxListing] = useState<ActiveListing | null>(null);
 
@@ -543,7 +546,7 @@ export default function ListingDetailsPage() {
       if (gen !== loadGenRef.current) return; // superseded by a newer load — drop the result
       const results = data.results as {
         itemId: string; specifics: NameValuePair[]; descriptionOk: boolean; titleLocked: boolean; hidden: boolean;
-        hitCount: number | null; watchCount: number | null;
+        watchCount: number | null;
       }[];
       setSpecificMap((prev) => {
         const next = { ...prev };
@@ -555,7 +558,7 @@ export default function ListingDetailsPage() {
       });
       setStatsMap((prev) => {
         const next = { ...prev };
-        for (const r of results) next[r.itemId] = { hitCount: r.hitCount, watchCount: r.watchCount };
+        for (const r of results) next[r.itemId] = { watchCount: r.watchCount };
         return next;
       });
       setTitleLockedMap((prev) => {
@@ -1065,6 +1068,22 @@ export default function ListingDetailsPage() {
     [duplicateGroups]
   );
 
+  // ── Old listings: live longer than oldListingsDays, oldest first ──────────
+  const oldListings = useMemo(() => {
+    const cutoff = Date.now() - oldListingsDays * 24 * 60 * 60 * 1000;
+    return visibleListings
+      .filter((l) => new Date(l.startTime).getTime() < cutoff)
+      .map((l) => ({
+        itemId: l.itemId,
+        title: l.title,
+        url: l.url,
+        daysLive: Math.floor((Date.now() - new Date(l.startTime).getTime()) / 86_400_000),
+      }))
+      .sort((a, b) => b.daysLive - a.daysLive);
+  }, [visibleListings, oldListingsDays]);
+
+  const oldListingItemIds = useMemo(() => new Set(oldListings.map((l) => l.itemId)), [oldListings]);
+
   const toggleDescSyncSelected = useCallback((itemId: string) => {
     setDescSyncSelected((prev) => {
       const next = new Set(prev);
@@ -1346,12 +1365,17 @@ export default function ListingDetailsPage() {
       result = result.filter((l) => duplicateItemIds.has(l.itemId));
     }
 
+    if (oldListingsOpen) {
+      result = result.filter((l) => oldListingItemIds.has(l.itemId));
+    }
+
     return result;
   }, [
     visibleListings, hiddenListings, hiddenPanelOpen, search, activeFilterConditions, specificMap, edits, statsMap,
     titleSyncOpen, titleSyncMismatchIds,
     descSyncOpen, descSyncMismatchIds,
-    dupCheckOpen, duplicateItemIds
+    dupCheckOpen, duplicateItemIds,
+    oldListingsOpen, oldListingItemIds
   ]);
 
   const sortedFiltered = useMemo(() => {
@@ -1362,12 +1386,11 @@ export default function ListingDetailsPage() {
     return [...filtered].sort((a, b) => {
       let aVal = '', bVal = '';
       if (sortCol === '__title__') { aVal = a.title; bVal = b.title; }
-      else if (sortCol === '__views__' || sortCol === '__watchers__') {
+      else if (sortCol === '__watchers__') {
         const aStats = statsMap[a.itemId];
         const bStats = statsMap[b.itemId];
-        const key = sortCol === '__views__' ? 'hitCount' : 'watchCount';
-        aVal = aStats && aStats !== 'loading' && aStats !== 'error' && aStats[key] !== null ? String(aStats[key]) : '￿';
-        bVal = bStats && bStats !== 'loading' && bStats !== 'error' && bStats[key] !== null ? String(bStats[key]) : '￿';
+        aVal = aStats && aStats !== 'loading' && aStats !== 'error' && aStats.watchCount !== null ? String(aStats.watchCount) : '￿';
+        bVal = bStats && bStats !== 'loading' && bStats !== 'error' && bStats.watchCount !== null ? String(bStats.watchCount) : '￿';
       } else {
         const aSpecs = specificMap[a.itemId];
         const bSpecs = specificMap[b.itemId];
@@ -1564,6 +1587,24 @@ export default function ListingDetailsPage() {
           {duplicateGroups.length > 0 && (
             <span className="inline-flex items-center justify-center w-4 h-4 bg-orange-500/30 text-orange-300 rounded-full text-[10px] font-bold">
               {duplicateGroups.length}
+            </span>
+          )}
+        </button>
+
+        {/* Old listings toggle */}
+        <button
+          onClick={() => setOldListingsOpen((v) => !v)}
+          title={`Find listings that have been live for more than ${oldListingsDays} days`}
+          className={`flex items-center gap-1.5 px-3 py-1.5 border text-xs rounded-lg transition ${
+            oldListingsOpen
+              ? 'bg-rose-500/15 border-rose-500/40 text-rose-300 hover:bg-rose-500/25'
+              : 'bg-gray-800 hover:bg-gray-700 border-gray-700 text-gray-300'
+          }`}
+        >
+          🕰 Old Listings
+          {oldListings.length > 0 && (
+            <span className="inline-flex items-center justify-center w-4 h-4 bg-rose-500/30 text-rose-300 rounded-full text-[10px] font-bold">
+              {oldListings.length}
             </span>
           )}
         </button>
@@ -1870,7 +1911,6 @@ export default function ListingDetailsPage() {
                 className="bg-gray-800 border border-gray-700 rounded-lg px-2 py-1.5 text-xs text-gray-200 outline-none focus:border-blue-500/60 max-w-[180px]"
               >
                 <option value="__title__">Title</option>
-                <option value="__views__">Views</option>
                 <option value="__watchers__">Watchers</option>
                 {columns.map((col) => (
                   <option key={col} value={col}>{col}</option>
@@ -2152,6 +2192,55 @@ export default function ListingDetailsPage() {
         </div>
       )}
 
+      {/* ── Old Listings Panel ── */}
+      {oldListingsOpen && (
+        <div className="bg-gray-900/98 border-b border-rose-500/40 px-5 py-3 flex flex-col gap-2">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] text-rose-400/70 uppercase tracking-widest font-semibold">
+                Listings live more than
+              </span>
+              <input
+                type="number"
+                min={1}
+                value={oldListingsDays}
+                onChange={(e) => setOldListingsDays(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                className="w-14 bg-gray-800 border border-gray-700 focus:border-rose-500/60 rounded-lg px-2 py-1 text-xs text-gray-200 outline-none transition"
+              />
+              <span className="text-[11px] text-gray-600">days ago</span>
+            </div>
+            <button
+              onClick={() => setOldListingsOpen(false)}
+              className="px-2 py-1 text-gray-600 hover:text-gray-400 text-xs rounded transition"
+              title="Close"
+            >
+              ✕
+            </button>
+          </div>
+
+          {oldListings.length === 0 ? (
+            <p className="text-xs text-gray-600">No listings older than {oldListingsDays} days.</p>
+          ) : (
+            <div className="max-h-64 overflow-y-auto rounded-lg border border-gray-800 divide-y divide-gray-800/70">
+              {oldListings.map((item) => (
+                <div key={item.itemId} className="flex items-center gap-2 px-3 py-2">
+                  <a
+                    href={item.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-xs text-rose-300/80 hover:text-rose-200 truncate flex-1 min-w-0 underline underline-offset-2 decoration-rose-500/30 hover:decoration-rose-300/60 transition-colors"
+                    title={`Open on eBay: ${item.title}`}
+                  >
+                    {item.title || <em className="text-gray-600">(no title)</em>}
+                  </a>
+                  <span className="text-[10px] text-gray-500 shrink-0">{item.daysLive}d</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Legend */}
       {changedCount > 0 && (
         <div className="px-6 py-2 bg-amber-500/5 border-b border-amber-500/20 flex items-center gap-4 text-[11px] text-amber-400/80">
@@ -2219,17 +2308,6 @@ export default function ListingDetailsPage() {
                     ⇄
                   </button>
                 </div>
-              </th>
-              {/* Views (HitCount) header */}
-              <th className="px-3 py-3 text-left text-xs uppercase tracking-widest font-semibold whitespace-nowrap">
-                <span
-                  className={`cursor-pointer select-none hover:text-gray-200 transition-colors ${sortCol === '__views__' ? 'text-green-400' : 'text-gray-500'}`}
-                  onClick={() => handleSort('__views__')}
-                  title="Number of times this listing's page has been viewed"
-                >
-                  Views
-                  <SortIndicator col="__views__" sortCol={sortCol} sortDir={sortDir} />
-                </span>
               </th>
               {/* Watchers (WatchCount) header */}
               <th className="px-3 py-3 text-left text-xs uppercase tracking-widest font-semibold whitespace-nowrap">
@@ -2427,34 +2505,19 @@ export default function ListingDetailsPage() {
                         </button>
                       </td>
 
-                      {/* Views / Watchers — read-only, not editable (eBay's own live counters) */}
+                      {/* Watchers — read-only, not editable (eBay's own live counter) */}
                       {(() => {
                         const stats = statsMap[listing.itemId];
                         if (!stats || stats === 'loading') {
-                          return (
-                            <>
-                              <td className="px-3 py-2"><div className="h-2.5 w-8 bg-gray-800 rounded animate-pulse" /></td>
-                              <td className="px-3 py-2"><div className="h-2.5 w-8 bg-gray-800 rounded animate-pulse" /></td>
-                            </>
-                          );
+                          return <td className="px-3 py-2"><div className="h-2.5 w-8 bg-gray-800 rounded animate-pulse" /></td>;
                         }
                         if (stats === 'error') {
-                          return (
-                            <>
-                              <td className="px-3 py-2"><span className="text-[10px] text-red-700">err</span></td>
-                              <td className="px-3 py-2"><span className="text-[10px] text-red-700">err</span></td>
-                            </>
-                          );
+                          return <td className="px-3 py-2"><span className="text-[10px] text-red-700">err</span></td>;
                         }
                         return (
-                          <>
-                            <td className="px-3 py-2 whitespace-nowrap">
-                              <span className="text-xs text-gray-300">{stats.hitCount ?? <span className="text-gray-700">—</span>}</span>
-                            </td>
-                            <td className="px-3 py-2 whitespace-nowrap">
-                              <span className="text-xs text-gray-300">{stats.watchCount ?? <span className="text-gray-700">—</span>}</span>
-                            </td>
-                          </>
+                          <td className="px-3 py-2 whitespace-nowrap">
+                            <span className="text-xs text-gray-300">{stats.watchCount ?? <span className="text-gray-700">—</span>}</span>
+                          </td>
                         );
                       })()}
 
