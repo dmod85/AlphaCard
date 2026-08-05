@@ -53,7 +53,7 @@ const ADD_ITEM_STRIP_TAGS = [
   'BuyerResponsibleForShipping', 'ApplicationData',
   // Deprecated Trading API input fields that GetItem still echoes back —
   // eBay ignores them on AddItem but complains via a warning if present.
-  'OutOfStockControl', 'HideFromSearch',
+  'OutOfStockControl', 'HideFromSearch', 'ListingDesigner',
 ];
 
 function stripDisallowedForAddItem(itemXml: string): string {
@@ -86,6 +86,45 @@ function stripDeprecatedCalculatedShippingRateFields(itemXml: string): string {
     }
     return `<CalculatedShippingRate>${cleaned}</CalculatedShippingRate>`;
   });
+}
+
+// eBay keeps deprecating individual Item fields out from under GetItem's
+// response (OutOfStockControl, ListingDesigner, nested shipping weights, …) —
+// each one only surfaces once we hit it in production. Rather than patching
+// ADD_ITEM_STRIP_TAGS one field at a time forever, parse eBay's own
+// "AddItemRequest.Item.X.Y.Z is deprecated" errors and strip whatever it
+// names, then retry — so a newly-deprecated field self-heals instead of
+// failing every "List Similar" run until the next code change.
+const DEPRECATED_FIELD_RETRY_LIMIT = 5;
+
+function extractDeprecatedFieldPaths(errorXml: string): string[] {
+  const paths: string[] = [];
+  const regex = /input object "AddItemRequest\.Item\.([^"]+)" is deprecated/g;
+  let m;
+  while ((m = regex.exec(errorXml)) !== null) paths.push(m[1]);
+  return paths;
+}
+
+function stripTag(xml: string, tag: string): string {
+  return xml
+    .replace(new RegExp(`<${tag}(?:\\s[^>]*)?>[\\s\\S]*?<\\/${tag}>`, 'g'), '')
+    .replace(new RegExp(`<${tag}(?:\\s[^>]*)?\\/>`, 'g'), '');
+}
+
+// path looks like "ShippingDetails.CalculatedShippingRate.WeightMajor" or
+// just "ListingDesigner" — scope the strip to the immediate parent element
+// when there is one, since some leaf tag names (e.g. WeightMajor) are also
+// legitimate elsewhere in the document at a different nesting level.
+function stripDeprecatedFieldAtPath(itemXml: string, path: string): string {
+  const segments = path.split('.');
+  const leaf = segments[segments.length - 1];
+  if (segments.length === 1) return stripTag(itemXml, leaf);
+
+  const parent = segments[segments.length - 2];
+  const parentRegex = new RegExp(`<${parent}(?:\\s[^>]*)?>([\\s\\S]*?)<\\/${parent}>`);
+  const match = itemXml.match(parentRegex);
+  if (!match) return itemXml;
+  return itemXml.replace(parentRegex, `<${parent}>${stripTag(match[1], leaf)}</${parent}>`);
 }
 
 function buildAddItemRequest(itemInnerXml: string, token: string): string {
@@ -174,11 +213,23 @@ export async function POST(request: NextRequest) {
           if (!itemMatch) {
             return { itemId, success: false, ended: false, error: 'Could not parse item details from eBay' };
           }
-          const cleanedItemXml = stripDeprecatedCalculatedShippingRateFields(stripDisallowedForAddItem(itemMatch[1]));
+          let cleanedItemXml = stripDeprecatedCalculatedShippingRateFields(stripDisallowedForAddItem(itemMatch[1]));
 
-          const addXml = buildAddItemRequest(cleanedItemXml, token);
-          const addRes = await callEbayApi(addXml, 'AddItem', token);
-          const addAck = addRes.match(/<Ack>(.*?)<\/Ack>/)?.[1];
+          let addRes = '';
+          let addAck: string | undefined;
+          for (let attempt = 0; attempt <= DEPRECATED_FIELD_RETRY_LIMIT; attempt++) {
+            addRes = await callEbayApi(buildAddItemRequest(cleanedItemXml, token), 'AddItem', token);
+            addAck = addRes.match(/<Ack>(.*?)<\/Ack>/)?.[1];
+            if (addAck === 'Success' || addAck === 'Warning') break;
+
+            const deprecatedPaths = extractDeprecatedFieldPaths(addRes);
+            if (deprecatedPaths.length === 0 || attempt === DEPRECATED_FIELD_RETRY_LIMIT) break;
+
+            console.warn(`[list-similar] ${itemId}: auto-stripping newly-deprecated field(s): ${deprecatedPaths.join(', ')}`);
+            for (const path of deprecatedPaths) {
+              cleanedItemXml = stripDeprecatedFieldAtPath(cleanedItemXml, path);
+            }
+          }
           if (addAck !== 'Success' && addAck !== 'Warning') {
             return { itemId, success: false, ended: false, error: firstErrorMessage(addRes) };
           }
