@@ -451,7 +451,11 @@ export default function ListingDetailsPage() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [listSimilarOpen, setListSimilarOpen] = useState(false);
   const [listSimilarRunning, setListSimilarRunning] = useState(false);
-  // itemId -> outcome of the last List Similar run for that item
+  // itemId -> outcome of the last List Similar run for that item.
+  // status 'error' + ended:true is the critical case: the original was ended
+  // but its replacement failed, leaving the item unlisted with nothing live.
+  // status 'success' + ended:false means the replacement went live but the
+  // original failed to end (endError set) — a harmless duplicate, end it manually.
   const [listSimilarResults, setListSimilarResults] = useState<Record<string, {
     status: 'pending' | 'success' | 'error';
     ended?: boolean;
@@ -935,8 +939,13 @@ export default function ListingDetailsPage() {
     setListSimilarOpen(false);
   }, [listSimilarRunning]);
 
-  // ── List Similar: create a fresh listing for each selected item, then end
-  // the original — only if its replacement was created successfully.
+  // ── List Similar: for each selected item, the server tries the safe order
+  // first (create replacement, then end original — zero risk if create
+  // fails). Only if that create fails does it fall back to ending the
+  // original first and retrying, which can rescue eBay's "identical item"
+  // duplicate-policy block but is riskier: a failure there (ended:true,
+  // success:false) means the item is now unlisted with nothing to replace
+  // it, unlike ended:false (nothing happened — safe to retry).
   const runListSimilar = useCallback(async () => {
     const ids = Array.from(selectedIds);
     if (ids.length === 0 || listSimilarRunning) return;
@@ -985,10 +994,11 @@ export default function ListingDetailsPage() {
         return next;
       });
 
-      // Drop originals from the grid once their replacement is live and they've
-      // actually been ended — items where AddItem succeeded but EndItem failed
-      // stay visible (with endError surfaced) since they're still live on eBay.
-      const endedIds = new Set(results.filter((r) => r.success && r.ended).map((r) => r.itemId));
+      // Drop originals from the grid whenever they were actually ended on
+      // eBay — including the critical case where the replacement then failed
+      // to create, since the original genuinely isn't active anymore either
+      // way. That failure is surfaced prominently in the modal itself.
+      const endedIds = new Set(results.filter((r) => r.ended).map((r) => r.itemId));
       if (endedIds.size > 0) {
         setAllListings((prev) => prev.filter((l) => !endedIds.has(l.itemId)));
         setSelectedIds((prev) => {
@@ -2663,8 +2673,10 @@ export default function ListingDetailsPage() {
             <div className="px-4 py-3 border-b border-gray-800 shrink-0">
               <p className="text-xs text-amber-300/90 bg-amber-500/10 border border-amber-500/30 rounded-lg px-3 py-2">
                 ⚠ This creates a brand-new eBay listing for each item below using its current title, description
-                and specifics, then permanently ends the original as soon as its replacement is live. New listings
-                may incur eBay insertion fees, and ended listings cannot be restored.
+                and specifics, then ends the original. If eBay blocks the new listing as a duplicate of the
+                still-live original, it falls back to ending the original first and retrying — and if that retry
+                then fails, the item is left <strong>unlisted with nothing to replace it</strong>, requiring a
+                manual relist. New listings may incur eBay insertion fees, and ended listings cannot be restored.
               </p>
             </div>
 
@@ -2695,7 +2707,13 @@ export default function ListingDetailsPage() {
                           ) : 'New listing'} created, but ending the original failed: {result.endError}. End it manually on eBay.
                         </p>
                       )}
-                      {result?.status === 'error' && (
+                      {result?.status === 'error' && result.ended && (
+                        <p className="text-red-300 mt-0.5 font-medium">
+                          ‼ Original was ended, but creating the replacement failed: {result.error}. This item is
+                          now unlisted — relist it manually.
+                        </p>
+                      )}
+                      {result?.status === 'error' && !result.ended && (
                         <p className="text-red-400/90 mt-0.5">✗ {result.error}</p>
                       )}
                     </div>
@@ -2705,7 +2723,8 @@ export default function ListingDetailsPage() {
                       )}
                       {result?.status === 'success' && result.ended && <span className="text-green-400">✓</span>}
                       {result?.status === 'success' && !result.ended && <span className="text-amber-400">⚠</span>}
-                      {result?.status === 'error' && <span className="text-red-400">✗</span>}
+                      {result?.status === 'error' && result.ended && <span className="text-red-300">‼</span>}
+                      {result?.status === 'error' && !result.ended && <span className="text-red-400">✗</span>}
                     </span>
                   </div>
                 );

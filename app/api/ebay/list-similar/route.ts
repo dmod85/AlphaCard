@@ -127,6 +127,37 @@ function stripDeprecatedFieldAtPath(itemXml: string, path: string): string {
   return itemXml.replace(parentRegex, `<${parent}>${stripTag(match[1], leaf)}</${parent}>`);
 }
 
+/**
+ * Calls AddItem, auto-stripping and retrying on any newly-deprecated field
+ * errors eBay reports (see extractDeprecatedFieldPaths above). Returns the
+ * final response/ack plus the item XML as of the last attempt, so a caller
+ * retrying after an EndItem fallback can start from whatever was already
+ * learned instead of rediscovering the same deprecated fields again.
+ */
+async function attemptAddItem(
+  itemId: string,
+  itemXml: string,
+  token: string
+): Promise<{ addRes: string; addAck: string | undefined; itemXml: string }> {
+  let cleanedItemXml = itemXml;
+  let addRes = '';
+  let addAck: string | undefined;
+  for (let attempt = 0; attempt <= DEPRECATED_FIELD_RETRY_LIMIT; attempt++) {
+    addRes = await callEbayApi(buildAddItemRequest(cleanedItemXml, token), 'AddItem', token);
+    addAck = addRes.match(/<Ack>(.*?)<\/Ack>/)?.[1];
+    if (addAck === 'Success' || addAck === 'Warning') break;
+
+    const deprecatedPaths = extractDeprecatedFieldPaths(addRes);
+    if (deprecatedPaths.length === 0 || attempt === DEPRECATED_FIELD_RETRY_LIMIT) break;
+
+    console.warn(`[list-similar] ${itemId}: auto-stripping newly-deprecated field(s): ${deprecatedPaths.join(', ')}`);
+    for (const path of deprecatedPaths) {
+      cleanedItemXml = stripDeprecatedFieldAtPath(cleanedItemXml, path);
+    }
+  }
+  return { addRes, addAck, itemXml: cleanedItemXml };
+}
+
 function buildAddItemRequest(itemInnerXml: string, token: string): string {
   const credentials = isOAuthToken(token)
     ? ''
@@ -183,11 +214,21 @@ interface ListSimilarResult {
  * POST /api/ebay/list-similar
  * Body: { itemIds: string[] }
  *
- * For each item: fetch its full details (GetItem), create a new listing
- * with the same details (AddItem), and — only if that succeeds — end the
- * original (EndItem). An item whose AddItem call fails leaves its original
- * untouched. An item whose AddItem succeeds but EndItem fails is reported
- * with success=true, ended=false so the caller knows to end it manually.
+ * For each item: fetch its full details (GetItem), then try the SAFE order
+ * first — create the replacement (AddItem) while the original is still
+ * live, then end the original (EndItem). If AddItem fails there (e.g. eBay's
+ * "identical item" duplicate policy blocking a second live copy of the same
+ * item), fall back to ending the original first and retrying AddItem once
+ * more — which sidesteps that conflict, but is riskier: if the fallback's
+ * AddItem also fails, the item is left unlisted with nothing to replace it.
+ *
+ * Result semantics:
+ * - success=true, ended=true: replacement is live, original ended. Best case.
+ * - success=true, ended=false: replacement is live, but ending the original
+ *   failed (endError set) — a harmless duplicate now exists; end it manually.
+ * - success=false, ended=false: nothing happened — safe to just retry.
+ * - success=false, ended=true: CRITICAL — original ended, replacement never
+ *   went live. Caller must treat this as urgent (item is now unlisted).
  */
 export async function POST(request: NextRequest) {
   try {
@@ -201,6 +242,7 @@ export async function POST(request: NextRequest) {
 
     const results = await Promise.all(
       itemIds.map(async (itemId): Promise<ListSimilarResult> => {
+        let ended = false;
         try {
           const getXml = buildGetItemRequest(itemId, token);
           const getRes = await callEbayApi(getXml, 'GetItem', token);
@@ -213,43 +255,53 @@ export async function POST(request: NextRequest) {
           if (!itemMatch) {
             return { itemId, success: false, ended: false, error: 'Could not parse item details from eBay' };
           }
-          let cleanedItemXml = stripDeprecatedCalculatedShippingRateFields(stripDisallowedForAddItem(itemMatch[1]));
+          const initialItemXml = stripDeprecatedCalculatedShippingRateFields(stripDisallowedForAddItem(itemMatch[1]));
 
-          let addRes = '';
-          let addAck: string | undefined;
-          for (let attempt = 0; attempt <= DEPRECATED_FIELD_RETRY_LIMIT; attempt++) {
-            addRes = await callEbayApi(buildAddItemRequest(cleanedItemXml, token), 'AddItem', token);
-            addAck = addRes.match(/<Ack>(.*?)<\/Ack>/)?.[1];
-            if (addAck === 'Success' || addAck === 'Warning') break;
+          // 1. Safe order: create while the original is still live. Zero risk
+          // if this fails — the original is untouched.
+          const firstAttempt = await attemptAddItem(itemId, initialItemXml, token);
 
-            const deprecatedPaths = extractDeprecatedFieldPaths(addRes);
-            if (deprecatedPaths.length === 0 || attempt === DEPRECATED_FIELD_RETRY_LIMIT) break;
-
-            console.warn(`[list-similar] ${itemId}: auto-stripping newly-deprecated field(s): ${deprecatedPaths.join(', ')}`);
-            for (const path of deprecatedPaths) {
-              cleanedItemXml = stripDeprecatedFieldAtPath(cleanedItemXml, path);
+          if (firstAttempt.addAck === 'Success' || firstAttempt.addAck === 'Warning') {
+            const newItemId = firstAttempt.addRes.match(/<ItemID>(.*?)<\/ItemID>/)?.[1];
+            if (!newItemId) {
+              return { itemId, success: false, ended: false, error: 'eBay did not return a new item ID' };
             }
-          }
-          if (addAck !== 'Success' && addAck !== 'Warning') {
-            return { itemId, success: false, ended: false, error: firstErrorMessage(addRes) };
+            const newItemUrl = buildViewItemUrl(newItemId);
+
+            const endRes = await callEbayApi(buildEndItemRequest(itemId, token), 'EndItem', token);
+            const endAck = endRes.match(/<Ack>(.*?)<\/Ack>/)?.[1];
+            if (endAck !== 'Success' && endAck !== 'Warning') {
+              return { itemId, success: true, ended: false, newItemId, newItemUrl, endError: firstErrorMessage(endRes) };
+            }
+            return { itemId, success: true, ended: true, newItemId, newItemUrl };
           }
 
-          const newItemId = addRes.match(/<ItemID>(.*?)<\/ItemID>/)?.[1];
-          if (!newItemId) {
-            return { itemId, success: false, ended: false, error: 'eBay did not return a new item ID' };
-          }
-          const newItemUrl = buildViewItemUrl(newItemId);
+          // 2. Fallback: the safe-order create failed — end the original and
+          // retry once more, picking up from whatever fields the first
+          // attempt already learned were deprecated. From here on, a failure
+          // is critical: the original is gone with nothing yet to replace it.
+          const firstAddError = firstErrorMessage(firstAttempt.addRes);
 
-          const endXml = buildEndItemRequest(itemId, token);
-          const endRes = await callEbayApi(endXml, 'EndItem', token);
+          const endRes = await callEbayApi(buildEndItemRequest(itemId, token), 'EndItem', token);
           const endAck = endRes.match(/<Ack>(.*?)<\/Ack>/)?.[1];
           if (endAck !== 'Success' && endAck !== 'Warning') {
-            return { itemId, success: true, ended: false, newItemId, newItemUrl, endError: firstErrorMessage(endRes) };
+            // Nothing changed — surface the original create failure, it's the root cause.
+            return { itemId, success: false, ended: false, error: firstAddError };
+          }
+          ended = true;
+
+          const retryAttempt = await attemptAddItem(itemId, firstAttempt.itemXml, token);
+          if (retryAttempt.addAck !== 'Success' && retryAttempt.addAck !== 'Warning') {
+            return { itemId, success: false, ended: true, error: firstErrorMessage(retryAttempt.addRes) };
           }
 
-          return { itemId, success: true, ended: true, newItemId, newItemUrl };
+          const newItemId = retryAttempt.addRes.match(/<ItemID>(.*?)<\/ItemID>/)?.[1];
+          if (!newItemId) {
+            return { itemId, success: false, ended: true, error: 'eBay did not return a new item ID' };
+          }
+          return { itemId, success: true, ended: true, newItemId, newItemUrl: buildViewItemUrl(newItemId) };
         } catch (err: any) {
-          return { itemId, success: false, ended: false, error: err.message || 'Network error' };
+          return { itemId, success: false, ended, error: err.message || 'Network error' };
         }
       })
     );
