@@ -467,33 +467,35 @@ export default function SalesPage() {
                       })()}
                     </td>
 
-                    {/* Shipped — set by the ITEM_MARKED_SHIPPED webhook; updates live via realtime */}
+                    {/* Shipped — tracking set by the ITEM_MARKED_SHIPPED webhook (updates live via
+                        realtime); the slip link always hits the on-demand regenerate endpoint rather
+                        than the webhook-stored packing_slip_url, so it works even if that webhook's
+                        own backfill silently failed (see /api/ebay/packing-slip/[orderNumber]) */}
                     <td className="px-3 py-3 text-xs whitespace-nowrap">
-                      {sale.tracking_number ? (
-                        <div className="flex flex-col gap-0.5">
+                      <div className="flex flex-col gap-0.5">
+                        {sale.tracking_number ? (
                           <span className="text-gray-300">
                             {sale.carrier ? `${sale.carrier} ` : ''}
                             <span className="font-mono">{sale.tracking_number}</span>
                           </span>
-                          <div className="flex items-center gap-2">
-                            {sale.shipped_at && (
-                              <span className="text-gray-600">{fmtDate(sale.shipped_at)}</span>
-                            )}
-                            {sale.packing_slip_url && (
-                              <a
-                                href={sale.packing_slip_url}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="text-blue-400 hover:text-blue-300 underline underline-offset-2"
-                              >
-                                slip
-                              </a>
-                            )}
-                          </div>
+                        ) : (
+                          <span className="text-gray-700 italic">not yet shipped</span>
+                        )}
+                        <div className="flex items-center gap-2">
+                          {sale.shipped_at && (
+                            <span className="text-gray-600">{fmtDate(sale.shipped_at)}</span>
+                          )}
+                          <a
+                            href={`/api/ebay/packing-slip/${encodeURIComponent(sale.order_number)}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-blue-400 hover:text-blue-300 underline underline-offset-2"
+                            title="Regenerate and view/print the packing slip for this order"
+                          >
+                            {sale.packing_slip_url ? 'reprint slip' : 'print slip'}
+                          </a>
                         </div>
-                      ) : (
-                        <span className="text-gray-700 italic">not yet shipped</span>
-                      )}
+                      </div>
                     </td>
                   </tr>
                 );
