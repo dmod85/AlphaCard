@@ -294,7 +294,8 @@ function SortIndicator({ col, sortCol, sortDir }: { col: string; sortCol: string
 function SkeletonRow({ cols }: { cols: number }) {
   return (
     <tr className="border-b border-gray-800/50 animate-pulse">
-      <td className="px-3 py-2 w-14 sticky left-0 z-10 bg-gray-950">
+      <td className="px-2 py-2 w-9 sticky left-0 z-10 bg-gray-950" />
+      <td className="px-3 py-2 w-14 sticky left-9 z-10 bg-gray-950">
         <div className="h-10 w-10 bg-gray-800 rounded" />
       </td>
       <td className="px-3 py-2 min-w-[260px] max-w-[340px]">
@@ -432,6 +433,20 @@ export default function ListingDetailsPage() {
   // (persisted in Supabase — see /api/ebay/hidden-listings)
   const [hiddenMap, setHiddenMap] = useState<Record<string, boolean>>({});
   const [hiddenPanelOpen, setHiddenPanelOpen] = useState(false);
+
+  // ── Row selection + List Similar state ────────────────────────────────────
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [listSimilarOpen, setListSimilarOpen] = useState(false);
+  const [listSimilarRunning, setListSimilarRunning] = useState(false);
+  // itemId -> outcome of the last List Similar run for that item
+  const [listSimilarResults, setListSimilarResults] = useState<Record<string, {
+    status: 'pending' | 'success' | 'error';
+    ended?: boolean;
+    newItemId?: string;
+    newItemUrl?: string;
+    error?: string;
+    endError?: string;
+  }>>({});
 
   // ── Description sync state ──────────────────────────────────────────────────
   const [descSyncOpen, setDescSyncOpen] = useState(false);
@@ -855,6 +870,110 @@ export default function ListingDetailsPage() {
     }
   }, []);
 
+  // ── Row selection ─────────────────────────────────────────────────────────
+  const toggleSelected = useCallback((itemId: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(itemId)) next.delete(itemId);
+      else next.add(itemId);
+      return next;
+    });
+  }, []);
+
+  const clearSelection = useCallback(() => setSelectedIds(new Set()), []);
+
+  // Snapshot titles at the moment the modal opens so item names still show
+  // even after a successful run removes ended originals from allListings.
+  const [listSimilarItems, setListSimilarItems] = useState<{ itemId: string; title: string }[]>([]);
+
+  const openListSimilar = useCallback(() => {
+    setListSimilarItems(
+      allListings.filter((l) => selectedIds.has(l.itemId)).map((l) => ({ itemId: l.itemId, title: l.title }))
+    );
+    setListSimilarResults({});
+    setListSimilarOpen(true);
+  }, [allListings, selectedIds]);
+
+  const closeListSimilar = useCallback(() => {
+    if (listSimilarRunning) return;
+    setListSimilarOpen(false);
+  }, [listSimilarRunning]);
+
+  // ── List Similar: create a fresh listing for each selected item, then end
+  // the original — only if its replacement was created successfully.
+  const runListSimilar = useCallback(async () => {
+    const ids = Array.from(selectedIds);
+    if (ids.length === 0 || listSimilarRunning) return;
+    setListSimilarRunning(true);
+    setListSimilarResults((prev) => {
+      const next = { ...prev };
+      ids.forEach((id) => { next[id] = { status: 'pending' }; });
+      return next;
+    });
+
+    try {
+      const res = await fetch('/api/ebay/list-similar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ itemIds: ids }),
+      });
+      const data = await res.json();
+
+      if (res.status === 401 || data.error === 'EBAY_AUTH_REQUIRED') {
+        setListSimilarResults((prev) => {
+          const next = { ...prev };
+          ids.forEach((id) => { next[id] = { status: 'error', error: 'eBay auth required — please reconnect your account.' }; });
+          return next;
+        });
+        return;
+      }
+      if (!res.ok || data.error) throw new Error(data.error || 'Request failed');
+
+      const results = data.results as {
+        itemId: string; success: boolean; ended: boolean;
+        newItemId?: string; newItemUrl?: string; error?: string; endError?: string;
+      }[];
+
+      setListSimilarResults((prev) => {
+        const next = { ...prev };
+        for (const r of results) {
+          next[r.itemId] = {
+            status: r.success ? 'success' : 'error',
+            ended: r.ended,
+            newItemId: r.newItemId,
+            newItemUrl: r.newItemUrl,
+            error: r.error,
+            endError: r.endError,
+          };
+        }
+        return next;
+      });
+
+      // Drop originals from the grid once their replacement is live and they've
+      // actually been ended — items where AddItem succeeded but EndItem failed
+      // stay visible (with endError surfaced) since they're still live on eBay.
+      const endedIds = new Set(results.filter((r) => r.success && r.ended).map((r) => r.itemId));
+      if (endedIds.size > 0) {
+        setAllListings((prev) => prev.filter((l) => !endedIds.has(l.itemId)));
+        setSelectedIds((prev) => {
+          const next = new Set(prev);
+          endedIds.forEach((id) => next.delete(id));
+          return next;
+        });
+      }
+    } catch (err: any) {
+      setListSimilarResults((prev) => {
+        const next = { ...prev };
+        ids.forEach((id) => {
+          if (next[id]?.status === 'pending') next[id] = { status: 'error', error: err.message || 'Failed' };
+        });
+        return next;
+      });
+    } finally {
+      setListSimilarRunning(false);
+    }
+  }, [selectedIds, listSimilarRunning]);
+
   // ── Description sync: listings whose description doesn't match the template
   // built from whatever title is currently in effect (auto-generated, edited,
   // or locked) — independent of Title Check, so a locked custom title still
@@ -1221,6 +1340,17 @@ export default function ListingDetailsPage() {
     });
   }, [filtered, sortCol, sortDir, specificMap]);
 
+  // ── Select all (across the full filtered/sorted set, not just the rendered slice) ──
+  const allFilteredSelected = sortedFiltered.length > 0 && sortedFiltered.every((l) => selectedIds.has(l.itemId));
+  const someFilteredSelected = sortedFiltered.some((l) => selectedIds.has(l.itemId));
+
+  const toggleSelectAllFiltered = useCallback(() => {
+    setSelectedIds((prev) => {
+      const allSelected = sortedFiltered.length > 0 && sortedFiltered.every((l) => prev.has(l.itemId));
+      return allSelected ? new Set() : new Set(sortedFiltered.map((l) => l.itemId));
+    });
+  }, [sortedFiltered]);
+
   // Listings the lightbox can browse to — same order as the grid, image-only
   // since there's nothing to show for listings without a picture.
   const lightboxNavigable = useMemo(
@@ -1416,6 +1546,28 @@ export default function ListingDetailsPage() {
             </span>
           )}
         </button>
+
+        {/* Selection + List Similar */}
+        {selectedIds.size > 0 && (
+          <>
+            <button
+              onClick={openListSimilar}
+              title="Create a fresh eBay listing for each selected item, then end the original"
+              className="flex items-center gap-1.5 px-3 py-1.5 border text-xs rounded-lg transition bg-cyan-500/15 border-cyan-500/40 text-cyan-300 hover:bg-cyan-500/25"
+            >
+              📋 List Similar
+              <span className="inline-flex items-center justify-center w-4 h-4 bg-cyan-500/30 text-cyan-300 rounded-full text-[10px] font-bold">
+                {selectedIds.size}
+              </span>
+            </button>
+            <button
+              onClick={clearSelection}
+              className="px-3 py-1.5 bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-400 text-xs rounded-lg transition"
+            >
+              Clear selection
+            </button>
+          </>
+        )}
 
         {/* Clear sort */}
         {sortCol && (
@@ -1989,8 +2141,21 @@ export default function ListingDetailsPage() {
         <table className="w-full text-sm border-collapse min-w-max">
           <thead className="sticky top-0 z-10">
             <tr className="bg-gray-900 border-b border-gray-700">
+              {/* Selection header — frozen alongside the thumbnail column */}
+              <th className="px-2 py-3 w-9 sticky left-0 z-30 bg-gray-900">
+                <input
+                  type="checkbox"
+                  checked={allFilteredSelected}
+                  ref={(el) => {
+                    if (el) el.indeterminate = someFilteredSelected && !allFilteredSelected;
+                  }}
+                  onChange={toggleSelectAllFiltered}
+                  title="Select all matching listings"
+                  className="w-3.5 h-3.5 accent-cyan-500"
+                />
+              </th>
               {/* Thumbnail header — frozen so the image stays visible while scrolling right */}
-              <th className="px-3 py-3 w-14 sticky left-0 z-30 bg-gray-900"></th>
+              <th className="px-3 py-3 w-14 sticky left-9 z-30 bg-gray-900"></th>
               {/* Title header */}
               <th className="px-3 py-3 text-left text-xs uppercase tracking-widest font-semibold min-w-[260px] max-w-[340px] whitespace-nowrap">
                 <div className="flex items-center gap-1 group/hdr">
@@ -2071,8 +2236,18 @@ export default function ListingDetailsPage() {
                         isItemPending ? 'opacity-60' : 'hover:bg-gray-800/20'
                       }`}
                     >
+                      {/* Selection checkbox — frozen alongside the thumbnail column */}
+                      <td className="px-2 py-1.5 w-9 sticky left-0 z-10 bg-gray-950 group-hover:bg-gray-800/20">
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.has(listing.itemId)}
+                          onChange={() => toggleSelected(listing.itemId)}
+                          className="w-3.5 h-3.5 accent-cyan-500"
+                        />
+                      </td>
+
                        {/* Thumbnail — click to enlarge; the lightbox links out to the live listing. Frozen while scrolling right */}
-                      <td className="px-2 py-1.5 w-14 sticky left-0 z-10 bg-gray-950 group-hover:bg-gray-800/20">
+                      <td className="px-2 py-1.5 w-14 sticky left-9 z-10 bg-gray-950 group-hover:bg-gray-800/20">
                         <div className="relative w-10 h-10">
                           <button
                             type="button"
@@ -2300,6 +2475,108 @@ export default function ListingDetailsPage() {
               >
                 View listing on eBay ↗
               </a>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── List Similar modal ── */}
+      {listSimilarOpen && (
+        <div
+          className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-6"
+          onClick={closeListSimilar}
+        >
+          <div
+            className="bg-gray-900 border border-cyan-500/40 rounded-xl max-w-xl w-full max-h-[85vh] flex flex-col overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between gap-3 p-4 border-b border-gray-800 shrink-0">
+              <h2 className="text-sm font-semibold text-white">
+                List Similar — {listSimilarItems.length.toLocaleString()} listing{listSimilarItems.length === 1 ? '' : 's'}
+              </h2>
+              <button
+                onClick={closeListSimilar}
+                disabled={listSimilarRunning}
+                className="text-gray-500 hover:text-gray-300 text-lg leading-none shrink-0 disabled:opacity-30 disabled:cursor-not-allowed"
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="px-4 py-3 border-b border-gray-800 shrink-0">
+              <p className="text-xs text-amber-300/90 bg-amber-500/10 border border-amber-500/30 rounded-lg px-3 py-2">
+                ⚠ This creates a brand-new eBay listing for each item below using its current title, description
+                and specifics, then permanently ends the original as soon as its replacement is live. New listings
+                may incur eBay insertion fees, and ended listings cannot be restored.
+              </p>
+            </div>
+
+            <div className="flex-1 min-h-0 overflow-y-auto divide-y divide-gray-800/70">
+              {listSimilarItems.map((item) => {
+                const result = listSimilarResults[item.itemId];
+                return (
+                  <div key={item.itemId} className="flex items-start gap-2.5 px-4 py-2.5 text-xs">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-gray-300 truncate" title={item.title}>{item.title || <em className="text-gray-600">(no title)</em>}</p>
+                      {result?.status === 'success' && result.ended && (
+                        <p className="text-green-400/90 mt-0.5">
+                          ✓ Created{' '}
+                          {result.newItemUrl ? (
+                            <a href={result.newItemUrl} target="_blank" rel="noopener noreferrer" className="underline underline-offset-2 decoration-green-500/40 hover:decoration-green-300">
+                              new listing
+                            </a>
+                          ) : 'new listing'} · original ended
+                        </p>
+                      )}
+                      {result?.status === 'success' && !result.ended && (
+                        <p className="text-amber-400/90 mt-0.5">
+                          ⚠{' '}
+                          {result.newItemUrl ? (
+                            <a href={result.newItemUrl} target="_blank" rel="noopener noreferrer" className="underline underline-offset-2 decoration-amber-500/40 hover:decoration-amber-300">
+                              New listing
+                            </a>
+                          ) : 'New listing'} created, but ending the original failed: {result.endError}. End it manually on eBay.
+                        </p>
+                      )}
+                      {result?.status === 'error' && (
+                        <p className="text-red-400/90 mt-0.5">✗ {result.error}</p>
+                      )}
+                    </div>
+                    <span className="shrink-0 mt-0.5">
+                      {result?.status === 'pending' && (
+                        <div className="w-3 h-3 border border-gray-600 border-t-cyan-400 rounded-full animate-spin" />
+                      )}
+                      {result?.status === 'success' && result.ended && <span className="text-green-400">✓</span>}
+                      {result?.status === 'success' && !result.ended && <span className="text-amber-400">⚠</span>}
+                      {result?.status === 'error' && <span className="text-red-400">✗</span>}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="flex items-center justify-end gap-2 p-4 border-t border-gray-800 shrink-0">
+              <button
+                onClick={closeListSimilar}
+                disabled={listSimilarRunning}
+                className="px-3 py-1.5 bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-300 text-xs rounded-lg transition disabled:opacity-30 disabled:cursor-not-allowed"
+              >
+                {Object.keys(listSimilarResults).length > 0 ? 'Close' : 'Cancel'}
+              </button>
+              <button
+                onClick={runListSimilar}
+                disabled={listSimilarRunning || listSimilarItems.length === 0}
+                className="flex items-center gap-2 px-4 py-1.5 bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-500/40 hover:border-cyan-400/60 text-cyan-300 text-xs font-semibold rounded-lg transition disabled:opacity-30 disabled:cursor-not-allowed"
+              >
+                {listSimilarRunning ? (
+                  <>
+                    <div className="w-3 h-3 border border-gray-500 border-t-cyan-400 rounded-full animate-spin" />
+                    Working…
+                  </>
+                ) : (
+                  'Create similar listings & end originals'
+                )}
+              </button>
             </div>
           </div>
         </div>
