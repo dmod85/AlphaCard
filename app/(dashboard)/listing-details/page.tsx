@@ -1423,6 +1423,14 @@ export default function ListingDetailsPage() {
     });
   }, [sortedFiltered]);
 
+  // ── Batch select: grab the first N listings (in the current search/filter/
+  // sort order) in one click, for working through a big list N at a time
+  // instead of clicking every checkbox — e.g. batching List Similar runs.
+  const [batchSelectCount, setBatchSelectCount] = useState(100);
+  const selectFirstBatch = useCallback(() => {
+    setSelectedIds(new Set(sortedFiltered.slice(0, batchSelectCount).map((l) => l.itemId)));
+  }, [sortedFiltered, batchSelectCount]);
+
   // Listings the lightbox can browse to — same order as the grid, image-only
   // since there's nothing to show for listings without a picture.
   const lightboxNavigable = useMemo(
@@ -1636,6 +1644,24 @@ export default function ListingDetailsPage() {
             </span>
           )}
         </button>
+
+        {/* Batch select — grab N listings at a time, in the current search/filter/sort order */}
+        <div className="flex items-center gap-1">
+          <input
+            type="number"
+            min={1}
+            value={batchSelectCount}
+            onChange={(e) => setBatchSelectCount(Math.max(1, parseInt(e.target.value, 10) || 1))}
+            className="w-16 bg-gray-800 border border-gray-700 rounded-lg px-2 py-1.5 text-xs text-gray-200 outline-none focus:border-cyan-500/60"
+          />
+          <button
+            onClick={selectFirstBatch}
+            title="Select the first N listings currently shown (after search/filter/sort) — replaces the current selection"
+            className="px-3 py-1.5 bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-300 text-xs rounded-lg transition"
+          >
+            Select first {batchSelectCount}
+          </button>
+        </div>
 
         {/* Selection + List Similar */}
         {selectedIds.size > 0 && (
