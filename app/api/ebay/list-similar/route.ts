@@ -64,6 +64,29 @@ function stripDisallowedForAddItem(itemXml: string): string {
   return result;
 }
 
+// As of schema 997, eBay moved the physical-package fields off
+// ShippingDetails.CalculatedShippingRate onto their own top-level
+// Item.ShippingPackageDetails block. GetItem still echoes the old nested
+// copies for backwards compatibility, but AddItem now rejects them there —
+// unlike the flat ADD_ITEM_STRIP_TAGS list above, these tag names are also
+// legitimate at the top level (inside ShippingPackageDetails), so they can
+// only be stripped from this specific nested location, not globally.
+const CALCULATED_SHIPPING_RATE_DEPRECATED_TAGS = [
+  'WeightMajor', 'WeightMinor', 'PackageDepth', 'PackageLength', 'PackageWidth',
+  'ShippingIrregular', 'ShippingPackage',
+];
+
+function stripDeprecatedCalculatedShippingRateFields(itemXml: string): string {
+  return itemXml.replace(/<CalculatedShippingRate>([\s\S]*?)<\/CalculatedShippingRate>/, (_match, inner) => {
+    let cleaned = inner;
+    for (const tag of CALCULATED_SHIPPING_RATE_DEPRECATED_TAGS) {
+      cleaned = cleaned.replace(new RegExp(`<${tag}(?:\\s[^>]*)?>[\\s\\S]*?<\\/${tag}>`, 'g'), '');
+      cleaned = cleaned.replace(new RegExp(`<${tag}(?:\\s[^>]*)?\\/>`, 'g'), '');
+    }
+    return `<CalculatedShippingRate>${cleaned}</CalculatedShippingRate>`;
+  });
+}
+
 function buildAddItemRequest(itemInnerXml: string, token: string): string {
   const credentials = isOAuthToken(token)
     ? ''
@@ -150,7 +173,7 @@ export async function POST(request: NextRequest) {
           if (!itemMatch) {
             return { itemId, success: false, ended: false, error: 'Could not parse item details from eBay' };
           }
-          const cleanedItemXml = stripDisallowedForAddItem(itemMatch[1]);
+          const cleanedItemXml = stripDeprecatedCalculatedShippingRateFields(stripDisallowedForAddItem(itemMatch[1]));
 
           const addXml = buildAddItemRequest(cleanedItemXml, token);
           const addRes = await callEbayApi(addXml, 'AddItem', token);
