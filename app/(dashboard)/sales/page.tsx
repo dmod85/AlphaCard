@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { useSalesRealtimeSync } from '../hooks/useRealtime';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -16,6 +17,12 @@ interface Sale {
   quantity_sold: number;
   picture_url: string | null;
   synced_at: string;
+  // Set by the ITEM_MARKED_SHIPPED webhook once a label/tracking is added —
+  // null until then. Comes in via realtime, not the initial sync fetch alone.
+  tracking_number: string | null;
+  carrier: string | null;
+  shipped_at: string | null;
+  packing_slip_url: string | null;
 }
 
 interface Purchase {
@@ -156,6 +163,7 @@ function ItemImage({ url, title }: { url: string | null; title: string }) {
 
 export default function SalesPage() {
   const [sales, setSales] = useState<Sale[]>([]);
+  const { isConnected: liveConnected, lastUpdate: liveUpdate } = useSalesRealtimeSync(setSales);
   const [purchases, setPurchases] = useState<Purchase[]>([]);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
@@ -262,11 +270,24 @@ export default function SalesPage() {
         <div className="flex items-center justify-between mb-4">
           <div>
             <h1 className="text-xl font-bold text-white">eBay Sales</h1>
-            <p className="text-xs text-gray-500 mt-0.5">
-              Auto-synced from eBay completed orders
-              {lastSync && (
-                <span className="ml-2 text-gray-600">· Last sync: {fmtDate(lastSync)}</span>
-              )}
+            <p className="text-xs text-gray-500 mt-0.5 flex items-center gap-2">
+              <span>
+                Auto-synced from eBay completed orders
+                {lastSync && (
+                  <span className="ml-2 text-gray-600">· Last sync: {fmtDate(lastSync)}</span>
+                )}
+              </span>
+              <span
+                className={`inline-flex items-center gap-1 ${liveConnected ? 'text-green-500' : 'text-gray-600'}`}
+                title={
+                  liveConnected
+                    ? `Live — auto-updates as shipping labels/tracking come in${liveUpdate ? ` (last update ${liveUpdate.toLocaleTimeString()})` : ''}`
+                    : 'Connecting to realtime updates…'
+                }
+              >
+                <span className={`w-1.5 h-1.5 rounded-full ${liveConnected ? 'bg-green-500 animate-pulse' : 'bg-gray-600'}`} />
+                {liveConnected ? 'Live' : 'Connecting…'}
+              </span>
             </p>
           </div>
 
@@ -362,6 +383,7 @@ export default function SalesPage() {
                 <th className="px-3 py-3">Sold For</th>
                 <th className="px-3 py-3">Lot Cost</th>
                 <th className="px-3 py-3">ROI</th>
+                <th className="px-3 py-3">Shipped</th>
               </tr>
             </thead>
             <tbody>
@@ -443,6 +465,35 @@ export default function SalesPage() {
                         const sign = roi > 0 ? '+' : '';
                         return <span className={`font-medium ${color}`}>{sign}{roi.toFixed(1)}%</span>;
                       })()}
+                    </td>
+
+                    {/* Shipped — set by the ITEM_MARKED_SHIPPED webhook; updates live via realtime */}
+                    <td className="px-3 py-3 text-xs whitespace-nowrap">
+                      {sale.tracking_number ? (
+                        <div className="flex flex-col gap-0.5">
+                          <span className="text-gray-300">
+                            {sale.carrier ? `${sale.carrier} ` : ''}
+                            <span className="font-mono">{sale.tracking_number}</span>
+                          </span>
+                          <div className="flex items-center gap-2">
+                            {sale.shipped_at && (
+                              <span className="text-gray-600">{fmtDate(sale.shipped_at)}</span>
+                            )}
+                            {sale.packing_slip_url && (
+                              <a
+                                href={sale.packing_slip_url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-blue-400 hover:text-blue-300 underline underline-offset-2"
+                              >
+                                slip
+                              </a>
+                            )}
+                          </div>
+                        </div>
+                      ) : (
+                        <span className="text-gray-700 italic">not yet shipped</span>
+                      )}
                     </td>
                   </tr>
                 );
