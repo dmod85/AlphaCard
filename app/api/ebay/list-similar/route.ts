@@ -50,6 +50,9 @@ const ADD_ITEM_STRIP_TAGS = [
   'ExcludeMoneyBackGuarantee', 'BuyerProtection', 'ConditionDisplayName',
   'BestOfferDetails', 'SiteHostedPicture', 'SellerContactDetails',
   'BuyerResponsibleForShipping', 'ApplicationData',
+  // Deprecated Trading API input fields that GetItem still echoes back —
+  // eBay ignores them on AddItem but complains via a warning if present.
+  'OutOfStockControl', 'HideFromSearch',
 ];
 
 function stripDisallowedForAddItem(itemXml: string): string {
