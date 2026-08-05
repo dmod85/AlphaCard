@@ -22,6 +22,20 @@ interface SignatureHeader {
 const publicKeyCache = new Map<string, { pem: string; expiry: number }>();
 const KEY_CACHE_MS = 60 * 60 * 1000; // 1 hour, per eBay's guidance
 
+const KEY_START = '-----BEGIN PUBLIC KEY-----';
+const KEY_END = '-----END PUBLIC KEY-----';
+
+// eBay's public_key endpoint returns the PEM markers glued directly to the
+// base64 body with no newline (e.g. "-----BEGIN PUBLIC KEY-----MIIB...==-----END
+// PUBLIC KEY-----"), which Node's PEM parser rejects — it requires the markers
+// on their own line. eBay's own reference SDK does this same normalization:
+// https://github.com/eBay/event-notification-nodejs-sdk/blob/main/lib/validator.js
+function normalizePublicKeyPem(key: string): string {
+  return key
+    .replace(KEY_START, `${KEY_START}\n`)
+    .replace(KEY_END, `\n${KEY_END}`);
+}
+
 async function getPublicKey(kid: string): Promise<string> {
   const cached = publicKeyCache.get(kid);
   if (cached && Date.now() < cached.expiry) return cached.pem;
@@ -60,7 +74,7 @@ export async function verifyEbayNotificationSignature(
   verifier.end();
 
   try {
-    return verifier.verify(publicKeyPem, Buffer.from(parsed.signature, 'base64'));
+    return verifier.verify(normalizePublicKeyPem(publicKeyPem), Buffer.from(parsed.signature, 'base64'));
   } catch {
     return false;
   }
