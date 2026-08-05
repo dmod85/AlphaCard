@@ -48,6 +48,10 @@ const SPEC_BATCH = 20;
 const SPEC_CONCURRENCY = 4;
 
 type SpecificMap = Record<string, NameValuePair[] | 'loading' | 'error'>;
+// Views (HitCount) / Watchers (WatchCount) — fetched alongside specifics but
+// kept in their own map since, unlike specifics, they're never cached forever.
+type ListingStats = { hitCount: number | null; watchCount: number | null };
+type StatsMap = Record<string, ListingStats | 'loading' | 'error'>;
 type SortDir = 'asc' | 'desc';
 // edits[itemId][colName] = new value
 type EditMap = Record<string, Record<string, string>>;
@@ -203,9 +207,15 @@ function stripHtmlPreview(html: string): string {
 }
 
 /** Current value shown for a listing's column, accounting for unsaved edits */
-function getFieldValue(listing: ActiveListing, col: string, specificMap: SpecificMap, edits: EditMap): string {
+function getFieldValue(listing: ActiveListing, col: string, specificMap: SpecificMap, edits: EditMap, statsMap?: StatsMap): string {
   if (col === '__title__') {
     return edits[listing.itemId]?.['__title__'] ?? listing.title;
+  }
+  if (col === '__views__' || col === '__watchers__') {
+    const stats = statsMap?.[listing.itemId];
+    if (!stats || stats === 'loading' || stats === 'error') return '';
+    const n = col === '__views__' ? stats.hitCount : stats.watchCount;
+    return n === null || n === undefined ? '' : String(n);
   }
   const specs = specificMap[listing.itemId];
   const original = Array.isArray(specs) ? getSpecificValue(specs, col) : '';
@@ -232,11 +242,12 @@ function evaluateConditions(
   listing: ActiveListing,
   conditions: FilterCondition[],
   specificMap: SpecificMap,
-  edits: EditMap
+  edits: EditMap,
+  statsMap: StatsMap
 ): boolean {
   let result: boolean | null = null;
   for (const cond of conditions) {
-    const value = getFieldValue(listing, cond.column, specificMap, edits);
+    const value = getFieldValue(listing, cond.column, specificMap, edits, statsMap);
     const match = matchesCondition(value, cond.operator, cond.value);
     result = result === null ? match : (cond.joiner === 'AND' ? result && match : result || match);
   }
@@ -301,6 +312,8 @@ function SkeletonRow({ cols }: { cols: number }) {
       <td className="px-3 py-2 min-w-[260px] max-w-[340px]">
         <div className="h-3 bg-gray-800 rounded w-5/6 mb-1.5" />
       </td>
+      <td className="px-3 py-2"><div className="h-2.5 w-8 bg-gray-800 rounded" /></td>
+      <td className="px-3 py-2"><div className="h-2.5 w-8 bg-gray-800 rounded" /></td>
       {Array.from({ length: cols }).map((_, i) => (
         <td key={i} className="px-3 py-2">
           <div className="h-3 bg-gray-800 rounded w-14" />
@@ -406,6 +419,7 @@ export default function ListingDetailsPage() {
   const [sortDir, setSortDir] = useState<SortDir>('asc');
 
   const [specificMap, setSpecificMap] = useState<SpecificMap>({});
+  const [statsMap, setStatsMap] = useState<StatsMap>({});
   // descriptionOkMap[itemId] = true when eBay description matches our template
   // (stamped server-side after each successful ReviseItem — read from Supabase cache)
   const [descriptionOkMap, setDescriptionOkMap] = useState<Record<string, boolean>>({});
@@ -517,18 +531,31 @@ export default function ListingDetailsPage() {
       toFetch.forEach((id) => { next[id] = 'loading'; });
       return next;
     });
+    setStatsMap((prev) => {
+      const next = { ...prev };
+      toFetch.forEach((id) => { next[id] = 'loading'; });
+      return next;
+    });
     try {
       const res = await fetch(`/api/ebay/listing-details?itemIds=${toFetch.join(',')}`);
       const data = await res.json();
       if (!res.ok || data.error) throw new Error(data.error || 'Failed');
       if (gen !== loadGenRef.current) return; // superseded by a newer load — drop the result
-      const results = data.results as { itemId: string; specifics: NameValuePair[]; descriptionOk: boolean; titleLocked: boolean; hidden: boolean }[];
+      const results = data.results as {
+        itemId: string; specifics: NameValuePair[]; descriptionOk: boolean; titleLocked: boolean; hidden: boolean;
+        hitCount: number | null; watchCount: number | null;
+      }[];
       setSpecificMap((prev) => {
         const next = { ...prev };
         for (const r of results) {
           next[r.itemId] = r.specifics;
           fetchingRef.current.delete(r.itemId);
         }
+        return next;
+      });
+      setStatsMap((prev) => {
+        const next = { ...prev };
+        for (const r of results) next[r.itemId] = { hitCount: r.hitCount, watchCount: r.watchCount };
         return next;
       });
       setTitleLockedMap((prev) => {
@@ -566,6 +593,11 @@ export default function ListingDetailsPage() {
         toFetch.forEach((id) => { next[id] = 'error'; fetchingRef.current.delete(id); });
         return next;
       });
+      setStatsMap((prev) => {
+        const next = { ...prev };
+        toFetch.forEach((id) => { next[id] = 'error'; });
+        return next;
+      });
     }
   }, []);
 
@@ -599,6 +631,7 @@ export default function ListingDetailsPage() {
     setError(null);
     setAllListings([]);
     setSpecificMap({});
+    setStatsMap({});
     setTitleLockedMap({});
     setHiddenMap({});
     setDescriptionOkMap({});
@@ -1298,7 +1331,7 @@ export default function ListingDetailsPage() {
     if (hiddenPanelOpen) return result;
 
     if (activeFilterConditions.length > 0) {
-      result = result.filter((l) => evaluateConditions(l, activeFilterConditions, specificMap, edits));
+      result = result.filter((l) => evaluateConditions(l, activeFilterConditions, specificMap, edits, statsMap));
     }
 
     if (titleSyncOpen) {
@@ -1315,7 +1348,7 @@ export default function ListingDetailsPage() {
 
     return result;
   }, [
-    visibleListings, hiddenListings, hiddenPanelOpen, search, activeFilterConditions, specificMap, edits,
+    visibleListings, hiddenListings, hiddenPanelOpen, search, activeFilterConditions, specificMap, edits, statsMap,
     titleSyncOpen, titleSyncMismatchIds,
     descSyncOpen, descSyncMismatchIds,
     dupCheckOpen, duplicateItemIds
@@ -1329,7 +1362,13 @@ export default function ListingDetailsPage() {
     return [...filtered].sort((a, b) => {
       let aVal = '', bVal = '';
       if (sortCol === '__title__') { aVal = a.title; bVal = b.title; }
-      else {
+      else if (sortCol === '__views__' || sortCol === '__watchers__') {
+        const aStats = statsMap[a.itemId];
+        const bStats = statsMap[b.itemId];
+        const key = sortCol === '__views__' ? 'hitCount' : 'watchCount';
+        aVal = aStats && aStats !== 'loading' && aStats !== 'error' && aStats[key] !== null ? String(aStats[key]) : '￿';
+        bVal = bStats && bStats !== 'loading' && bStats !== 'error' && bStats[key] !== null ? String(bStats[key]) : '￿';
+      } else {
         const aSpecs = specificMap[a.itemId];
         const bSpecs = specificMap[b.itemId];
         aVal = Array.isArray(aSpecs) ? getSpecificValue(aSpecs, sortCol) : '￿';
@@ -1338,7 +1377,7 @@ export default function ListingDetailsPage() {
       const cmp = aVal.localeCompare(bVal, undefined, { numeric: true, sensitivity: 'base' });
       return sortDir === 'asc' ? cmp : -cmp;
     });
-  }, [filtered, sortCol, sortDir, specificMap]);
+  }, [filtered, sortCol, sortDir, specificMap, statsMap]);
 
   // ── Select all (across the full filtered/sorted set, not just the rendered slice) ──
   const allFilteredSelected = sortedFiltered.length > 0 && sortedFiltered.every((l) => selectedIds.has(l.itemId));
@@ -1831,6 +1870,8 @@ export default function ListingDetailsPage() {
                 className="bg-gray-800 border border-gray-700 rounded-lg px-2 py-1.5 text-xs text-gray-200 outline-none focus:border-blue-500/60 max-w-[180px]"
               >
                 <option value="__title__">Title</option>
+                <option value="__views__">Views</option>
+                <option value="__watchers__">Watchers</option>
                 {columns.map((col) => (
                   <option key={col} value={col}>{col}</option>
                 ))}
@@ -2179,6 +2220,28 @@ export default function ListingDetailsPage() {
                   </button>
                 </div>
               </th>
+              {/* Views (HitCount) header */}
+              <th className="px-3 py-3 text-left text-xs uppercase tracking-widest font-semibold whitespace-nowrap">
+                <span
+                  className={`cursor-pointer select-none hover:text-gray-200 transition-colors ${sortCol === '__views__' ? 'text-green-400' : 'text-gray-500'}`}
+                  onClick={() => handleSort('__views__')}
+                  title="Number of times this listing's page has been viewed"
+                >
+                  Views
+                  <SortIndicator col="__views__" sortCol={sortCol} sortDir={sortDir} />
+                </span>
+              </th>
+              {/* Watchers (WatchCount) header */}
+              <th className="px-3 py-3 text-left text-xs uppercase tracking-widest font-semibold whitespace-nowrap">
+                <span
+                  className={`cursor-pointer select-none hover:text-gray-200 transition-colors ${sortCol === '__watchers__' ? 'text-green-400' : 'text-gray-500'}`}
+                  onClick={() => handleSort('__watchers__')}
+                  title="Number of people watching this listing"
+                >
+                  Watchers
+                  <SortIndicator col="__watchers__" sortCol={sortCol} sortDir={sortDir} />
+                </span>
+              </th>
               {/* Specifics headers */}
               {columns.map((col) => (
                 <th key={col} className="px-3 py-3 text-left text-xs uppercase tracking-widest font-semibold whitespace-nowrap">
@@ -2363,6 +2426,37 @@ export default function ListingDetailsPage() {
                           {titleLocked[listing.itemId] ? '🔒' : '🔓'}
                         </button>
                       </td>
+
+                      {/* Views / Watchers — read-only, not editable (eBay's own live counters) */}
+                      {(() => {
+                        const stats = statsMap[listing.itemId];
+                        if (!stats || stats === 'loading') {
+                          return (
+                            <>
+                              <td className="px-3 py-2"><div className="h-2.5 w-8 bg-gray-800 rounded animate-pulse" /></td>
+                              <td className="px-3 py-2"><div className="h-2.5 w-8 bg-gray-800 rounded animate-pulse" /></td>
+                            </>
+                          );
+                        }
+                        if (stats === 'error') {
+                          return (
+                            <>
+                              <td className="px-3 py-2"><span className="text-[10px] text-red-700">err</span></td>
+                              <td className="px-3 py-2"><span className="text-[10px] text-red-700">err</span></td>
+                            </>
+                          );
+                        }
+                        return (
+                          <>
+                            <td className="px-3 py-2 whitespace-nowrap">
+                              <span className="text-xs text-gray-300">{stats.hitCount ?? <span className="text-gray-700">—</span>}</span>
+                            </td>
+                            <td className="px-3 py-2 whitespace-nowrap">
+                              <span className="text-xs text-gray-300">{stats.watchCount ?? <span className="text-gray-700">—</span>}</span>
+                            </td>
+                          </>
+                        );
+                      })()}
 
                       {/* Specifics (editable) */}
                       {columns.map((col) => {

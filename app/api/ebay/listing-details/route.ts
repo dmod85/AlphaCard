@@ -20,10 +20,16 @@ function buildGetItemRequest(itemId: string, token: string): string {
   ${credentials}
   <ItemID>${itemId}</ItemID>
   <IncludeItemSpecifics>true</IncludeItemSpecifics>
+  <IncludeWatchCount>true</IncludeWatchCount>
   <ErrorLanguage>en_US</ErrorLanguage>
   <WarningLevel>High</WarningLevel>
 </GetItemRequest>`;
 }
+
+// Views/watchers change constantly, unlike specifics (which only change when
+// we explicitly revise them) — so a cached row is only "fresh enough" to skip
+// a GetItem call for this long before we re-fetch to keep the counts current.
+const STATS_TTL_MS = 60 * 60 * 1000; // 1 hour
 
 export interface NameValuePair {
   name: string;
@@ -48,7 +54,7 @@ function parseSpecifics(xml: string): NameValuePair[] {
 async function fetchSpecificsForItem(
   itemId: string,
   token: string
-): Promise<{ itemId: string; specifics: NameValuePair[] }> {
+): Promise<{ itemId: string; specifics: NameValuePair[]; hitCount: number | null; watchCount: number | null }> {
   try {
     const xml = buildGetItemRequest(itemId, token);
     const res = await fetch(getEbayApiUrl(), {
@@ -58,9 +64,13 @@ async function fetchSpecificsForItem(
     });
     const text = await res.text();
     const specifics = parseSpecifics(text);
-    return { itemId, specifics };
+    const hitCountRaw = text.match(/<HitCount>(.*?)<\/HitCount>/)?.[1];
+    const watchCountRaw = text.match(/<WatchCount>(.*?)<\/WatchCount>/)?.[1];
+    const hitCount = hitCountRaw !== undefined ? parseInt(hitCountRaw, 10) : null;
+    const watchCount = watchCountRaw !== undefined ? parseInt(watchCountRaw, 10) : null;
+    return { itemId, specifics, hitCount, watchCount };
   } catch {
-    return { itemId, specifics: [] };
+    return { itemId, specifics: [], hitCount: null, watchCount: null };
   }
 }
 
@@ -89,35 +99,64 @@ export async function GET(request: NextRequest) {
     }
 
     const [{ data: cached }, { data: locks }, { data: hidden }] = await Promise.all([
-      supabaseAdmin.from('ebay_item_specifics').select('item_id, specifics, description_ok').in('item_id', itemIds),
+      supabaseAdmin.from('ebay_item_specifics').select('item_id, specifics, description_ok, hit_count, watch_count, stats_updated_at').in('item_id', itemIds),
       supabaseAdmin.from('ebay_title_locks').select('item_id').in('item_id', itemIds),
       supabaseAdmin.from('ebay_hidden_listings').select('item_id').in('item_id', itemIds),
     ]);
 
-    const cachedMap = new Map<string, { specifics: NameValuePair[]; descriptionOk: boolean }>(
+    const cachedMap = new Map<string, {
+      specifics: NameValuePair[];
+      descriptionOk: boolean;
+      hitCount: number | null;
+      watchCount: number | null;
+      statsUpdatedAt: string | null;
+    }>(
       (cached ?? []).map((row) => [
         row.item_id as string,
         {
           specifics: row.specifics as NameValuePair[],
           // description_ok may be null if the column was just added — treat null as false
           descriptionOk: (row.description_ok as boolean | null) ?? false,
+          hitCount: row.hit_count as number | null,
+          watchCount: row.watch_count as number | null,
+          statsUpdatedAt: row.stats_updated_at as string | null,
         },
       ])
     );
     const lockedIds = new Set((locks ?? []).map((row) => row.item_id as string));
     const hiddenIds = new Set((hidden ?? []).map((row) => row.item_id as string));
-    const uncachedIds = itemIds.filter((id) => !cachedMap.has(id));
 
-    let fetched: { itemId: string; specifics: NameValuePair[] }[] = [];
-    if (uncachedIds.length > 0) {
+    // Fetch (or re-fetch) when we've never seen the item, or its view/watcher
+    // counts are past the TTL — specifics themselves don't force a re-fetch,
+    // but come along for free (and get refreshed too) whenever stats do.
+    const now = Date.now();
+    const idsNeedingFetch = itemIds.filter((id) => {
+      const row = cachedMap.get(id);
+      if (!row) return true;
+      if (!row.statsUpdatedAt) return true;
+      return now - new Date(row.statsUpdatedAt).getTime() > STATS_TTL_MS;
+    });
+
+    let fetched: { itemId: string; specifics: NameValuePair[]; hitCount: number | null; watchCount: number | null }[] = [];
+    if (idsNeedingFetch.length > 0) {
       const token = await getValidToken();
-      fetched = await Promise.all(uncachedIds.map((id) => fetchSpecificsForItem(id, token)));
+      fetched = await Promise.all(idsNeedingFetch.map((id) => fetchSpecificsForItem(id, token)));
 
-      // New items: description_ok defaults to false (unknown — conservative until revised)
+      const nowIso = new Date().toISOString();
       await supabaseAdmin
         .from('ebay_item_specifics')
         .upsert(
-          fetched.map((r) => ({ item_id: r.itemId, specifics: r.specifics, description_ok: false, updated_at: new Date().toISOString() })),
+          fetched.map((r) => ({
+            item_id: r.itemId,
+            specifics: r.specifics,
+            // Preserve description_ok for items we already knew about — only
+            // brand-new rows default it to false (unknown until revised).
+            description_ok: cachedMap.get(r.itemId)?.descriptionOk ?? false,
+            hit_count: r.hitCount,
+            watch_count: r.watchCount,
+            stats_updated_at: nowIso,
+            updated_at: nowIso,
+          })),
           { onConflict: 'item_id' }
         );
     }
@@ -127,10 +166,12 @@ export async function GET(request: NextRequest) {
       const fetchedItem = fetched.find((r) => r.itemId === id);
       return {
         itemId: id,
-        specifics: cached?.specifics ?? fetchedItem?.specifics ?? [],
+        specifics: fetchedItem?.specifics ?? cached?.specifics ?? [],
         descriptionOk: cached?.descriptionOk ?? false,
         titleLocked: lockedIds.has(id),
         hidden: hiddenIds.has(id),
+        hitCount: fetchedItem?.hitCount ?? cached?.hitCount ?? null,
+        watchCount: fetchedItem?.watchCount ?? cached?.watchCount ?? null,
       };
     });
 
