@@ -163,18 +163,25 @@ export async function GET(request: NextRequest) {
 // -----------------------------------------------------------------------
 export async function PATCH(request: NextRequest) {
   try {
-    const { id, sku } = await request.json();
-    if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 });
+    const { id, ids, sku } = await request.json();
+    if (!id && (!ids || ids.length === 0)) {
+      return NextResponse.json({ error: 'id or ids required' }, { status: 400 });
+    }
 
-    const { data, error } = await supabaseAdmin
+    let query = supabaseAdmin
       .from('ebay_sales')
-      .update({ sku: sku ?? null })
-      .eq('id', id)
-      .select()
-      .single();
+      .update({ sku: sku ?? null });
+
+    if (ids && ids.length > 0) {
+      query = query.in('id', ids);
+    } else {
+      query = query.eq('id', id);
+    }
+
+    const { data, error } = await query.select();
 
     if (error) throw error;
-    return NextResponse.json({ sale: data });
+    return NextResponse.json({ sales: data });
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });
   }

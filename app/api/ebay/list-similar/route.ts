@@ -255,6 +255,17 @@ export async function POST(request: NextRequest) {
           if (!itemMatch) {
             return { itemId, success: false, ended: false, error: 'Could not parse item details from eBay' };
           }
+
+          // AddItem copies <Quantity> (the listing's lifetime total) from the
+          // original, not <QuantityAvailable> (what's actually left to sell) —
+          // so a fully sold-through listing would otherwise get a fresh
+          // duplicate with quantity reset back to its original value. Refuse
+          // to relist anything with nothing left in stock.
+          const quantityAvailable = parseInt(itemMatch[1].match(/<QuantityAvailable>(.*?)<\/QuantityAvailable>/)?.[1] ?? '1', 10);
+          if (quantityAvailable <= 0) {
+            return { itemId, success: false, ended: false, error: 'Skipped — 0 available (already sold out), nothing to relist' };
+          }
+
           const initialItemXml = stripDeprecatedCalculatedShippingRateFields(stripDisallowedForAddItem(itemMatch[1]));
 
           // 1. Safe order: create while the original is still live. Zero risk

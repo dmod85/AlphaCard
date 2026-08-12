@@ -172,6 +172,10 @@ export default function SalesPage() {
   const [days, setDays] = useState(90);
   const [lastSync, setLastSync] = useState<string | null>(null);
 
+  const [selectedSales, setSelectedSales] = useState<Set<string>>(new Set());
+  const [bulkSku, setBulkSku] = useState<string>('');
+  const [applyingBulk, setApplyingBulk] = useState(false);
+
   // Build a SKU -> total cost lookup
   const skuTotalCostMap = new Map<string, number>();
   const skuMap = new Map<string, Purchase>();
@@ -244,6 +248,41 @@ export default function SalesPage() {
     setSales(prev => prev.map(s => s.id === id ? { ...s, sku } : s));
     // Refresh purchase map if sku changed
     loadPurchases();
+  }
+
+  async function handleApplyBulkSku() {
+    if (selectedSales.size === 0) return;
+    setApplyingBulk(true);
+    try {
+      const res = await fetch('/api/ebay/sold-orders', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: Array.from(selectedSales), sku: bulkSku.trim() || null }),
+      });
+      if (res.ok) {
+        setSales(prev => prev.map(s => selectedSales.has(s.id) ? { ...s, sku: bulkSku.trim() || null } : s));
+        setSelectedSales(new Set());
+        setBulkSku('');
+        loadPurchases();
+      }
+    } finally {
+      setApplyingBulk(false);
+    }
+  }
+
+  function handleToggleAll() {
+    if (selectedSales.size === filtered.length && filtered.length > 0) {
+      setSelectedSales(new Set());
+    } else {
+      setSelectedSales(new Set(filtered.map(s => s.id)));
+    }
+  }
+
+  function handleToggleSale(id: string) {
+    const newSet = new Set(selectedSales);
+    if (newSet.has(id)) newSet.delete(id);
+    else newSet.add(id);
+    setSelectedSales(newSet);
   }
 
   // Filter
@@ -343,16 +382,51 @@ export default function SalesPage() {
           ))}
         </div>
 
-        {/* Search */}
-        <div className="relative">
-          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm">🔍</span>
-          <input
-            type="text"
-            className="w-full bg-gray-900 border border-gray-800 rounded-lg pl-9 pr-4 py-2 text-sm text-gray-200 focus:outline-none focus:border-blue-500 transition"
-            placeholder="Search by title, SKU, order #, buyer…"
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-          />
+        {/* Search & Bulk Actions */}
+        <div className="flex items-center gap-4">
+          <div className="relative flex-1">
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm">🔍</span>
+            <input
+              type="text"
+              className="w-full bg-gray-900 border border-gray-800 rounded-lg pl-9 pr-4 py-2 text-sm text-gray-200 focus:outline-none focus:border-blue-500 transition"
+              placeholder="Search by title, SKU, order #, buyer…"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+            />
+          </div>
+
+          {selectedSales.size > 0 && (
+            <div className="flex items-center gap-3 bg-blue-900/20 border border-blue-500/30 rounded-lg px-4 py-1.5 transition-all">
+              <span className="text-sm text-blue-400 font-medium">{selectedSales.size} selected</span>
+              <div className="h-5 w-px bg-blue-500/30 mx-1"></div>
+              <select
+                className="bg-gray-800 border border-blue-500/50 rounded px-3 py-1 text-sm text-white focus:outline-none focus:border-blue-400 transition cursor-pointer"
+                value={bulkSku}
+                onChange={e => setBulkSku(e.target.value)}
+              >
+                <option value="">-- Apply SKU --</option>
+                {Array.from(new Map(purchases.filter(p => p.sku).map(p => [p.sku, p])).values()).map(p => (
+                  <option key={p.sku!} value={p.sku!}>
+                    {p.sku} - {[p.brand, p.series].filter(Boolean).join(' ') || 'Unknown'}
+                  </option>
+                ))}
+              </select>
+              <button
+                onClick={handleApplyBulkSku}
+                disabled={applyingBulk}
+                className="px-4 py-1 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-sm font-medium rounded transition flex items-center gap-2"
+              >
+                {applyingBulk ? (
+                  <>
+                    <span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    Applying…
+                  </>
+                ) : (
+                  'Apply'
+                )}
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -373,6 +447,14 @@ export default function SalesPage() {
           <table className="w-full text-left border-collapse">
             <thead className="sticky top-0 bg-gray-900/95 backdrop-blur z-10">
               <tr className="text-[11px] text-gray-500 uppercase tracking-wider border-b border-gray-800">
+                <th className="px-3 py-3 w-8">
+                  <input
+                    type="checkbox"
+                    className="rounded border-gray-700 bg-gray-800 text-blue-500 focus:ring-blue-500 focus:ring-offset-gray-900 cursor-pointer"
+                    checked={filtered.length > 0 && selectedSales.size === filtered.length}
+                    onChange={handleToggleAll}
+                  />
+                </th>
                 <th className="px-3 py-3 w-14">Image</th>
                 <th className="px-3 py-3">Order #</th>
                 <th className="px-3 py-3">Sale Date</th>
@@ -392,8 +474,18 @@ export default function SalesPage() {
                 return (
                   <tr
                     key={sale.id}
-                    className="border-b border-gray-800/60 hover:bg-gray-800/25 transition"
+                    className={`border-b border-gray-800/60 hover:bg-gray-800/40 transition ${selectedSales.has(sale.id) ? 'bg-blue-900/10' : ''}`}
                   >
+                    {/* Checkbox */}
+                    <td className="px-3 py-2">
+                      <input
+                        type="checkbox"
+                        className="rounded border-gray-700 bg-gray-800 text-blue-500 focus:ring-blue-500 focus:ring-offset-gray-900 cursor-pointer"
+                        checked={selectedSales.has(sale.id)}
+                        onChange={() => handleToggleSale(sale.id)}
+                      />
+                    </td>
+
                     {/* Image */}
                     <td className="px-3 py-2">
                       <ItemImage url={sale.picture_url} title={sale.item_title} />
