@@ -44,6 +44,25 @@ function fmtDate(d: string | null) {
   return new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
+function getGroupedPurchases(purchases: Purchase[], includeSku?: string | null) {
+  const uniqueSkusMap = new Map(purchases.filter(p => p.sku).map(p => [p.sku!, p]));
+  if (includeSku && !uniqueSkusMap.has(includeSku)) {
+    uniqueSkusMap.set(includeSku, { sku: includeSku, brand: 'Unknown', series: null, sport: null, cost: 0 });
+  }
+  const uniqueSkus = Array.from(uniqueSkusMap.values());
+  const groups: Record<string, Purchase[]> = {};
+  uniqueSkus.forEach(p => {
+    const sport = p.sport || 'Other / Unknown';
+    if (!groups[sport]) groups[sport] = [];
+    groups[sport].push(p);
+  });
+  const sortedSports = Object.keys(groups).sort();
+  sortedSports.forEach(sport => {
+    groups[sport].sort((a, b) => (a.sku || '').localeCompare(b.sku || ''));
+  });
+  return { groups, sortedSports };
+}
+
 // ─── Inline SKU Editor ────────────────────────────────────────────────────────
 
 function SkuCell({
@@ -88,10 +107,7 @@ function SkuCell({
   }
 
   if (editing) {
-    const uniqueSkus = Array.from(new Map(purchases.filter(p => p.sku).map(p => [p.sku, p])).values());
-    if (sale.sku && !uniqueSkus.find(p => p.sku === sale.sku)) {
-      uniqueSkus.push({ sku: sale.sku, brand: 'Unknown', series: null, sport: null, cost: 0 });
-    }
+    const { groups, sortedSports } = getGroupedPurchases(purchases, sale.sku);
 
     return (
       <div className="flex items-center gap-1">
@@ -104,10 +120,14 @@ function SkuCell({
           onBlur={save}
         >
           <option value="">-- Select Purchase --</option>
-          {uniqueSkus.map(p => (
-            <option key={p.sku!} value={p.sku!}>
-              {p.sku} - {[p.brand, p.series].filter(Boolean).join(' ') || 'Unknown'}
-            </option>
+          {sortedSports.map(sport => (
+            <optgroup key={sport} label={sport}>
+              {groups[sport].map(p => (
+                <option key={p.sku!} value={p.sku!}>
+                  {p.sku} - {[p.brand, p.series].filter(Boolean).join(' ') || 'Unknown'}
+                </option>
+              ))}
+            </optgroup>
           ))}
         </select>
         {saving && <span className="text-gray-500 text-[10px]">…</span>}
@@ -405,11 +425,18 @@ export default function SalesPage() {
                 onChange={e => setBulkSku(e.target.value)}
               >
                 <option value="">-- Apply SKU --</option>
-                {Array.from(new Map(purchases.filter(p => p.sku).map(p => [p.sku, p])).values()).map(p => (
-                  <option key={p.sku!} value={p.sku!}>
-                    {p.sku} - {[p.brand, p.series].filter(Boolean).join(' ') || 'Unknown'}
-                  </option>
-                ))}
+                {(() => {
+                  const { groups, sortedSports } = getGroupedPurchases(purchases);
+                  return sortedSports.map(sport => (
+                    <optgroup key={sport} label={sport}>
+                      {groups[sport].map(p => (
+                        <option key={p.sku!} value={p.sku!}>
+                          {p.sku} - {[p.brand, p.series].filter(Boolean).join(' ') || 'Unknown'}
+                        </option>
+                      ))}
+                    </optgroup>
+                  ));
+                })()}
               </select>
               <button
                 onClick={handleApplyBulkSku}
