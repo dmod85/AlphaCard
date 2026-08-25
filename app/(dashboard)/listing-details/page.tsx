@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { canonicalizeTitleAcronyms } from '@/app/lib/listing-title';
 
 interface NameValuePair {
   name: string;
@@ -168,7 +169,8 @@ function buildTitleFromSpecifics(fields: {
     title = title.substring(0, cut > TITLE_MAX_LENGTH - 15 ? cut : TITLE_MAX_LENGTH).trim();
   }
 
-  return title;
+  // eBay's Set catalog uses "Fifa"; titles always keep FIFA (all caps)
+  return canonicalizeTitleAcronyms(title);
 }
 
 // Builds the listing description from its title — mirrors buildDescription()
@@ -1531,11 +1533,10 @@ export default function ListingDetailsPage() {
         {/* Advanced filter toggle */}
         <button
           onClick={() => setFilterPanelOpen((v) => !v)}
-          className={`flex items-center gap-1.5 px-3 py-1.5 border text-xs rounded-lg transition ${
-            filterPanelOpen || activeFilterConditions.length > 0
-              ? 'bg-blue-500/15 border-blue-500/40 text-blue-300 hover:bg-blue-500/25'
-              : 'bg-gray-800 hover:bg-gray-700 border-gray-700 text-gray-300'
-          }`}
+          className={`flex items-center gap-1.5 px-3 py-1.5 border text-xs rounded-lg transition ${filterPanelOpen || activeFilterConditions.length > 0
+            ? 'bg-blue-500/15 border-blue-500/40 text-blue-300 hover:bg-blue-500/25'
+            : 'bg-gray-800 hover:bg-gray-700 border-gray-700 text-gray-300'
+            }`}
         >
           ⚗ Filter
           {activeFilterConditions.length > 0 && (
@@ -1559,11 +1560,10 @@ export default function ListingDetailsPage() {
         <button
           onClick={() => setTitleSyncOpen((v) => !v)}
           title="Find listings whose title doesn't match the generated template (Set - Player # - Parallel Team)"
-          className={`flex items-center gap-1.5 px-3 py-1.5 border text-xs rounded-lg transition ${
-            titleSyncOpen
-              ? 'bg-teal-500/15 border-teal-500/40 text-teal-300 hover:bg-teal-500/25'
-              : 'bg-gray-800 hover:bg-gray-700 border-gray-700 text-gray-300'
-          }`}
+          className={`flex items-center gap-1.5 px-3 py-1.5 border text-xs rounded-lg transition ${titleSyncOpen
+            ? 'bg-teal-500/15 border-teal-500/40 text-teal-300 hover:bg-teal-500/25'
+            : 'bg-gray-800 hover:bg-gray-700 border-gray-700 text-gray-300'
+            }`}
         >
           🏷 Title Check
           {titleMismatches.length > 0 && (
@@ -1577,11 +1577,10 @@ export default function ListingDetailsPage() {
         <button
           onClick={() => setDescSyncOpen((v) => !v)}
           title="Find listings whose description doesn't match the generated template built from the current title"
-          className={`flex items-center gap-1.5 px-3 py-1.5 border text-xs rounded-lg transition ${
-            descSyncOpen
-              ? 'bg-indigo-500/15 border-indigo-500/40 text-indigo-300 hover:bg-indigo-500/25'
-              : 'bg-gray-800 hover:bg-gray-700 border-gray-700 text-gray-300'
-          }`}
+          className={`flex items-center gap-1.5 px-3 py-1.5 border text-xs rounded-lg transition ${descSyncOpen
+            ? 'bg-indigo-500/15 border-indigo-500/40 text-indigo-300 hover:bg-indigo-500/25'
+            : 'bg-gray-800 hover:bg-gray-700 border-gray-700 text-gray-300'
+            }`}
         >
           📝 Description Check
           {descriptionMismatches.length > 0 && (
@@ -1595,11 +1594,10 @@ export default function ListingDetailsPage() {
         <button
           onClick={() => setDupCheckOpen((v) => !v)}
           title="Find listings that appear to be duplicates (same Set, Player, Card Number, and Parallel/Variety)"
-          className={`flex items-center gap-1.5 px-3 py-1.5 border text-xs rounded-lg transition ${
-            dupCheckOpen
-              ? 'bg-orange-500/15 border-orange-500/40 text-orange-300 hover:bg-orange-500/25'
-              : 'bg-gray-800 hover:bg-gray-700 border-gray-700 text-gray-300'
-          }`}
+          className={`flex items-center gap-1.5 px-3 py-1.5 border text-xs rounded-lg transition ${dupCheckOpen
+            ? 'bg-orange-500/15 border-orange-500/40 text-orange-300 hover:bg-orange-500/25'
+            : 'bg-gray-800 hover:bg-gray-700 border-gray-700 text-gray-300'
+            }`}
         >
           🔎 Duplicate Check
           {duplicateGroups.length > 0 && (
@@ -1613,11 +1611,10 @@ export default function ListingDetailsPage() {
         <button
           onClick={() => setOldListingsOpen((v) => !v)}
           title={`Find listings that have been live for more than ${oldListingsDays} days`}
-          className={`flex items-center gap-1.5 px-3 py-1.5 border text-xs rounded-lg transition ${
-            oldListingsOpen
-              ? 'bg-rose-500/15 border-rose-500/40 text-rose-300 hover:bg-rose-500/25'
-              : 'bg-gray-800 hover:bg-gray-700 border-gray-700 text-gray-300'
-          }`}
+          className={`flex items-center gap-1.5 px-3 py-1.5 border text-xs rounded-lg transition ${oldListingsOpen
+            ? 'bg-rose-500/15 border-rose-500/40 text-rose-300 hover:bg-rose-500/25'
+            : 'bg-gray-800 hover:bg-gray-700 border-gray-700 text-gray-300'
+            }`}
         >
           🕰 Old Listings
           {oldListings.length > 0 && (
@@ -1631,11 +1628,10 @@ export default function ListingDetailsPage() {
         <button
           onClick={() => setHiddenPanelOpen((v) => !v)}
           title="Listings hidden from this page and every check (Title/Description/Duplicate). Click to review and unhide."
-          className={`flex items-center gap-1.5 px-3 py-1.5 border text-xs rounded-lg transition ${
-            hiddenPanelOpen
-              ? 'bg-gray-500/20 border-gray-500/40 text-gray-200 hover:bg-gray-500/30'
-              : 'bg-gray-800 hover:bg-gray-700 border-gray-700 text-gray-300'
-          }`}
+          className={`flex items-center gap-1.5 px-3 py-1.5 border text-xs rounded-lg transition ${hiddenPanelOpen
+            ? 'bg-gray-500/20 border-gray-500/40 text-gray-200 hover:bg-gray-500/30'
+            : 'bg-gray-800 hover:bg-gray-700 border-gray-700 text-gray-300'
+            }`}
         >
           🙈 Hidden
           {hiddenListings.length > 0 && (
@@ -1791,9 +1787,8 @@ export default function ListingDetailsPage() {
                       </div>
                       <div className="h-1.5 w-full bg-gray-800 rounded-full overflow-hidden">
                         <div
-                          className={`h-full rounded-full ${
-                            usageData.aggregate.percent >= 85 ? 'bg-red-500' : usageData.aggregate.percent >= 60 ? 'bg-amber-500' : 'bg-green-500'
-                          }`}
+                          className={`h-full rounded-full ${usageData.aggregate.percent >= 85 ? 'bg-red-500' : usageData.aggregate.percent >= 60 ? 'bg-amber-500' : 'bg-green-500'
+                            }`}
                           style={{ width: `${Math.min(100, usageData.aggregate.percent)}%` }}
                         />
                       </div>
@@ -2334,11 +2329,10 @@ export default function ListingDetailsPage() {
                   </span>
                   <button
                     onClick={(e) => { e.stopPropagation(); openSr('__title__'); }}
-                    className={`ml-1 px-1 py-0.5 rounded text-[10px] transition-all select-none ${
-                      srCol === '__title__'
-                        ? 'opacity-100 text-purple-300 bg-purple-500/25 border border-purple-500/40'
-                        : 'opacity-0 group-hover/hdr:opacity-100 text-gray-600 hover:text-purple-400 hover:bg-purple-500/10'
-                    }`}
+                    className={`ml-1 px-1 py-0.5 rounded text-[10px] transition-all select-none ${srCol === '__title__'
+                      ? 'opacity-100 text-purple-300 bg-purple-500/25 border border-purple-500/40'
+                      : 'opacity-0 group-hover/hdr:opacity-100 text-gray-600 hover:text-purple-400 hover:bg-purple-500/10'
+                      }`}
                     title="Search & Replace in Title"
                   >
                     ⇄
@@ -2369,11 +2363,10 @@ export default function ListingDetailsPage() {
                     </span>
                     <button
                       onClick={(e) => { e.stopPropagation(); openSr(col); }}
-                      className={`ml-1 px-1 py-0.5 rounded text-[10px] transition-all select-none ${
-                        srCol === col
-                          ? 'opacity-100 text-purple-300 bg-purple-500/25 border border-purple-500/40'
-                          : 'opacity-0 group-hover/hdr:opacity-100 text-gray-600 hover:text-purple-400 hover:bg-purple-500/10'
-                      }`}
+                      className={`ml-1 px-1 py-0.5 rounded text-[10px] transition-all select-none ${srCol === col
+                        ? 'opacity-100 text-purple-300 bg-purple-500/25 border border-purple-500/40'
+                        : 'opacity-0 group-hover/hdr:opacity-100 text-gray-600 hover:text-purple-400 hover:bg-purple-500/10'
+                        }`}
                       title={`Search & Replace in ${col}`}
                     >
                       ⇄
@@ -2399,204 +2392,201 @@ export default function ListingDetailsPage() {
             {loading
               ? Array.from({ length: 20 }).map((_, i) => <SkeletonRow key={i} cols={PRIORITY_COLS.length} />)
               : visible.map((listing) => {
-                  const specs = specificMap[listing.itemId];
-                  const specsLoaded = Array.isArray(specs);
-                  const specsError = specs === 'error';
-                  const itemEdits = edits[listing.itemId] || {};
-                  const submitResult = submitResults[listing.itemId];
-                  const isItemPending = submitResult === 'pending';
+                const specs = specificMap[listing.itemId];
+                const specsLoaded = Array.isArray(specs);
+                const specsError = specs === 'error';
+                const itemEdits = edits[listing.itemId] || {};
+                const submitResult = submitResults[listing.itemId];
+                const isItemPending = submitResult === 'pending';
 
-                  return (
-                    <tr
-                      key={listing.itemId}
-                      className={`group border-b border-gray-800/50 transition-colors ${
-                        isItemPending ? 'opacity-60' : 'hover:bg-gray-800/20'
+                return (
+                  <tr
+                    key={listing.itemId}
+                    className={`group border-b border-gray-800/50 transition-colors ${isItemPending ? 'opacity-60' : 'hover:bg-gray-800/20'
                       }`}
-                    >
-                      {/* Selection checkbox — frozen alongside the thumbnail column */}
-                      <td className="px-2 py-1.5 w-9 sticky left-0 z-10 bg-gray-950 group-hover:bg-gray-800/20">
-                        <input
-                          type="checkbox"
-                          checked={selectedIds.has(listing.itemId)}
-                          onChange={() => toggleSelected(listing.itemId)}
-                          className="w-3.5 h-3.5 accent-cyan-500"
-                        />
-                      </td>
+                  >
+                    {/* Selection checkbox — frozen alongside the thumbnail column */}
+                    <td className="px-2 py-1.5 w-9 sticky left-0 z-10 bg-gray-950 group-hover:bg-gray-800/20">
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.has(listing.itemId)}
+                        onChange={() => toggleSelected(listing.itemId)}
+                        className="w-3.5 h-3.5 accent-cyan-500"
+                      />
+                    </td>
 
-                       {/* Thumbnail — click to enlarge; the lightbox links out to the live listing. Frozen while scrolling right */}
-                      <td className="px-2 py-1.5 w-14 sticky left-9 z-10 bg-gray-950 group-hover:bg-gray-800/20">
-                        <div className="relative w-10 h-10">
-                          <button
-                            type="button"
-                            onClick={() => listing.pictureUrl && setLightboxListing(listing)}
-                            title={listing.pictureUrl ? 'Click to enlarge' : 'No image'}
-                            disabled={!listing.pictureUrl}
-                            className="block w-10 h-10 rounded overflow-hidden bg-gray-800 border border-gray-800 hover:border-green-500/50 transition-colors shrink-0 disabled:cursor-default disabled:hover:border-gray-800"
-                          >
-                            {listing.pictureUrl ? (
-                              <img
-                                src={listing.pictureUrl}
-                                alt=""
-                                className="w-full h-full object-cover"
-                                loading="lazy"
-                              />
-                            ) : (
-                              <span className="w-full h-full flex items-center justify-center text-gray-700 text-[9px]">—</span>
-                            )}
-                          </button>
-                          {/* Per-row submit button — appears on hover when this row has unsaved edits */}
-                          {Object.keys(itemEdits).length > 0 && !isItemPending && (
-                            <button
-                              onClick={() => submitChanges([listing.itemId])}
-                              disabled={submitting}
-                              title="Submit changes for this listing"
-                              className="absolute inset-0 w-10 h-10 rounded flex items-center justify-center bg-amber-500/80 hover:bg-amber-400/90 text-white text-[10px] font-bold opacity-0 group-hover:opacity-100 transition-opacity disabled:cursor-not-allowed"
-                            >
-                              ↑
-                            </button>
-                          )}
-                          {submitResult === 'success' && (
-                            <span className="absolute inset-0 w-10 h-10 rounded flex items-center justify-center bg-green-500/80 text-white text-[11px] font-bold pointer-events-none">
-                              ✓
-                            </span>
-                          )}
-                          {submitResult && submitResult !== 'success' && submitResult !== 'pending' && (
-                            <span
-                              className="absolute inset-0 w-10 h-10 rounded flex items-center justify-center bg-red-500/80 text-white text-[11px] font-bold pointer-events-none"
-                              title={String(submitResult)}
-                            >
-                              ✗
-                            </span>
-                          )}
-                          <button
-                            onClick={() => toggleHidden(listing.itemId, !hiddenMap[listing.itemId])}
-                            title={
-                              hiddenMap[listing.itemId]
-                                ? 'Hidden from this page and every check — click to unhide'
-                                : 'Hide this listing from the page and every check (Title/Description/Duplicate)'
-                            }
-                            className={`absolute -top-1 -right-1 w-4 h-4 rounded-full flex items-center justify-center text-[9px] leading-none transition-opacity ${
-                              hiddenMap[listing.itemId]
-                                ? 'opacity-100 bg-gray-600 text-gray-200'
-                                : 'opacity-0 group-hover:opacity-100 bg-gray-800 border border-gray-700 text-gray-400 hover:text-white hover:bg-gray-700'
-                            }`}
-                          >
-                            {hiddenMap[listing.itemId] ? '👁' : '🙈'}
-                          </button>
-                        </div>
-                      </td>
-
-                      {/* Title (editable) */}
-                      <td className="px-2 py-1.5 min-w-[260px] max-w-[400px] relative">
-                        {(() => {
-                          const originalTitle = listing.title;
-                          const editedTitle = '__title__' in itemEdits ? itemEdits['__title__'] : originalTitle;
-                          const isTitleEdited = '__title__' in itemEdits;
-                          const isTitleEditing = editingCell?.itemId === listing.itemId && editingCell?.col === '__title__';
-                          return (
-                            <EditableCell
-                              value={editedTitle}
-                              edited={isTitleEdited}
-                              isEditing={isTitleEditing}
-                              submitResult={isItemPending ? 'pending' : submitResult}
-                              onStartEdit={() => !isItemPending && startEdit(listing.itemId, '__title__')}
-                              onCommit={(v) => commitEdit(listing.itemId, '__title__', v)}
-                              onCancel={cancelEdit}
-                              onNavigate={(dir) => navigateCell(listing.itemId, '__title__', dir)}
+                    {/* Thumbnail — click to enlarge; the lightbox links out to the live listing. Frozen while scrolling right */}
+                    <td className="px-2 py-1.5 w-14 sticky left-9 z-10 bg-gray-950 group-hover:bg-gray-800/20">
+                      <div className="relative w-10 h-10">
+                        <button
+                          type="button"
+                          onClick={() => listing.pictureUrl && setLightboxListing(listing)}
+                          title={listing.pictureUrl ? 'Click to enlarge' : 'No image'}
+                          disabled={!listing.pictureUrl}
+                          className="block w-10 h-10 rounded overflow-hidden bg-gray-800 border border-gray-800 hover:border-green-500/50 transition-colors shrink-0 disabled:cursor-default disabled:hover:border-gray-800"
+                        >
+                          {listing.pictureUrl ? (
+                            <img
+                              src={listing.pictureUrl}
+                              alt=""
+                              className="w-full h-full object-cover"
+                              loading="lazy"
                             />
-                          );
-                        })()}
-                        {!('__title__' in itemEdits) && titleSyncMismatchIds.has(listing.itemId) && (
-                          <span
-                            className="absolute top-1.5 right-1.5 w-1.5 h-1.5 bg-teal-400 rounded-full"
-                            title="Title doesn't match the generated template — see Title Check"
-                          />
+                          ) : (
+                            <span className="w-full h-full flex items-center justify-center text-gray-700 text-[9px]">—</span>
+                          )}
+                        </button>
+                        {/* Per-row submit button — appears on hover when this row has unsaved edits */}
+                        {Object.keys(itemEdits).length > 0 && !isItemPending && (
+                          <button
+                            onClick={() => submitChanges([listing.itemId])}
+                            disabled={submitting}
+                            title="Submit changes for this listing"
+                            className="absolute inset-0 w-10 h-10 rounded flex items-center justify-center bg-amber-500/80 hover:bg-amber-400/90 text-white text-[10px] font-bold opacity-0 group-hover:opacity-100 transition-opacity disabled:cursor-not-allowed"
+                          >
+                            ↑
+                          </button>
                         )}
-                        {!('__description__' in itemEdits) && descSyncMismatchIds.has(listing.itemId) && (
-                          <span
-                            className="absolute bottom-1.5 right-1.5 w-1.5 h-1.5 bg-indigo-400 rounded-full"
-                            title="Description doesn't match the generated template — see Description Check"
-                          />
+                        {submitResult === 'success' && (
+                          <span className="absolute inset-0 w-10 h-10 rounded flex items-center justify-center bg-green-500/80 text-white text-[11px] font-bold pointer-events-none">
+                            ✓
+                          </span>
                         )}
-                        {duplicateItemIds.has(listing.itemId) && (
+                        {submitResult && submitResult !== 'success' && submitResult !== 'pending' && (
                           <span
-                            className="absolute bottom-1.5 left-1.5 w-1.5 h-1.5 bg-orange-400 rounded-full"
-                            title="Possible duplicate listing — see Duplicate Check"
-                          />
+                            className="absolute inset-0 w-10 h-10 rounded flex items-center justify-center bg-red-500/80 text-white text-[11px] font-bold pointer-events-none"
+                            title={String(submitResult)}
+                          >
+                            ✗
+                          </span>
                         )}
                         <button
-                          onClick={() => toggleTitleLock(listing.itemId, !titleLocked[listing.itemId])}
+                          onClick={() => toggleHidden(listing.itemId, !hiddenMap[listing.itemId])}
                           title={
-                            titleLocked[listing.itemId]
-                              ? 'Title locked — excluded from Title Check. Click to unlock.'
-                              : 'Lock this title so Title Check always skips it'
+                            hiddenMap[listing.itemId]
+                              ? 'Hidden from this page and every check — click to unhide'
+                              : 'Hide this listing from the page and every check (Title/Description/Duplicate)'
                           }
-                          className={`absolute top-1.5 left-1.5 leading-none text-[11px] transition-opacity ${
-                            titleLocked[listing.itemId]
-                              ? 'opacity-100 text-amber-400'
-                              : 'opacity-0 group-hover:opacity-60 hover:!opacity-100 text-gray-600 hover:text-gray-300'
-                          }`}
+                          className={`absolute -top-1 -right-1 w-4 h-4 rounded-full flex items-center justify-center text-[9px] leading-none transition-opacity ${hiddenMap[listing.itemId]
+                            ? 'opacity-100 bg-gray-600 text-gray-200'
+                            : 'opacity-0 group-hover:opacity-100 bg-gray-800 border border-gray-700 text-gray-400 hover:text-white hover:bg-gray-700'
+                            }`}
                         >
-                          {titleLocked[listing.itemId] ? '🔒' : '🔓'}
+                          {hiddenMap[listing.itemId] ? '👁' : '🙈'}
                         </button>
-                      </td>
+                      </div>
+                    </td>
 
-                      {/* Watchers — read-only, not editable (eBay's own live counter) */}
+                    {/* Title (editable) */}
+                    <td className="px-2 py-1.5 min-w-[260px] max-w-[400px] relative">
                       {(() => {
-                        const stats = statsMap[listing.itemId];
-                        if (!stats || stats === 'loading') {
-                          return <td className="px-3 py-2"><div className="h-2.5 w-8 bg-gray-800 rounded animate-pulse" /></td>;
-                        }
-                        if (stats === 'error') {
-                          return <td className="px-3 py-2"><span className="text-[10px] text-red-700">err</span></td>;
-                        }
+                        const originalTitle = listing.title;
+                        const editedTitle = '__title__' in itemEdits ? itemEdits['__title__'] : originalTitle;
+                        const isTitleEdited = '__title__' in itemEdits;
+                        const isTitleEditing = editingCell?.itemId === listing.itemId && editingCell?.col === '__title__';
                         return (
-                          <td className="px-3 py-2 whitespace-nowrap">
-                            <span className="text-xs text-gray-300">{stats.watchCount ?? <span className="text-gray-700">—</span>}</span>
-                          </td>
+                          <EditableCell
+                            value={editedTitle}
+                            edited={isTitleEdited}
+                            isEditing={isTitleEditing}
+                            submitResult={isItemPending ? 'pending' : submitResult}
+                            onStartEdit={() => !isItemPending && startEdit(listing.itemId, '__title__')}
+                            onCommit={(v) => commitEdit(listing.itemId, '__title__', v)}
+                            onCancel={cancelEdit}
+                            onNavigate={(dir) => navigateCell(listing.itemId, '__title__', dir)}
+                          />
                         );
                       })()}
-
-                      {/* Specifics (editable) */}
-                      {columns.map((col) => {
-                        if (!specsLoaded) {
-                          return (
-                            <td key={col} className="px-3 py-2">
-                              {specs === 'loading' || specs === undefined
-                                ? <div className="h-2.5 w-12 bg-gray-800 rounded animate-pulse" />
-                                : specsError
-                                  ? <span className="text-[10px] text-red-700">err</span>
-                                  : <span className="text-xs text-gray-800">—</span>
-                              }
-                            </td>
-                          );
+                      {!('__title__' in itemEdits) && titleSyncMismatchIds.has(listing.itemId) && (
+                        <span
+                          className="absolute top-1.5 right-1.5 w-1.5 h-1.5 bg-teal-400 rounded-full"
+                          title="Title doesn't match the generated template — see Title Check"
+                        />
+                      )}
+                      {!('__description__' in itemEdits) && descSyncMismatchIds.has(listing.itemId) && (
+                        <span
+                          className="absolute bottom-1.5 right-1.5 w-1.5 h-1.5 bg-indigo-400 rounded-full"
+                          title="Description doesn't match the generated template — see Description Check"
+                        />
+                      )}
+                      {duplicateItemIds.has(listing.itemId) && (
+                        <span
+                          className="absolute bottom-1.5 left-1.5 w-1.5 h-1.5 bg-orange-400 rounded-full"
+                          title="Possible duplicate listing — see Duplicate Check"
+                        />
+                      )}
+                      <button
+                        onClick={() => toggleTitleLock(listing.itemId, !titleLocked[listing.itemId])}
+                        title={
+                          titleLocked[listing.itemId]
+                            ? 'Title locked — excluded from Title Check. Click to unlock.'
+                            : 'Lock this title so Title Check always skips it'
                         }
+                        className={`absolute top-1.5 left-1.5 leading-none text-[11px] transition-opacity ${titleLocked[listing.itemId]
+                          ? 'opacity-100 text-amber-400'
+                          : 'opacity-0 group-hover:opacity-60 hover:!opacity-100 text-gray-600 hover:text-gray-300'
+                          }`}
+                      >
+                        {titleLocked[listing.itemId] ? '🔒' : '🔓'}
+                      </button>
+                    </td>
 
-                        const originalVal = getSpecificValue(specs as NameValuePair[], col);
-                        const editedVal = col in itemEdits ? itemEdits[col] : originalVal;
-                        const isEdited = col in itemEdits;
-                        const isEditing =
-                          editingCell?.itemId === listing.itemId && editingCell?.col === col;
+                    {/* Watchers — read-only, not editable (eBay's own live counter) */}
+                    {(() => {
+                      const stats = statsMap[listing.itemId];
+                      if (!stats || stats === 'loading') {
+                        return <td className="px-3 py-2"><div className="h-2.5 w-8 bg-gray-800 rounded animate-pulse" /></td>;
+                      }
+                      if (stats === 'error') {
+                        return <td className="px-3 py-2"><span className="text-[10px] text-red-700">err</span></td>;
+                      }
+                      return (
+                        <td className="px-3 py-2 whitespace-nowrap">
+                          <span className="text-xs text-gray-300">{stats.watchCount ?? <span className="text-gray-700">—</span>}</span>
+                        </td>
+                      );
+                    })()}
 
+                    {/* Specifics (editable) */}
+                    {columns.map((col) => {
+                      if (!specsLoaded) {
                         return (
-                          <td key={col} className="px-2 py-1.5 whitespace-nowrap">
-                            <EditableCell
-                              value={editedVal}
-                              edited={isEdited}
-                              isEditing={isEditing}
-                              submitResult={isItemPending ? 'pending' : submitResult}
-                              highlightEmpty={HIGHLIGHT_EMPTY_COLS.has(col)}
-                              onStartEdit={() => !isItemPending && startEdit(listing.itemId, col)}
-                              onCommit={(v) => commitEdit(listing.itemId, col, v)}
-                              onCancel={cancelEdit}
-                              onNavigate={(dir) => navigateCell(listing.itemId, col, dir)}
-                            />
+                          <td key={col} className="px-3 py-2">
+                            {specs === 'loading' || specs === undefined
+                              ? <div className="h-2.5 w-12 bg-gray-800 rounded animate-pulse" />
+                              : specsError
+                                ? <span className="text-[10px] text-red-700">err</span>
+                                : <span className="text-xs text-gray-800">—</span>
+                            }
                           </td>
                         );
-                      })}
-                    </tr>
-                  );
-                })}
+                      }
+
+                      const originalVal = getSpecificValue(specs as NameValuePair[], col);
+                      const editedVal = col in itemEdits ? itemEdits[col] : originalVal;
+                      const isEdited = col in itemEdits;
+                      const isEditing =
+                        editingCell?.itemId === listing.itemId && editingCell?.col === col;
+
+                      return (
+                        <td key={col} className="px-2 py-1.5 whitespace-nowrap">
+                          <EditableCell
+                            value={editedVal}
+                            edited={isEdited}
+                            isEditing={isEditing}
+                            submitResult={isItemPending ? 'pending' : submitResult}
+                            highlightEmpty={HIGHLIGHT_EMPTY_COLS.has(col)}
+                            onStartEdit={() => !isItemPending && startEdit(listing.itemId, col)}
+                            onCommit={(v) => commitEdit(listing.itemId, col, v)}
+                            onCancel={cancelEdit}
+                            onNavigate={(dir) => navigateCell(listing.itemId, col, dir)}
+                          />
+                        </td>
+                      );
+                    })}
+                  </tr>
+                );
+              })}
           </tbody>
         </table>
 

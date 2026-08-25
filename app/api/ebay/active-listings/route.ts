@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getValidToken, isOAuthToken, getEbayApiHeaders, getEbayApiUrl, clearTokenCache } from '@/app/lib/ebay-auth';
 import { supabaseAdmin } from '@/app/lib/supabase-admin';
+import { canonicalizeTitleAcronyms } from '@/app/lib/listing-title';
 
 // eBay Trading API error codes that indicate an invalid/expired token
 const EBAY_AUTH_ERROR_CODES = ['21917053', '21916984', '21917055'];
@@ -250,7 +251,8 @@ function buildSeoTitle(specifics: ItemSpecifics): string {
     title = title.substring(0, cut > MAX_LENGTH - 15 ? cut : MAX_LENGTH).trim();
   }
 
-  return title;
+  // eBay's Set catalog uses "Fifa"; titles always keep FIFA (all caps)
+  return canonicalizeTitleAcronyms(title);
 }
 
 function buildDescription(title: string): string {
@@ -380,7 +382,7 @@ export async function POST(request: NextRequest) {
           const xml = buildGetItemRequest(item.itemId, token);
           const response = await callEbayApi(xml, 'GetItem', token);
           specificsMap.set(item.itemId, parseItemSpecifics(response));
-          
+
           const existingSku = response.match(/<SKU>(.*?)<\/SKU>/)?.[1];
           if (existingSku) {
             skuMap.set(item.itemId, decodeXml(existingSku));
