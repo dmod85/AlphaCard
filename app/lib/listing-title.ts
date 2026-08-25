@@ -1,10 +1,10 @@
 /**
  * eBay's catalog title-cases some all-caps acronyms in item specifics
- * (e.g. Set = "2026 Panini Prizm Monopoly Fifa World Cup"). Listing titles
- * should keep the canonical all-caps form so Title Check doesn't flag
- * FIFA → Fifa, and so applying a template always writes FIFA.
+ * (e.g. Set = "… Fifa World Cup" or "… Mls"). Listing titles keep the
+ * canonical all-caps form so Title Check doesn't flag FIFA → Fifa /
+ * MLS → Mls, and so applying a template always writes FIFA / MLS.
  */
-const TITLE_ACRONYMS = ['FIFA'] as const;
+const TITLE_ACRONYMS = ['FIFA', 'MLS'] as const;
 
 export function canonicalizeTitleAcronyms(title: string): string {
     let out = title;
