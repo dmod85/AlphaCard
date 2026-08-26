@@ -31,6 +31,7 @@ interface Purchase {
   series: string | null;
   sport: string | null;
   cost: number;
+  purchase_date: string | null;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -44,10 +45,42 @@ function fmtDate(d: string | null) {
   return new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
+const PERIOD_OPTIONS: { label: string; days: number }[] = [
+  { label: '1d', days: 1 },
+  { label: '7d', days: 7 },
+  { label: '14d', days: 14 },
+  { label: '30d', days: 30 },
+  { label: '60d', days: 60 },
+  { label: '90d', days: 90 },
+  { label: 'All', days: 0 },
+];
+
+function periodLabel(days: number) {
+  if (!days) return 'All time';
+  return days === 1 ? 'Last 1 day' : `Last ${days} days`;
+}
+
+function isInPeriod(dateStr: string | null, days: number): boolean {
+  if (!days) return true;
+  if (!dateStr) return false;
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - days);
+  cutoff.setHours(0, 0, 0, 0);
+  // DATE-only values (YYYY-MM-DD) parse as UTC midnight; treat as local calendar dates.
+  const local = /^\d{4}-\d{2}-\d{2}$/.test(dateStr)
+    ? new Date(
+      Number(dateStr.slice(0, 4)),
+      Number(dateStr.slice(5, 7)) - 1,
+      Number(dateStr.slice(8, 10))
+    )
+    : new Date(dateStr);
+  return local.getTime() >= cutoff.getTime();
+}
+
 function getGroupedPurchases(purchases: Purchase[], includeSku?: string | null) {
   const uniqueSkusMap = new Map(purchases.filter(p => p.sku).map(p => [p.sku!, p]));
   if (includeSku && !uniqueSkusMap.has(includeSku)) {
-    uniqueSkusMap.set(includeSku, { sku: includeSku, brand: 'Unknown', series: null, sport: null, cost: 0 });
+    uniqueSkusMap.set(includeSku, { sku: includeSku, brand: 'Unknown', series: null, sport: null, cost: 0, purchase_date: null });
   }
   const uniqueSkus = Array.from(uniqueSkusMap.values());
   const groups: Record<string, Purchase[]> = {};
@@ -190,6 +223,7 @@ export default function SalesPage() {
   const [syncMsg, setSyncMsg] = useState('');
   const [search, setSearch] = useState('');
   const [days, setDays] = useState(90);
+  const [viewDays, setViewDays] = useState(14);
   const [lastSync, setLastSync] = useState<string | null>(null);
 
   const [selectedSales, setSelectedSales] = useState<Set<string>>(new Set());
@@ -216,21 +250,6 @@ export default function SalesPage() {
     }
   });
 
-  // Load sales from DB (no eBay sync)
-  const loadFromDb = useCallback(async () => {
-    setLoading(true);
-    try {
-      const res = await fetch('/api/ebay/sold-orders?sync=false');
-      const data = await res.json();
-      setSales(data.sales ?? []);
-      if (data.sales?.length > 0) {
-        setLastSync(data.sales[0].synced_at);
-      }
-    } catch { /* silent */ } finally {
-      setLoading(false);
-    }
-  }, []);
-
   // Load purchases for match column
   const loadPurchases = useCallback(async () => {
     try {
@@ -240,12 +259,59 @@ export default function SalesPage() {
     } catch { /* silent */ }
   }, []);
 
+  // Show DB rows immediately, then auto-sync the last 1 day from eBay.
   useEffect(() => {
-    loadFromDb();
-    loadPurchases();
-  }, [loadFromDb, loadPurchases]);
+    const ac = new AbortController();
 
-  // Sync from eBay
+    async function init() {
+      setLoading(true);
+      try {
+        const [salesRes, purchasesRes] = await Promise.all([
+          fetch('/api/ebay/sold-orders?sync=false', { signal: ac.signal }),
+          fetch('/api/purchases', { signal: ac.signal }),
+        ]);
+        const salesData = await salesRes.json();
+        const purchasesData = await purchasesRes.json();
+        if (ac.signal.aborted) return;
+        setSales(salesData.sales ?? []);
+        setPurchases(purchasesData.purchases ?? []);
+        if (salesData.sales?.length > 0) {
+          setLastSync(salesData.sales[0].synced_at);
+        }
+      } catch (e: any) {
+        if (e?.name === 'AbortError') return;
+      } finally {
+        if (!ac.signal.aborted) setLoading(false);
+      }
+
+      if (ac.signal.aborted) return;
+
+      setSyncing(true);
+      try {
+        const res = await fetch('/api/ebay/sold-orders?days=1', { signal: ac.signal });
+        const data = await res.json();
+        if (ac.signal.aborted) return;
+        if (!res.ok) throw new Error(data.error);
+        setSales(data.sales ?? []);
+        setLastSync(new Date().toISOString());
+        if ((data.synced ?? 0) > 0) {
+          setSyncMsg(
+            `✓ Synced ${data.synced} new order${data.synced === 1 ? '' : 's'} from the last day.`
+          );
+        }
+      } catch (e: any) {
+        if (e?.name === 'AbortError') return;
+        if (!ac.signal.aborted) setSyncMsg(`✗ Auto-sync failed: ${e.message}`);
+      } finally {
+        if (!ac.signal.aborted) setSyncing(false);
+      }
+    }
+
+    init();
+    return () => ac.abort();
+  }, []);
+
+  // Manual sync from eBay (uses the lookback dropdown)
   async function handleSync() {
     setSyncing(true);
     setSyncMsg('');
@@ -254,7 +320,7 @@ export default function SalesPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
       setSales(data.sales ?? []);
-      setSyncMsg(`✓ Synced ${data.synced} orders from the last ${days} days.`);
+      setSyncMsg(`✓ Synced ${data.synced} orders from the last ${days} day${days === 1 ? '' : 's'}.`);
       setLastSync(new Date().toISOString());
     } catch (e: any) {
       setSyncMsg(`✗ Sync failed: ${e.message}`);
@@ -305,8 +371,12 @@ export default function SalesPage() {
     setSelectedSales(newSet);
   }
 
-  // Filter
-  const filtered = sales.filter(s => {
+  // Period-scoped rows (P&L ignores the search box so ROI stays apples-to-apples)
+  const periodSales = sales.filter(s => isInPeriod(s.sale_date, viewDays));
+  const periodPurchases = purchases.filter(p => isInPeriod(p.purchase_date, viewDays));
+
+  // Filter table by period + search
+  const filtered = periodSales.filter(s => {
     if (!search) return true;
     const q = search.toLowerCase();
     return (
@@ -317,10 +387,13 @@ export default function SalesPage() {
     );
   });
 
-  // Stats
-  const totalRevenue = filtered.reduce((s, r) => s + r.sold_for, 0);
-  const avgSale = filtered.length ? totalRevenue / filtered.length : 0;
-  const matched = filtered.filter(s => s.sku && skuTotalCostMap.has(s.sku)).length;
+  // Period P&L
+  const totalRevenue = periodSales.reduce((s, r) => s + Number(r.sold_for || 0), 0);
+  const purchaseCost = periodPurchases.reduce((s, p) => s + Number(p.cost || 0), 0);
+  const profit = totalRevenue - purchaseCost;
+  const roiPct = purchaseCost > 0 ? (profit / purchaseCost) * 100 : null;
+  const avgSale = periodSales.length ? totalRevenue / periodSales.length : 0;
+  const matched = periodSales.filter(s => s.sku && skuTotalCostMap.has(s.sku)).length;
 
   return (
     <div className="h-full flex flex-col bg-gray-950 overflow-hidden">
@@ -331,7 +404,7 @@ export default function SalesPage() {
             <h1 className="text-xl font-bold text-white">eBay Sales</h1>
             <p className="text-xs text-gray-500 mt-0.5 flex items-center gap-2">
               <span>
-                Auto-synced from eBay completed orders
+                Auto-syncs the last day on load
                 {lastSync && (
                   <span className="ml-2 text-gray-600">· Last sync: {fmtDate(lastSync)}</span>
                 )}
@@ -353,14 +426,14 @@ export default function SalesPage() {
           {/* Sync controls */}
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-2 bg-gray-900 border border-gray-800 rounded-lg px-3 py-1.5">
-              <span className="text-xs text-gray-500">Days back:</span>
+              <span className="text-xs text-gray-500">Sync lookback:</span>
               <select
                 className="bg-transparent text-sm text-gray-200 focus:outline-none cursor-pointer"
                 value={days}
                 onChange={e => setDays(parseInt(e.target.value))}
               >
-                {[7, 14, 30, 60, 90].map(d => (
-                  <option key={d} value={d}>{d}</option>
+                {[1, 7, 14, 30, 60, 90].map(d => (
+                  <option key={d} value={d}>{d} day{d === 1 ? '' : 's'}</option>
                 ))}
               </select>
             </div>
@@ -387,17 +460,85 @@ export default function SalesPage() {
           </div>
         )}
 
-        {/* Stats */}
-        <div className="grid grid-cols-4 gap-3 mb-4">
+        {/* Period selector */}
+        <div className="flex items-center justify-between gap-3 mb-3">
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="text-xs text-gray-500 shrink-0">Period:</span>
+            <div className="flex items-center gap-1 flex-wrap">
+              {PERIOD_OPTIONS.map(opt => (
+                <button
+                  key={opt.days}
+                  type="button"
+                  onClick={() => {
+                    setViewDays(opt.days);
+                    setSelectedSales(new Set());
+                  }}
+                  className={`px-2.5 py-1 rounded-md text-xs font-medium transition ${viewDays === opt.days
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-gray-900 text-gray-400 hover:text-white border border-gray-800'
+                    }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <p className="text-[11px] text-gray-600 shrink-0 hidden sm:block">
+            {periodLabel(viewDays)} · sales vs purchases
+          </p>
+        </div>
+
+        {/* P&L stats for the selected period */}
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-4">
           {[
-            { label: 'Total Revenue', value: fmt$(totalRevenue), color: 'text-green-400' },
-            { label: 'Sales', value: filtered.length.toString(), color: 'text-blue-400' },
-            { label: 'Avg Sale', value: fmt$(avgSale), color: 'text-yellow-400' },
-            { label: 'Matched to Purchase', value: `${matched} / ${filtered.length}`, color: 'text-purple-400' },
+            {
+              label: 'Sales Revenue',
+              value: fmt$(totalRevenue),
+              sub: `${periodSales.length} sale${periodSales.length === 1 ? '' : 's'}`,
+              color: 'text-green-400',
+            },
+            {
+              label: 'Purchase Cost',
+              value: fmt$(purchaseCost),
+              sub: `${periodPurchases.length} purchase${periodPurchases.length === 1 ? '' : 's'}`,
+              color: 'text-orange-400',
+            },
+            {
+              label: 'Profit',
+              value: `${profit >= 0 ? '' : '−'}${fmt$(Math.abs(profit))}`,
+              sub: 'sales − cost',
+              color: profit > 0 ? 'text-green-400' : profit < 0 ? 'text-red-400' : 'text-gray-400',
+            },
+            {
+              label: 'ROI',
+              value: roiPct === null ? '—' : `${roiPct > 0 ? '+' : ''}${roiPct.toFixed(1)}%`,
+              sub: purchaseCost > 0 ? 'profit / cost' : 'no purchases',
+              color:
+                roiPct === null
+                  ? 'text-gray-400'
+                  : roiPct > 0
+                    ? 'text-green-400'
+                    : roiPct < 0
+                      ? 'text-red-400'
+                      : 'text-gray-400',
+            },
+            {
+              label: 'Avg Sale',
+              value: fmt$(avgSale),
+              sub: periodLabel(viewDays).toLowerCase(),
+              color: 'text-yellow-400',
+            },
+            {
+              label: 'Matched SKUs',
+              value: `${matched} / ${periodSales.length}`,
+              sub: 'sales linked to a purchase',
+              color: 'text-purple-400',
+            },
           ].map(s => (
             <div key={s.label} className="bg-gray-900 border border-gray-800 rounded-lg px-4 py-3">
               <p className="text-[11px] text-gray-500 uppercase tracking-wider">{s.label}</p>
               <p className={`text-xl font-bold mt-0.5 ${s.color}`}>{s.value}</p>
+              <p className="text-[10px] text-gray-600 mt-0.5">{s.sub}</p>
             </div>
           ))}
         </div>
@@ -466,8 +607,10 @@ export default function SalesPage() {
             <p className="text-4xl">💰</p>
             <p className="text-sm">
               {sales.length === 0
-                ? 'No sales yet — click Sync to pull from eBay.'
-                : 'No sales match your search.'}
+                ? 'No sales yet — syncing from eBay, or click Sync to pull a longer window.'
+                : search
+                  ? 'No sales match your search.'
+                  : `No sales in ${periodLabel(viewDays).toLowerCase()}.`}
             </p>
           </div>
         ) : (
