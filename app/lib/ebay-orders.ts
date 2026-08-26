@@ -59,12 +59,45 @@ export interface SaleRow {
   carrier: string | null;
   shipped_at: string | null;
   ebay_fee: number | null;
+  // Seller postage from GetOrders (ActualShippingCost / eBay label cost), not buyer-paid shipping.
+  shipping_cost: number | null;
 }
 
 /** Parses a numeric XML field, returning null (not 0) when absent so we don't overwrite unknowns. */
 export function parseNumOrNull(str: string, tag: string): number | null {
   const m = str.match(new RegExp(`<${tag}[^>]*>(.*?)<\\/${tag}>`));
   return m ? parseFloat(m[1]) : null;
+}
+
+function positiveAmount(n: number | null | undefined): number | null {
+  return n != null && Number.isFinite(n) && n > 0 ? n : null;
+}
+
+/**
+ * Seller postage from a completed GetOrders payload.
+ * https://developer.ebay.com/api-docs/user-guides/static/trading-user-guide/shipping-key-calls.html
+ *
+ * Priority:
+ * 1. eBayEstimatedLabelCost — what it costs to buy the eBay shipping label
+ * 2. GSP/EIS domestic-leg TotalShippingCost — what the seller pays to the hub
+ * 3. Transaction.ActualShippingCost — actual shipping after checkout
+ *
+ * Buyer-charged ShippingServiceCost is stored separately as order_shipping_cost
+ * and is not the seller's postage.
+ */
+export function pickSellerShippingCost(txXml: string, orderXml: string): number | null {
+  const labelCost =
+    positiveAmount(parseNumOrNull(txXml, 'eBayEstimatedLabelCost')) ??
+    positiveAmount(parseNumOrNull(orderXml, 'eBayEstimatedLabelCost'));
+  if (labelCost != null) return labelCost;
+
+  const gspMatch = orderXml.match(
+    /<SellerShipmentToLogisticsProvider>[\s\S]*?<TotalShippingCost[^>]*>(.*?)<\/TotalShippingCost>/
+  );
+  const gspCost = gspMatch ? positiveAmount(parseFloat(gspMatch[1])) : null;
+  if (gspCost != null) return gspCost;
+
+  return positiveAmount(parseNumOrNull(txXml, 'ActualShippingCost'));
 }
 
 export function buildGetOrdersRequest(
@@ -198,6 +231,7 @@ export function parseOrders(xml: string): SaleRow[] {
       );
       const soldFor = txPrice * qty;
       const ebayFee = parseNumOrNull(tx, 'FinalValueFee');
+      const shippingCost = pickSellerShippingCost(tx, order);
 
       if (title && orderNumber) {
         rows.push({
@@ -229,6 +263,7 @@ export function parseOrders(xml: string): SaleRow[] {
           carrier,
           shipped_at: shippedAt,
           ebay_fee: ebayFee,
+          shipping_cost: shippingCost,
         });
       }
     }

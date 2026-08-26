@@ -623,12 +623,14 @@ export default function SalesPage() {
     }
   });
 
-  // Build a SKU -> net proceeds lookup (sold − fees − ads − shipping − supplies)
+  // SKU -> net proceeds (after fees/ads/ship/supplies) and gross sold-for
   const skuTotalNetMap = new Map<string, number>();
+  const skuTotalGrossMap = new Map<string, number>();
   sales.forEach(s => {
     if (s.sku) {
-      const { net } = resolvedSaleCosts(s, settings);
+      const { net, soldFor } = resolvedSaleCosts(s, settings);
       skuTotalNetMap.set(s.sku, (skuTotalNetMap.get(s.sku) ?? 0) + net);
+      skuTotalGrossMap.set(s.sku, (skuTotalGrossMap.get(s.sku) ?? 0) + soldFor);
     }
   });
 
@@ -816,6 +818,8 @@ export default function SalesPage() {
   const totalCosts = purchaseCost + ebayFees + advertising + shipping + supplies + otherExpenses;
   const profit = totalRevenue - totalCosts;
   const roiPct = totalCosts > 0 ? (profit / totalCosts) * 100 : null;
+  const grossProfit = totalRevenue - purchaseCost;
+  const roiExCostsPct = purchaseCost > 0 ? (grossProfit / purchaseCost) * 100 : null;
   const avgSale = periodSales.length ? totalRevenue / periodSales.length : 0;
   const matched = periodSales.filter(s => s.sku && skuTotalCostMap.has(s.sku)).length;
 
@@ -926,7 +930,7 @@ export default function SalesPage() {
         </div>
 
         {/* Headline P&L */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 mb-3">
           {[
             {
               label: 'Sales Revenue',
@@ -949,13 +953,26 @@ export default function SalesPage() {
             {
               label: 'Actual ROI',
               value: roiPct === null ? '—' : `${roiPct > 0 ? '+' : ''}${roiPct.toFixed(1)}%`,
-              sub: totalCosts > 0 ? 'net profit / all costs' : 'no costs in period',
+              sub: totalCosts > 0 ? 'after fees, ads, ship, supplies' : 'no costs in period',
               color:
                 roiPct === null
                   ? 'text-gray-400'
                   : roiPct > 0
                     ? 'text-green-400'
                     : roiPct < 0
+                      ? 'text-red-400'
+                      : 'text-gray-400',
+            },
+            {
+              label: 'ROI ex-costs',
+              value: roiExCostsPct === null ? '—' : `${roiExCostsPct > 0 ? '+' : ''}${roiExCostsPct.toFixed(1)}%`,
+              sub: purchaseCost > 0 ? 'sales vs purchases only' : 'no purchases in period',
+              color:
+                roiExCostsPct === null
+                  ? 'text-gray-400'
+                  : roiExCostsPct > 0
+                    ? 'text-green-400'
+                    : roiExCostsPct < 0
                       ? 'text-red-400'
                       : 'text-gray-400',
             },
@@ -989,7 +1006,7 @@ export default function SalesPage() {
             {
               label: 'Shipping',
               value: fmt$(shipping),
-              sub: expenseSum('shipping') > 0 ? `incl. ${fmt$(expenseSum('shipping'))} logged` : 'seller postage',
+              sub: expenseSum('shipping') > 0 ? `incl. ${fmt$(expenseSum('shipping'))} logged` : 'from eBay when shipped',
             },
             {
               label: 'Supplies',
@@ -1107,6 +1124,7 @@ export default function SalesPage() {
                 <th className="px-3 py-3">Net</th>
                 <th className="px-3 py-3">Lot Cost</th>
                 <th className="px-3 py-3">ROI</th>
+                <th className="px-3 py-3">ROI ex-costs</th>
                 <th className="px-3 py-3">Shipped</th>
               </tr>
             </thead>
@@ -1213,7 +1231,7 @@ export default function SalesPage() {
                       )}
                     </td>
 
-                    {/* ROI — net proceeds vs lot cost */}
+                    {/* ROI — net proceeds vs lot cost (includes shipping) */}
                     <td className="px-3 py-3 text-sm tabular-nums">
                       {(() => {
                         if (!sale.sku || !skuTotalCostMap.has(sale.sku)) return <span className="text-gray-600">—</span>;
@@ -1221,6 +1239,20 @@ export default function SalesPage() {
                         if (cost === 0) return <span className="text-gray-600">—</span>;
                         const totalNetForSku = skuTotalNetMap.get(sale.sku) ?? 0;
                         const roi = ((totalNetForSku - cost) / cost) * 100;
+                        const color = roi > 0 ? 'text-green-400' : roi < 0 ? 'text-red-400' : 'text-gray-400';
+                        const sign = roi > 0 ? '+' : '';
+                        return <span className={`font-medium ${color}`}>{sign}{roi.toFixed(1)}%</span>;
+                      })()}
+                    </td>
+
+                    {/* ROI excluding selling costs — sold-for vs lot cost only */}
+                    <td className="px-3 py-3 text-sm tabular-nums">
+                      {(() => {
+                        if (!sale.sku || !skuTotalCostMap.has(sale.sku)) return <span className="text-gray-600">—</span>;
+                        const cost = skuTotalCostMap.get(sale.sku)!;
+                        if (cost === 0) return <span className="text-gray-600">—</span>;
+                        const totalGross = skuTotalGrossMap.get(sale.sku) ?? 0;
+                        const roi = ((totalGross - cost) / cost) * 100;
                         const color = roi > 0 ? 'text-green-400' : roi < 0 ? 'text-red-400' : 'text-gray-400';
                         const sign = roi > 0 ? '+' : '';
                         return <span className={`font-medium ${color}`}>{sign}{roi.toFixed(1)}%</span>;

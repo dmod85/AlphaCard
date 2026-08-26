@@ -53,20 +53,28 @@ export function resolvedSaleCosts(sale: SaleCostInput, settings: PnlSettings) {
     return { ebayFee, advertising, shipping, supplies, saleCosts, net, soldFor };
 }
 
-export function applyCostDefaultsToRow<T extends { sold_for: number; ebay_fee?: number | null }>(
+export function applyCostDefaultsToRow<T extends {
+    sold_for: number;
+    ebay_fee?: number | null;
+    shipping_cost?: number | null;
+    advertising_fee?: number | null;
+    supplies_cost?: number | null;
+}>(
     row: T,
     settings: PnlSettings
 ): T & {
     ebay_fee: number;
     advertising_fee: number;
-    shipping_cost: number;
+    shipping_cost: number | null;
     supplies_cost: number;
 } {
     return {
         ...row,
         ebay_fee: row.ebay_fee != null ? Number(row.ebay_fee) : estimateEbayFee(row.sold_for, settings),
-        advertising_fee: estimateAdFee(row.sold_for, settings),
-        shipping_cost: Number(settings.default_shipping_cost),
-        supplies_cost: Number(settings.default_supplies_cost),
+        advertising_fee: row.advertising_fee != null ? Number(row.advertising_fee) : estimateAdFee(row.sold_for, settings),
+        // Leave null when GetOrders has no postage yet so a later sync can backfill
+        // the actual label cost after the seller buys a label.
+        shipping_cost: row.shipping_cost != null ? Number(row.shipping_cost) : null,
+        supplies_cost: row.supplies_cost != null ? Number(row.supplies_cost) : Number(settings.default_supplies_cost),
     };
 }

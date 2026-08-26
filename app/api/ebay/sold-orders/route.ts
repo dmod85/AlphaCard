@@ -137,16 +137,27 @@ export async function GET(request: NextRequest) {
         synced = inserted?.length ?? 0;
       }
 
-      // Backfill eBay final-value fees on existing rows that still have a null fee.
-      const withParsedFee = uniqueRows.filter((r) => r.ebay_fee != null);
-      for (const r of withParsedFee) {
-        let q = supabaseAdmin
-          .from('ebay_sales')
-          .update({ ebay_fee: r.ebay_fee })
-          .eq('order_number', r.order_number)
-          .is('ebay_fee', null);
-        if (r.ebay_item_id) q = q.eq('ebay_item_id', r.ebay_item_id);
-        await q;
+      // Backfill API-provided fees / postage on existing rows that still have nulls
+      // (don't overwrite values the user already edited).
+      for (const r of uniqueRows) {
+        if (r.ebay_fee != null) {
+          let q = supabaseAdmin
+            .from('ebay_sales')
+            .update({ ebay_fee: r.ebay_fee })
+            .eq('order_number', r.order_number)
+            .is('ebay_fee', null);
+          if (r.ebay_item_id) q = q.eq('ebay_item_id', r.ebay_item_id);
+          await q;
+        }
+        if (r.shipping_cost != null) {
+          let q = supabaseAdmin
+            .from('ebay_sales')
+            .update({ shipping_cost: r.shipping_cost })
+            .eq('order_number', r.order_number)
+            .is('shipping_cost', null);
+          if (r.ebay_item_id) q = q.eq('ebay_item_id', r.ebay_item_id);
+          await q;
+        }
       }
     }
 
