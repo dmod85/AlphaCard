@@ -739,7 +739,7 @@ export default function SalesPage() {
       const matched = data.matchedOrders ?? 0;
       const extra = data.perOrderFilled ?? 0;
       let msg = `✓ Found ${found} seller-paid label${found === 1 ? '' : 's'}, matched ${matched} order${matched === 1 ? '' : 's'}`;
-      if (extra) msg += ` (${extra} via per-order lookup)`;
+      if (extra) msg += ` (${extra} of ${data.missingLookedUp ?? extra} blank-ship orders looked up)`;
       msg += '.';
       if (data.typicalLabelCost != null) {
         const typical = Number(data.typicalLabelCost);

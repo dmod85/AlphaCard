@@ -344,13 +344,26 @@ export async function fetchLabelCostForOrderDetailed(orderId: string): Promise<O
     const qs = `filter=orderId:{${orderId}}&limit=200`;
     const { status, json } = await financesGet(token, qs);
     const txs = status < 400 ? (json.transactions ?? []) : [];
-    const txTypes = txs.map((t) => `${t.transactionType || '?'}:${t.amount?.value || '?'}`);
+    const txTypes = [
+        `http:${status}`,
+        ...txs.map((t) => `${t.transactionType || '?'}:${t.amount?.value || '?'}`),
+    ];
     const fromTx = parseTransactionCosts(txs);
 
-    const earnings = await fetchOrderEarningsRaw(token, orderId);
-    const fromEarn = earnings
-        ? parseOrderEarnings(earnings)
-        : { shippingLabel: null, ebayFee: null, adFee: null, buyerShipping: null };
+    let fromEarn: OrderEarningsCosts = {
+        shippingLabel: null,
+        ebayFee: null,
+        adFee: null,
+        buyerShipping: null,
+    };
+    // Skip order_earnings when transactions already have label + ads (it's slow
+    // and often 403 without a separate growth-check grant).
+    const needEarnings =
+        fromTx.shippingLabel == null || fromTx.adFee == null || fromTx.ebayFee == null;
+    if (needEarnings) {
+        const earnings = await fetchOrderEarningsRaw(token, orderId);
+        if (earnings) fromEarn = parseOrderEarnings(earnings);
+    }
 
     const amount = fromTx.shippingLabel ?? fromEarn.shippingLabel ?? null;
     const source = fromTx.shippingLabel != null ? 'transaction' : fromEarn.shippingLabel != null ? 'order_earnings' : null;

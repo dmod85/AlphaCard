@@ -45,6 +45,7 @@ export async function POST(request: NextRequest) {
         let matchedOrders = 0;
         let updatedRows = 0;
         let perOrderFilled = 0;
+        let missingLookedUp = 0;
         let labelsFound = 0;
         let warning: string | null = null;
         const sampleLabelOrderIds: string[] = [];
@@ -125,18 +126,32 @@ export async function POST(request: NextRequest) {
                 });
             }
 
-            // Order earnings has the Seller Hub breakdown: transaction fees,
-            // Ad Fee General, and Shipping label. Pull that for every sale in
-            // the lookback so ads/fees aren't stuck on estimates.
-            const inWindow = Array.from(byOrder.entries())
-                .filter(([, lines]) => lines.some((l) => l.sale_date && l.sale_date >= cutoff))
-                .slice(0, 200);
+            // Only look up orders that still have blank shipping (italic default)
+            // in the selected lookback, newest first. Previously we scanned the
+            // oldest 200 orders and timed out before reaching today's sales.
+            const missing = Array.from(byOrder.entries())
+                .map(([orderNumber, lines]) => {
+                    const latest = lines.reduce((max, l) => {
+                        const d = l.sale_date || '';
+                        return d > max ? d : max;
+                    }, '');
+                    return { orderNumber, lines, latest };
+                })
+                .filter((x) => {
+                    if (matchedOrderNumbers.has(x.orderNumber)) return false;
+                    const inRange = x.latest >= cutoff;
+                    const blank = x.lines.some((l) => l.shipping_cost == null);
+                    return inRange && blank;
+                })
+                .sort((a, b) => (a.latest < b.latest ? 1 : -1))
+                .slice(0, 80);
+            missingLookedUp = missing.length;
 
-            const CHUNK = 6;
-            for (let i = 0; i < inWindow.length; i += CHUNK) {
-                const chunk = inWindow.slice(i, i + CHUNK);
+            const CHUNK = 8;
+            for (let i = 0; i < missing.length; i += CHUNK) {
+                const chunk = missing.slice(i, i + CHUNK);
                 await Promise.all(
-                    chunk.map(async ([orderNumber, lines]) => {
+                    chunk.map(async ({ orderNumber, lines }) => {
                         const detail = await fetchLabelCostForOrderDetailed(orderNumber);
                         if (
                             detail.amount == null &&
@@ -171,6 +186,7 @@ export async function POST(request: NextRequest) {
             matchedOrders,
             updatedRows,
             perOrderFilled,
+            missingLookedUp,
             typicalLabelCost,
             minLabelCost,
             maxLabelCost,
@@ -182,4 +198,14 @@ export async function POST(request: NextRequest) {
     } catch (err: any) {
         return NextResponse.json({ error: err.message || 'Failed to refresh label costs' }, { status: 500 });
     }
+}
+
+/** GET /api/ebay/seller-costs?orderId=18-15069-06112 — inspect Finances for one order */
+export async function GET(request: NextRequest) {
+    const orderId = request.nextUrl.searchParams.get('orderId')?.trim();
+    if (!orderId) {
+        return NextResponse.json({ error: 'orderId required' }, { status: 400 });
+    }
+    const detail = await fetchLabelCostForOrderDetailed(orderId);
+    return NextResponse.json({ orderId, ...detail });
 }
