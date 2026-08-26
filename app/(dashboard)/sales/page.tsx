@@ -709,7 +709,8 @@ export default function SalesPage() {
     return () => ac.abort();
   }, []);
 
-  // Manual sync from eBay (uses the lookback dropdown)
+  // Manual sync from eBay (uses the lookback dropdown). Re-pulls all pages and
+  // overwrites saved eBay fee + shipping with whatever GetOrders returns.
   async function handleSync() {
     setSyncing(true);
     setSyncMsg('');
@@ -718,7 +719,12 @@ export default function SalesPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
       setSales(data.sales ?? []);
-      setSyncMsg(`✓ Synced ${data.synced} orders from the last ${days} day${days === 1 ? '' : 's'}.`);
+      const newOrders = data.synced ?? 0;
+      const costs = data.costsUpdated ?? 0;
+      setSyncMsg(
+        `✓ Synced ${newOrders} new order${newOrders === 1 ? '' : 's'} from the last ${days} day${days === 1 ? '' : 's'}` +
+        (costs ? `, updated fees/shipping on ${costs} sale${costs === 1 ? '' : 's'}.` : '.')
+      );
       setLastSync(new Date().toISOString());
     } catch (e: any) {
       setSyncMsg(`✗ Sync failed: ${e.message}`);

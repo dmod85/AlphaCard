@@ -13,6 +13,7 @@ import {
   parseOrders,
   fetchImagesForItems,
   loadPnlSettings,
+  type SaleRow,
 } from '@/app/lib/ebay-orders';
 import { applyCostDefaultsToRow } from '@/app/lib/pnl';
 
@@ -22,8 +23,11 @@ import { applyCostDefaultsToRow } from '@/app/lib/pnl';
 //
 // GET  /api/ebay/sold-orders          — sync from eBay + return DB rows
 //   ?days=90   — lookback in days (default 90, max 90 per eBay limit)
-//   ?page=1    — eBay page of results
+//   ?page=1    — single eBay page (omit to walk every page in the lookback)
 //   ?sync=false — skip eBay call, just return DB rows
+//
+// Existing sales keep their SKU/ads/supplies. eBay fee + shipping_cost are
+// overwritten from GetOrders whenever those fields are present.
 //
 // PATCH /api/ebay/sold-orders         — update a single sale's SKU
 //   body: { id, sku }
@@ -34,7 +38,9 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const days = Math.min(parseInt(searchParams.get('days') || '90', 10), 90);
-    const page = parseInt(searchParams.get('page') || '1', 10);
+    const pageParam = searchParams.get('page');
+    const startPage = parseInt(pageParam || '1', 10);
+    const fetchAllPages = pageParam == null;
     const shouldSync = searchParams.get('sync') !== 'false';
 
     // If not syncing, just return DB rows
@@ -56,39 +62,54 @@ export async function GET(request: NextRequest) {
     fromDate.setHours(0, 0, 0, 0); // include the entire starting day
 
     const token = await getValidToken();
-    const xml = buildGetOrdersRequest(
-      fromDate.toISOString(),
-      toDate.toISOString(),
-      page,
-      token
-    );
+    const fromIso = fromDate.toISOString();
+    const toIso = toDate.toISOString();
 
-    const res = await fetch(getEbayApiUrl(), {
-      method: 'POST',
-      headers: getEbayApiHeaders('GetOrders', token),
-      body: xml,
-    });
-    const responseXml = await res.text();
+    const fetchOrdersPage = async (pageNum: number) => {
+      const xml = buildGetOrdersRequest(fromIso, toIso, pageNum, token);
+      const res = await fetch(getEbayApiUrl(), {
+        method: 'POST',
+        headers: getEbayApiHeaders('GetOrders', token),
+        body: xml,
+      });
+      const responseXml = await res.text();
+      const ack = responseXml.match(/<Ack>(.*?)<\/Ack>/)?.[1];
+      if (ack === 'Failure') {
+        const errMsg =
+          responseXml.match(/<LongMessage>(.*?)<\/LongMessage>/)?.[1] ||
+          responseXml.match(/<ShortMessage>(.*?)<\/ShortMessage>/)?.[1] ||
+          'eBay API error';
+        console.error('[sold-orders] eBay API failure:', decodeXml(errMsg));
+        if (isEbayAuthError(responseXml)) {
+          clearTokenCache();
+          const err = new Error('EBAY_AUTH_REQUIRED');
+          (err as any).ebayAuth = true;
+          throw err;
+        }
+        throw new Error(decodeXml(errMsg));
+      }
+      const pages = parseInt(
+        responseXml.match(/<TotalNumberOfPages>(.*?)<\/TotalNumberOfPages>/)?.[1] || '1'
+      );
+      return { rows: parseOrders(responseXml), pages };
+    };
 
-    const ack = responseXml.match(/<Ack>(.*?)<\/Ack>/)?.[1];
-    if (ack === 'Failure') {
-      const errMsg =
-        responseXml.match(/<LongMessage>(.*?)<\/LongMessage>/)?.[1] ||
-        responseXml.match(/<ShortMessage>(.*?)<\/ShortMessage>/)?.[1] ||
-        'eBay API error';
-      console.error('[sold-orders] eBay API failure:', decodeXml(errMsg));
-      if (isEbayAuthError(responseXml)) {
-        clearTokenCache();
+    let totalPages = 1;
+    const rows: SaleRow[] = [];
+    try {
+      let currentPage = startPage;
+      do {
+        const result = await fetchOrdersPage(currentPage);
+        totalPages = result.pages;
+        rows.push(...result.rows);
+        currentPage += 1;
+      } while (fetchAllPages && currentPage <= totalPages);
+    } catch (err: any) {
+      if (err.ebayAuth || err.message === 'EBAY_AUTH_REQUIRED') {
         return NextResponse.json({ error: 'EBAY_AUTH_REQUIRED' }, { status: 401 });
       }
-      return NextResponse.json({ error: decodeXml(errMsg) }, { status: 500 });
+      return NextResponse.json({ error: err.message || 'eBay API error' }, { status: 500 });
     }
-
-    const totalPages = parseInt(
-      responseXml.match(/<TotalNumberOfPages>(.*?)<\/TotalNumberOfPages>/)?.[1] || '1'
-    );
-
-    const rows = parseOrders(responseXml);
 
     // Deduplicate within the batch — Postgres raises an error if the same
     // conflict key appears more than once in a single upsert payload.
@@ -137,31 +158,51 @@ export async function GET(request: NextRequest) {
         synced = inserted?.length ?? 0;
       }
 
-      // Backfill API-provided fees / postage on existing rows that still have nulls
-      // (don't overwrite values the user already edited).
-      for (const r of uniqueRows) {
-        if (r.ebay_fee != null) {
-          let q = supabaseAdmin
-            .from('ebay_sales')
-            .update({ ebay_fee: r.ebay_fee })
-            .eq('order_number', r.order_number)
-            .is('ebay_fee', null);
-          if (r.ebay_item_id) q = q.eq('ebay_item_id', r.ebay_item_id);
-          await q;
-        }
-        if (r.shipping_cost != null) {
-          let q = supabaseAdmin
-            .from('ebay_sales')
-            .update({ shipping_cost: r.shipping_cost })
-            .eq('order_number', r.order_number)
-            .is('shipping_cost', null);
-          if (r.ebay_item_id) q = q.eq('ebay_item_id', r.ebay_item_id);
-          await q;
-        }
+      // Overwrite eBay fee + seller postage from GetOrders whenever eBay sent a
+      // real value. SKU / ads / supplies are left alone. This is how a re-sync
+      // replaces old $0.63 (etc.) defaults with actual API costs.
+      let costsUpdated = 0;
+      const toRefresh = uniqueRows.filter((r) => r.ebay_fee != null || r.shipping_cost != null);
+      const CHUNK = 15;
+      for (let i = 0; i < toRefresh.length; i += CHUNK) {
+        const chunk = toRefresh.slice(i, i + CHUNK);
+        const counts = await Promise.all(
+          chunk.map(async (r) => {
+            const patch: Record<string, number> = {};
+            if (r.ebay_fee != null) patch.ebay_fee = r.ebay_fee;
+            if (r.shipping_cost != null) patch.shipping_cost = r.shipping_cost;
+            let q = supabaseAdmin
+              .from('ebay_sales')
+              .update(patch)
+              .eq('order_number', r.order_number);
+            if (r.ebay_item_id) q = q.eq('ebay_item_id', r.ebay_item_id);
+            const { data, error } = await q.select('id');
+            if (error) {
+              console.error('[sold-orders] cost refresh:', error.message);
+              return 0;
+            }
+            return data?.length ?? 0;
+          })
+        );
+        costsUpdated += counts.reduce((a, b) => a + b, 0);
       }
+
+      const { data: allSales, error: fetchErr } = await supabaseAdmin
+        .from('ebay_sales')
+        .select('*')
+        .order('sale_date', { ascending: false });
+      if (fetchErr) throw fetchErr;
+
+      return NextResponse.json({
+        sales: allSales ?? [],
+        synced,
+        costsUpdated,
+        totalPages,
+        currentPage: fetchAllPages ? totalPages : startPage,
+      });
     }
 
-    // Return all DB rows (not just the synced page)
+    // No new rows from eBay — still return DB
     const { data: allSales, error: fetchErr } = await supabaseAdmin
       .from('ebay_sales')
       .select('*')
@@ -170,9 +211,10 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       sales: allSales ?? [],
-      synced,
+      synced: 0,
+      costsUpdated: 0,
       totalPages,
-      currentPage: page,
+      currentPage: fetchAllPages ? totalPages : startPage,
     });
   } catch (err: any) {
     if (err.message === 'EBAY_AUTH_REQUIRED') {
