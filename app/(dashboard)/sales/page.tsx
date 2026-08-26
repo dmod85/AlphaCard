@@ -2,6 +2,13 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useSalesRealtimeSync } from '../hooks/useRealtime';
+import {
+  DEFAULT_PNL_SETTINGS,
+  EXPENSE_CATEGORIES,
+  resolvedSaleCosts,
+  type ExpenseCategory,
+  type PnlSettings,
+} from '@/app/lib/pnl';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -23,6 +30,18 @@ interface Sale {
   carrier: string | null;
   shipped_at: string | null;
   packing_slip_url: string | null;
+  ebay_fee?: number | null;
+  advertising_fee?: number | null;
+  shipping_cost?: number | null;
+  supplies_cost?: number | null;
+}
+
+interface Expense {
+  id: string;
+  expense_date: string;
+  category: ExpenseCategory;
+  amount: number;
+  notes: string | null;
 }
 
 interface Purchase {
@@ -76,6 +95,14 @@ function isInPeriod(dateStr: string | null, days: number): boolean {
     : new Date(dateStr);
   return local.getTime() >= cutoff.getTime();
 }
+
+const EXPENSE_LABELS: Record<ExpenseCategory, string> = {
+  advertising: 'eBay Advertising',
+  supplies: 'Supplies',
+  shipping: 'Shipping',
+  ebay_fees: 'eBay Fees',
+  other: 'Other',
+};
 
 function getGroupedPurchases(purchases: Purchase[], includeSku?: string | null) {
   const uniqueSkusMap = new Map(purchases.filter(p => p.sku).map(p => [p.sku!, p]));
@@ -188,6 +215,356 @@ function SkuCell({
   );
 }
 
+// ─── Inline dollar editor ─────────────────────────────────────────────────────
+
+function CostCell({
+  saleId,
+  value,
+  fallback,
+  field,
+  onSaved,
+}: {
+  saleId: string;
+  value: number | null;
+  fallback: number;
+  field: 'ebay_fee' | 'advertising_fee' | 'shipping_cost' | 'supplies_cost';
+  onSaved: (id: string, field: string, amount: number) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const stored = value != null ? Number(value) : null;
+  const [text, setText] = useState(stored != null ? stored.toFixed(2) : fallback.toFixed(2));
+  const [saving, setSaving] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const isEstimate = stored == null;
+
+  useEffect(() => {
+    if (editing) inputRef.current?.focus();
+  }, [editing]);
+
+  useEffect(() => {
+    setText((stored != null ? stored : fallback).toFixed(2));
+  }, [stored, fallback]);
+
+  async function save() {
+    if (saving) return;
+    const parsed = parseFloat(text);
+    const amount = Number.isFinite(parsed) ? Math.round(parsed * 100) / 100 : fallback;
+    setSaving(true);
+    try {
+      const res = await fetch('/api/ebay/sold-orders', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: saleId, [field]: amount }),
+      });
+      if (res.ok) onSaved(saleId, field, amount);
+    } finally {
+      setSaving(false);
+      setEditing(false);
+    }
+  }
+
+  if (editing) {
+    return (
+      <input
+        ref={inputRef}
+        type="number"
+        step="0.01"
+        min="0"
+        className="w-16 bg-gray-700 border border-blue-500 rounded px-1 py-0.5 text-xs text-white tabular-nums focus:outline-none"
+        value={text}
+        onChange={e => setText(e.target.value)}
+        onBlur={save}
+        onKeyDown={e => {
+          if (e.key === 'Enter') save();
+          if (e.key === 'Escape') { setText((stored != null ? stored : fallback).toFixed(2)); setEditing(false); }
+        }}
+      />
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={() => setEditing(true)}
+      className={`tabular-nums text-xs hover:text-white transition ${isEstimate ? 'text-gray-500 italic' : 'text-gray-300'}`}
+      title={isEstimate ? 'Estimated — click to set actual' : 'Click to edit'}
+    >
+      {fmt$(stored != null ? stored : fallback)}
+      {saving && <span className="text-gray-600"> …</span>}
+    </button>
+  );
+}
+
+const EMPTY_EXPENSE = {
+  expense_date: new Date().toISOString().slice(0, 10),
+  category: 'supplies' as ExpenseCategory,
+  amount: '',
+  notes: '',
+};
+
+function ExpensePanel({
+  expenses,
+  onChanged,
+  onClose,
+}: {
+  expenses: Expense[];
+  onChanged: () => void;
+  onClose: () => void;
+}) {
+  const [form, setForm] = useState(EMPTY_EXPENSE);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  async function addExpense() {
+    const amount = parseFloat(form.amount);
+    if (!form.expense_date || !Number.isFinite(amount)) {
+      setError('Date and amount are required.');
+      return;
+    }
+    setSaving(true);
+    setError('');
+    try {
+      const res = await fetch('/api/expenses', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          expense_date: form.expense_date,
+          category: form.category,
+          amount,
+          notes: form.notes.trim() || null,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setForm({ ...EMPTY_EXPENSE, category: form.category });
+      onChanged();
+    } catch (e: any) {
+      setError(e.message || 'Save failed');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function removeExpense(id: string) {
+    if (!confirm('Delete this expense?')) return;
+    await fetch(`/api/expenses?id=${id}`, { method: 'DELETE' });
+    onChanged();
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+      <div className="bg-gray-900 border border-gray-700 rounded-xl w-full max-w-2xl shadow-2xl max-h-[90vh] flex flex-col">
+        <div className="flex items-center justify-between p-5 border-b border-gray-800">
+          <div>
+            <h2 className="text-white font-semibold text-lg">Operating expenses</h2>
+            <p className="text-gray-500 text-xs mt-0.5">
+              Track advertising invoices, sleeves, top-loaders, postage, and other costs that hit P&amp;L
+            </p>
+          </div>
+          <button onClick={onClose} className="text-gray-500 hover:text-white text-xl transition">✕</button>
+        </div>
+
+        <div className="p-5 border-b border-gray-800 space-y-3">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <label className="text-xs text-gray-400">
+              Date
+              <input
+                type="date"
+                className="mt-1 w-full bg-gray-800 border border-gray-700 rounded-lg px-2 py-1.5 text-sm text-white focus:outline-none focus:border-blue-500"
+                value={form.expense_date}
+                onChange={e => setForm(f => ({ ...f, expense_date: e.target.value }))}
+              />
+            </label>
+            <label className="text-xs text-gray-400">
+              Category
+              <select
+                className="mt-1 w-full bg-gray-800 border border-gray-700 rounded-lg px-2 py-1.5 text-sm text-white focus:outline-none focus:border-blue-500"
+                value={form.category}
+                onChange={e => setForm(f => ({ ...f, category: e.target.value as ExpenseCategory }))}
+              >
+                {EXPENSE_CATEGORIES.map(c => (
+                  <option key={c} value={c}>{EXPENSE_LABELS[c]}</option>
+                ))}
+              </select>
+            </label>
+            <label className="text-xs text-gray-400">
+              Amount
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                className="mt-1 w-full bg-gray-800 border border-gray-700 rounded-lg px-2 py-1.5 text-sm text-white focus:outline-none focus:border-blue-500"
+                value={form.amount}
+                onChange={e => setForm(f => ({ ...f, amount: e.target.value }))}
+                placeholder="0.00"
+              />
+            </label>
+            <label className="text-xs text-gray-400">
+              Notes
+              <input
+                type="text"
+                className="mt-1 w-full bg-gray-800 border border-gray-700 rounded-lg px-2 py-1.5 text-sm text-white focus:outline-none focus:border-blue-500"
+                value={form.notes}
+                onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
+                placeholder="e.g. 1000 penny sleeves"
+              />
+            </label>
+          </div>
+          {error && <p className="text-xs text-red-400">{error}</p>}
+          <button
+            type="button"
+            onClick={addExpense}
+            disabled={saving}
+            className="px-4 py-1.5 bg-green-600 hover:bg-green-500 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition"
+          >
+            {saving ? 'Saving…' : '+ Add expense'}
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-auto p-5">
+          {expenses.length === 0 ? (
+            <p className="text-sm text-gray-500 text-center py-8">No expenses logged yet.</p>
+          ) : (
+            <table className="w-full text-left">
+              <thead>
+                <tr className="text-[11px] text-gray-500 uppercase tracking-wider border-b border-gray-800">
+                  <th className="pb-2 pr-3">Date</th>
+                  <th className="pb-2 pr-3">Category</th>
+                  <th className="pb-2 pr-3">Amount</th>
+                  <th className="pb-2 pr-3">Notes</th>
+                  <th className="pb-2" />
+                </tr>
+              </thead>
+              <tbody>
+                {expenses.map(ex => (
+                  <tr key={ex.id} className="border-b border-gray-800/60 text-sm">
+                    <td className="py-2 pr-3 text-gray-400 whitespace-nowrap">{fmtDate(ex.expense_date)}</td>
+                    <td className="py-2 pr-3 text-gray-300">{EXPENSE_LABELS[ex.category]}</td>
+                    <td className="py-2 pr-3 text-orange-400 tabular-nums">{fmt$(Number(ex.amount))}</td>
+                    <td className="py-2 pr-3 text-gray-500">{ex.notes || '—'}</td>
+                    <td className="py-2 text-right">
+                      <button
+                        type="button"
+                        onClick={() => removeExpense(ex.id)}
+                        className="text-[11px] text-red-500 hover:text-red-400 px-2 py-0.5 rounded hover:bg-red-500/10"
+                      >
+                        ✕
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DefaultsPanel({
+  settings,
+  onSaved,
+  onClose,
+}: {
+  settings: PnlSettings;
+  onSaved: (s: PnlSettings, filled: number) => void;
+  onClose: () => void;
+}) {
+  const [form, setForm] = useState({
+    default_shipping_cost: settings.default_shipping_cost.toString(),
+    default_supplies_cost: settings.default_supplies_cost.toString(),
+    default_fee_rate: (settings.default_fee_rate * 100).toString(),
+    default_processing_fee: settings.default_processing_fee.toString(),
+    default_ad_rate: (settings.default_ad_rate * 100).toString(),
+  });
+  const [applyBlank, setApplyBlank] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  function set(key: string, val: string) {
+    setForm(f => ({ ...f, [key]: val }));
+  }
+
+  async function save() {
+    setSaving(true);
+    setError('');
+    try {
+      const res = await fetch('/api/pnl-settings', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          default_shipping_cost: parseFloat(form.default_shipping_cost) || 0,
+          default_supplies_cost: parseFloat(form.default_supplies_cost) || 0,
+          default_fee_rate: (parseFloat(form.default_fee_rate) || 0) / 100,
+          default_processing_fee: parseFloat(form.default_processing_fee) || 0,
+          default_ad_rate: (parseFloat(form.default_ad_rate) || 0) / 100,
+          apply_to_blank: applyBlank,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      onSaved(data.settings, data.filled ?? 0);
+      onClose();
+    } catch (e: any) {
+      setError(e.message || 'Save failed');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+      <div className="bg-gray-900 border border-gray-700 rounded-xl w-full max-w-lg shadow-2xl">
+        <div className="flex items-center justify-between p-5 border-b border-gray-800">
+          <div>
+            <h2 className="text-white font-semibold text-lg">Cost defaults</h2>
+            <p className="text-gray-500 text-xs mt-0.5">
+              Applied to new synced sales and used as estimates when a sale has no actual cost yet
+            </p>
+          </div>
+          <button onClick={onClose} className="text-gray-500 hover:text-white text-xl transition">✕</button>
+        </div>
+        <div className="p-5 space-y-4">
+          <div className="grid grid-cols-2 gap-3">
+            <label className="text-xs text-gray-400">
+              eBay fee rate (%)
+              <input type="number" step="0.01" className="mt-1 w-full bg-gray-800 border border-gray-700 rounded-lg px-2 py-1.5 text-sm text-white focus:outline-none focus:border-blue-500" value={form.default_fee_rate} onChange={e => set('default_fee_rate', e.target.value)} />
+            </label>
+            <label className="text-xs text-gray-400">
+              Per-order processing ($)
+              <input type="number" step="0.01" className="mt-1 w-full bg-gray-800 border border-gray-700 rounded-lg px-2 py-1.5 text-sm text-white focus:outline-none focus:border-blue-500" value={form.default_processing_fee} onChange={e => set('default_processing_fee', e.target.value)} />
+            </label>
+            <label className="text-xs text-gray-400">
+              Promoted listings rate (%)
+              <input type="number" step="0.01" className="mt-1 w-full bg-gray-800 border border-gray-700 rounded-lg px-2 py-1.5 text-sm text-white focus:outline-none focus:border-blue-500" value={form.default_ad_rate} onChange={e => set('default_ad_rate', e.target.value)} />
+            </label>
+            <label className="text-xs text-gray-400">
+              Shipping per sale ($)
+              <input type="number" step="0.01" className="mt-1 w-full bg-gray-800 border border-gray-700 rounded-lg px-2 py-1.5 text-sm text-white focus:outline-none focus:border-blue-500" value={form.default_shipping_cost} onChange={e => set('default_shipping_cost', e.target.value)} />
+            </label>
+            <label className="text-xs text-gray-400 col-span-2">
+              Supplies per sale ($)
+              <input type="number" step="0.01" className="mt-1 w-full bg-gray-800 border border-gray-700 rounded-lg px-2 py-1.5 text-sm text-white focus:outline-none focus:border-blue-500" value={form.default_supplies_cost} onChange={e => set('default_supplies_cost', e.target.value)} />
+            </label>
+          </div>
+          <label className="flex items-center gap-2 text-sm text-gray-300">
+            <input type="checkbox" checked={applyBlank} onChange={e => setApplyBlank(e.target.checked)} className="rounded border-gray-700 bg-gray-800 text-blue-500" />
+            Fill blank costs on existing sales with these defaults
+          </label>
+          {error && <p className="text-xs text-red-400">{error}</p>}
+          <div className="flex justify-end gap-2">
+            <button type="button" onClick={onClose} className="px-4 py-1.5 text-sm text-gray-400 hover:text-white">Cancel</button>
+            <button type="button" onClick={save} disabled={saving} className="px-4 py-1.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-sm font-medium rounded-lg">
+              {saving ? 'Saving…' : 'Save defaults'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Image Thumbnail ──────────────────────────────────────────────────────────
 
 function ItemImage({ url, title }: { url: string | null; title: string }) {
@@ -229,6 +606,10 @@ export default function SalesPage() {
   const [selectedSales, setSelectedSales] = useState<Set<string>>(new Set());
   const [bulkSku, setBulkSku] = useState<string>('');
   const [applyingBulk, setApplyingBulk] = useState(false);
+  const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [settings, setSettings] = useState<PnlSettings>(DEFAULT_PNL_SETTINGS);
+  const [showExpenses, setShowExpenses] = useState(false);
+  const [showDefaults, setShowDefaults] = useState(false);
 
   // Build a SKU -> total cost lookup
   const skuTotalCostMap = new Map<string, number>();
@@ -242,11 +623,12 @@ export default function SalesPage() {
     }
   });
 
-  // Build a SKU -> total sales lookup
-  const skuTotalSalesMap = new Map<string, number>();
+  // Build a SKU -> net proceeds lookup (sold − fees − ads − shipping − supplies)
+  const skuTotalNetMap = new Map<string, number>();
   sales.forEach(s => {
     if (s.sku) {
-      skuTotalSalesMap.set(s.sku, (skuTotalSalesMap.get(s.sku) ?? 0) + s.sold_for);
+      const { net } = resolvedSaleCosts(s, settings);
+      skuTotalNetMap.set(s.sku, (skuTotalNetMap.get(s.sku) ?? 0) + net);
     }
   });
 
@@ -259,6 +641,14 @@ export default function SalesPage() {
     } catch { /* silent */ }
   }, []);
 
+  const loadExpenses = useCallback(async () => {
+    try {
+      const res = await fetch('/api/expenses');
+      const data = await res.json();
+      setExpenses(data.expenses ?? []);
+    } catch { /* silent */ }
+  }, []);
+
   // Show DB rows immediately, then auto-sync the last 1 day from eBay.
   useEffect(() => {
     const ac = new AbortController();
@@ -266,15 +656,21 @@ export default function SalesPage() {
     async function init() {
       setLoading(true);
       try {
-        const [salesRes, purchasesRes] = await Promise.all([
+        const [salesRes, purchasesRes, expensesRes, settingsRes] = await Promise.all([
           fetch('/api/ebay/sold-orders?sync=false', { signal: ac.signal }),
           fetch('/api/purchases', { signal: ac.signal }),
+          fetch('/api/expenses', { signal: ac.signal }),
+          fetch('/api/pnl-settings', { signal: ac.signal }),
         ]);
         const salesData = await salesRes.json();
         const purchasesData = await purchasesRes.json();
+        const expensesData = await expensesRes.json();
+        const settingsData = await settingsRes.json();
         if (ac.signal.aborted) return;
         setSales(salesData.sales ?? []);
         setPurchases(purchasesData.purchases ?? []);
+        setExpenses(expensesData.expenses ?? []);
+        if (settingsData.settings) setSettings(settingsData.settings);
         if (salesData.sales?.length > 0) {
           setLastSync(salesData.sales[0].synced_at);
         }
@@ -336,6 +732,10 @@ export default function SalesPage() {
     loadPurchases();
   }
 
+  function handleCostSaved(id: string, field: string, amount: number) {
+    setSales(prev => prev.map(s => s.id === id ? { ...s, [field]: amount } : s));
+  }
+
   async function handleApplyBulkSku() {
     if (selectedSales.size === 0) return;
     setApplyingBulk(true);
@@ -374,6 +774,13 @@ export default function SalesPage() {
   // Period-scoped rows (P&L ignores the search box so ROI stays apples-to-apples)
   const periodSales = sales.filter(s => isInPeriod(s.sale_date, viewDays));
   const periodPurchases = purchases.filter(p => isInPeriod(p.purchase_date, viewDays));
+  const periodExpenses = expenses.filter(e => isInPeriod(e.expense_date, viewDays));
+
+  function expenseSum(category: ExpenseCategory) {
+    return periodExpenses
+      .filter(e => e.category === category)
+      .reduce((s, e) => s + Number(e.amount || 0), 0);
+  }
 
   // Filter table by period + search
   const filtered = periodSales.filter(s => {
@@ -387,11 +794,28 @@ export default function SalesPage() {
     );
   });
 
-  // Period P&L
+  // Period P&L — actual (all-in) costs
   const totalRevenue = periodSales.reduce((s, r) => s + Number(r.sold_for || 0), 0);
   const purchaseCost = periodPurchases.reduce((s, p) => s + Number(p.cost || 0), 0);
-  const profit = totalRevenue - purchaseCost;
-  const roiPct = purchaseCost > 0 ? (profit / purchaseCost) * 100 : null;
+  const saleCostTotals = periodSales.reduce(
+    (acc, r) => {
+      const c = resolvedSaleCosts(r, settings);
+      acc.ebayFees += c.ebayFee;
+      acc.advertising += c.advertising;
+      acc.shipping += c.shipping;
+      acc.supplies += c.supplies;
+      return acc;
+    },
+    { ebayFees: 0, advertising: 0, shipping: 0, supplies: 0 }
+  );
+  const ebayFees = saleCostTotals.ebayFees + expenseSum('ebay_fees');
+  const advertising = saleCostTotals.advertising + expenseSum('advertising');
+  const shipping = saleCostTotals.shipping + expenseSum('shipping');
+  const supplies = saleCostTotals.supplies + expenseSum('supplies');
+  const otherExpenses = expenseSum('other');
+  const totalCosts = purchaseCost + ebayFees + advertising + shipping + supplies + otherExpenses;
+  const profit = totalRevenue - totalCosts;
+  const roiPct = totalCosts > 0 ? (profit / totalCosts) * 100 : null;
   const avgSale = periodSales.length ? totalRevenue / periodSales.length : 0;
   const matched = periodSales.filter(s => s.sku && skuTotalCostMap.has(s.sku)).length;
 
@@ -483,36 +907,49 @@ export default function SalesPage() {
               ))}
             </div>
           </div>
-          <p className="text-[11px] text-gray-600 shrink-0 hidden sm:block">
-            {periodLabel(viewDays)} · sales vs purchases
-          </p>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => setShowExpenses(true)}
+              className="px-2.5 py-1 rounded-md text-xs font-medium bg-gray-900 text-gray-300 hover:text-white border border-gray-800 transition"
+            >
+              Track expenses
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowDefaults(true)}
+              className="px-2.5 py-1 rounded-md text-xs font-medium bg-gray-900 text-gray-300 hover:text-white border border-gray-800 transition"
+            >
+              Cost defaults
+            </button>
+          </div>
         </div>
 
-        {/* P&L stats for the selected period */}
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-4">
+        {/* Headline P&L */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
           {[
             {
               label: 'Sales Revenue',
               value: fmt$(totalRevenue),
-              sub: `${periodSales.length} sale${periodSales.length === 1 ? '' : 's'}`,
+              sub: `${periodSales.length} sale${periodSales.length === 1 ? '' : 's'} · avg ${fmt$(avgSale)}`,
               color: 'text-green-400',
             },
             {
-              label: 'Purchase Cost',
-              value: fmt$(purchaseCost),
-              sub: `${periodPurchases.length} purchase${periodPurchases.length === 1 ? '' : 's'}`,
+              label: 'Total Costs',
+              value: fmt$(totalCosts),
+              sub: 'purchases + fees + ads + ship + supplies',
               color: 'text-orange-400',
             },
             {
-              label: 'Profit',
+              label: 'Net Profit',
               value: `${profit >= 0 ? '' : '−'}${fmt$(Math.abs(profit))}`,
-              sub: 'sales − cost',
+              sub: 'revenue − all costs',
               color: profit > 0 ? 'text-green-400' : profit < 0 ? 'text-red-400' : 'text-gray-400',
             },
             {
-              label: 'ROI',
+              label: 'Actual ROI',
               value: roiPct === null ? '—' : `${roiPct > 0 ? '+' : ''}${roiPct.toFixed(1)}%`,
-              sub: purchaseCost > 0 ? 'profit / cost' : 'no purchases',
+              sub: totalCosts > 0 ? 'net profit / all costs' : 'no costs in period',
               color:
                 roiPct === null
                   ? 'text-gray-400'
@@ -522,22 +959,52 @@ export default function SalesPage() {
                       ? 'text-red-400'
                       : 'text-gray-400',
             },
-            {
-              label: 'Avg Sale',
-              value: fmt$(avgSale),
-              sub: periodLabel(viewDays).toLowerCase(),
-              color: 'text-yellow-400',
-            },
-            {
-              label: 'Matched SKUs',
-              value: `${matched} / ${periodSales.length}`,
-              sub: 'sales linked to a purchase',
-              color: 'text-purple-400',
-            },
           ].map(s => (
             <div key={s.label} className="bg-gray-900 border border-gray-800 rounded-lg px-4 py-3">
               <p className="text-[11px] text-gray-500 uppercase tracking-wider">{s.label}</p>
               <p className={`text-xl font-bold mt-0.5 ${s.color}`}>{s.value}</p>
+              <p className="text-[10px] text-gray-600 mt-0.5">{s.sub}</p>
+            </div>
+          ))}
+        </div>
+
+        {/* Cost breakdown */}
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-4">
+          {[
+            {
+              label: 'Purchases',
+              value: fmt$(purchaseCost),
+              sub: `${periodPurchases.length} lot${periodPurchases.length === 1 ? '' : 's'}`,
+            },
+            {
+              label: 'eBay Fees',
+              value: fmt$(ebayFees),
+              sub: expenseSum('ebay_fees') > 0 ? `incl. ${fmt$(expenseSum('ebay_fees'))} logged` : 'final value + processing',
+            },
+            {
+              label: 'Advertising',
+              value: fmt$(advertising),
+              sub: expenseSum('advertising') > 0 ? `incl. ${fmt$(expenseSum('advertising'))} logged` : 'promoted listings',
+            },
+            {
+              label: 'Shipping',
+              value: fmt$(shipping),
+              sub: expenseSum('shipping') > 0 ? `incl. ${fmt$(expenseSum('shipping'))} logged` : 'seller postage',
+            },
+            {
+              label: 'Supplies',
+              value: fmt$(supplies),
+              sub: expenseSum('supplies') > 0 ? `incl. ${fmt$(expenseSum('supplies'))} logged` : 'sleeves, mailers, etc.',
+            },
+            {
+              label: 'Matched SKUs',
+              value: `${matched} / ${periodSales.length}`,
+              sub: otherExpenses > 0 ? `+ ${fmt$(otherExpenses)} other` : 'sales linked to a purchase',
+            },
+          ].map(s => (
+            <div key={s.label} className="bg-gray-900/70 border border-gray-800 rounded-lg px-3 py-2.5">
+              <p className="text-[10px] text-gray-500 uppercase tracking-wider">{s.label}</p>
+              <p className="text-sm font-semibold mt-0.5 text-gray-200 tabular-nums">{s.value}</p>
               <p className="text-[10px] text-gray-600 mt-0.5">{s.sub}</p>
             </div>
           ))}
@@ -633,6 +1100,11 @@ export default function SalesPage() {
                 <th className="px-3 py-3">Matched Purchase</th>
                 <th className="px-3 py-3">Qty</th>
                 <th className="px-3 py-3">Sold For</th>
+                <th className="px-3 py-3">eBay Fee</th>
+                <th className="px-3 py-3">Ads</th>
+                <th className="px-3 py-3">Ship</th>
+                <th className="px-3 py-3">Supplies</th>
+                <th className="px-3 py-3">Net</th>
                 <th className="px-3 py-3">Lot Cost</th>
                 <th className="px-3 py-3">ROI</th>
                 <th className="px-3 py-3">Shipped</th>
@@ -641,6 +1113,7 @@ export default function SalesPage() {
             <tbody>
               {filtered.map(sale => {
                 const match = sale.sku ? skuMap.get(sale.sku) : null;
+                const costs = resolvedSaleCosts(sale, settings);
                 return (
                   <tr
                     key={sale.id}
@@ -706,6 +1179,31 @@ export default function SalesPage() {
                       {fmt$(sale.sold_for)}
                     </td>
 
+                    {/* eBay Fee */}
+                    <td className="px-3 py-3">
+                      <CostCell saleId={sale.id} field="ebay_fee" value={sale.ebay_fee ?? null} fallback={costs.ebayFee} onSaved={handleCostSaved} />
+                    </td>
+
+                    {/* Ads */}
+                    <td className="px-3 py-3">
+                      <CostCell saleId={sale.id} field="advertising_fee" value={sale.advertising_fee ?? null} fallback={costs.advertising} onSaved={handleCostSaved} />
+                    </td>
+
+                    {/* Ship */}
+                    <td className="px-3 py-3">
+                      <CostCell saleId={sale.id} field="shipping_cost" value={sale.shipping_cost ?? null} fallback={costs.shipping} onSaved={handleCostSaved} />
+                    </td>
+
+                    {/* Supplies */}
+                    <td className="px-3 py-3">
+                      <CostCell saleId={sale.id} field="supplies_cost" value={sale.supplies_cost ?? null} fallback={costs.supplies} onSaved={handleCostSaved} />
+                    </td>
+
+                    {/* Net after selling costs */}
+                    <td className={`px-3 py-3 text-sm font-medium tabular-nums ${costs.net >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                      {fmt$(costs.net)}
+                    </td>
+
                     {/* Lot Cost */}
                     <td className="px-3 py-3 text-sm text-gray-300 tabular-nums">
                       {sale.sku && skuTotalCostMap.has(sale.sku) ? (
@@ -715,14 +1213,14 @@ export default function SalesPage() {
                       )}
                     </td>
 
-                    {/* ROI */}
+                    {/* ROI — net proceeds vs lot cost */}
                     <td className="px-3 py-3 text-sm tabular-nums">
                       {(() => {
                         if (!sale.sku || !skuTotalCostMap.has(sale.sku)) return <span className="text-gray-600">—</span>;
                         const cost = skuTotalCostMap.get(sale.sku)!;
                         if (cost === 0) return <span className="text-gray-600">—</span>;
-                        const totalSalesForSku = skuTotalSalesMap.get(sale.sku) ?? 0;
-                        const roi = ((totalSalesForSku - cost) / cost) * 100;
+                        const totalNetForSku = skuTotalNetMap.get(sale.sku) ?? 0;
+                        const roi = ((totalNetForSku - cost) / cost) * 100;
                         const color = roi > 0 ? 'text-green-400' : roi < 0 ? 'text-red-400' : 'text-gray-400';
                         const sign = roi > 0 ? '+' : '';
                         return <span className={`font-medium ${color}`}>{sign}{roi.toFixed(1)}%</span>;
@@ -766,6 +1264,29 @@ export default function SalesPage() {
           </table>
         )}
       </div>
+
+      {showExpenses && (
+        <ExpensePanel
+          expenses={expenses}
+          onChanged={loadExpenses}
+          onClose={() => setShowExpenses(false)}
+        />
+      )}
+      {showDefaults && (
+        <DefaultsPanel
+          settings={settings}
+          onSaved={async (next, filled) => {
+            setSettings(next);
+            if (filled > 0) {
+              const res = await fetch('/api/ebay/sold-orders?sync=false');
+              const data = await res.json();
+              setSales(data.sales ?? []);
+              setSyncMsg(`✓ Applied cost defaults to ${filled} sale${filled === 1 ? '' : 's'}.`);
+            }
+          }}
+          onClose={() => setShowDefaults(false)}
+        />
+      )}
     </div>
   );
 }

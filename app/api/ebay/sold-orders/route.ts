@@ -12,7 +12,9 @@ import {
   buildGetOrdersRequest,
   parseOrders,
   fetchImagesForItems,
+  loadPnlSettings,
 } from '@/app/lib/ebay-orders';
+import { applyCostDefaultsToRow } from '@/app/lib/pnl';
 
 // -----------------------------------------------------------------------
 // eBay Trading API: GetOrders with OrderStatus=Completed
@@ -104,7 +106,7 @@ export async function GET(request: NextRequest) {
         .map(r => r.ebay_item_id)
         .filter((id): id is string => id !== null && !id.startsWith('synthetic-'))
     ));
-    
+
     if (realItemIds.length > 0) {
       const imageMap = await fetchImagesForItems(realItemIds);
       for (const row of uniqueRows) {
@@ -114,14 +116,17 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    const settings = await loadPnlSettings();
+    const rowsWithCosts = uniqueRows.map((r) => applyCostDefaultsToRow(r, settings));
+
     // Insert only NEW rows — ignoreDuplicates:true skips existing (order_number, ebay_item_id)
-    // so we never overwrite manually-edited SKUs and the synced count reflects truly new rows.
+    // so we never overwrite manually-edited SKUs / costs and the synced count reflects truly new rows.
     let synced = 0;
-    if (uniqueRows.length > 0) {
+    if (rowsWithCosts.length > 0) {
       const { data: inserted, error: upsertError } = await supabaseAdmin
         .from('ebay_sales')
         .upsert(
-          uniqueRows.map((r) => ({ ...r, synced_at: new Date().toISOString() })),
+          rowsWithCosts.map((r) => ({ ...r, synced_at: new Date().toISOString() })),
           { onConflict: 'order_number,ebay_item_id', ignoreDuplicates: true }
         )
         .select('id');
@@ -130,6 +135,18 @@ export async function GET(request: NextRequest) {
       } else {
         // Only rows actually inserted (not skipped) are returned when ignoreDuplicates:true
         synced = inserted?.length ?? 0;
+      }
+
+      // Backfill eBay final-value fees on existing rows that still have a null fee.
+      const withParsedFee = uniqueRows.filter((r) => r.ebay_fee != null);
+      for (const r of withParsedFee) {
+        let q = supabaseAdmin
+          .from('ebay_sales')
+          .update({ ebay_fee: r.ebay_fee })
+          .eq('order_number', r.order_number)
+          .is('ebay_fee', null);
+        if (r.ebay_item_id) q = q.eq('ebay_item_id', r.ebay_item_id);
+        await q;
       }
     }
 
@@ -158,19 +175,31 @@ export async function GET(request: NextRequest) {
 }
 
 // -----------------------------------------------------------------------
-// PATCH handler — update sku (and optionally other fields) on a sale row
-// body: { id: string; sku: string }
+// PATCH handler — update sku and/or per-sale cost fields
+// body: { id | ids, sku?, ebay_fee?, advertising_fee?, shipping_cost?, supplies_cost? }
 // -----------------------------------------------------------------------
+const PATCH_MONEY_FIELDS = ['ebay_fee', 'advertising_fee', 'shipping_cost', 'supplies_cost'] as const;
+
 export async function PATCH(request: NextRequest) {
   try {
-    const { id, ids, sku } = await request.json();
+    const body = await request.json();
+    const { id, ids, sku } = body;
     if (!id && (!ids || ids.length === 0)) {
       return NextResponse.json({ error: 'id or ids required' }, { status: 400 });
     }
 
-    let query = supabaseAdmin
-      .from('ebay_sales')
-      .update({ sku: sku ?? null });
+    const updates: Record<string, unknown> = {};
+    if (sku !== undefined) updates.sku = sku || null;
+    for (const field of PATCH_MONEY_FIELDS) {
+      if (body[field] !== undefined) {
+        updates[field] = body[field] === null || body[field] === '' ? null : parseFloat(body[field]);
+      }
+    }
+    if (Object.keys(updates).length === 0) {
+      return NextResponse.json({ error: 'no fields to update' }, { status: 400 });
+    }
+
+    let query = supabaseAdmin.from('ebay_sales').update(updates);
 
     if (ids && ids.length > 0) {
       query = query.in('id', ids);

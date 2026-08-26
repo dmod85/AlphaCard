@@ -7,6 +7,7 @@ import {
 } from '@/app/lib/ebay-auth';
 import { supabaseAdmin } from '@/app/lib/supabase-admin';
 import { getAppAccessToken, ebayApiRoot } from '@/app/lib/ebay-app-token';
+import { applyCostDefaultsToRow, DEFAULT_PNL_SETTINGS, type PnlSettings } from '@/app/lib/pnl';
 
 // -----------------------------------------------------------------------
 // Shared eBay Trading API (GetOrders / GetOrder) parsing + sync helpers.
@@ -57,6 +58,7 @@ export interface SaleRow {
   tracking_number: string | null;
   carrier: string | null;
   shipped_at: string | null;
+  ebay_fee: number | null;
 }
 
 /** Parses a numeric XML field, returning null (not 0) when absent so we don't overwrite unknowns. */
@@ -81,6 +83,7 @@ export function buildGetOrdersRequest(
   <CreateTimeFrom>${fromDate}</CreateTimeFrom>
   <CreateTimeTo>${toDate}</CreateTimeTo>
   <OrderStatus>Completed</OrderStatus>
+  <IncludeFinalValueFee>true</IncludeFinalValueFee>
   <DetailLevel>ReturnAll</DetailLevel>
   <Pagination>
     <EntriesPerPage>100</EntriesPerPage>
@@ -101,6 +104,7 @@ export function buildGetOrderRequest(orderId: string, token: string): string {
 <GetOrderRequest xmlns="urn:ebay:apis:eBLBaseComponents">
   ${credentials}
   <OrderIDArray><OrderID>${orderId}</OrderID></OrderIDArray>
+  <IncludeFinalValueFee>true</IncludeFinalValueFee>
   <DetailLevel>ReturnAll</DetailLevel>
   <ErrorLanguage>en_US</ErrorLanguage>
   <WarningLevel>High</WarningLevel>
@@ -193,6 +197,7 @@ export function parseOrders(xml: string): SaleRow[] {
         tx.match(/<QuantityPurchased>(.*?)<\/QuantityPurchased>/)?.[1] || '1'
       );
       const soldFor = txPrice * qty;
+      const ebayFee = parseNumOrNull(tx, 'FinalValueFee');
 
       if (title && orderNumber) {
         rows.push({
@@ -223,6 +228,7 @@ export function parseOrders(xml: string): SaleRow[] {
           tracking_number: trackingNumber,
           carrier,
           shipped_at: shippedAt,
+          ebay_fee: ebayFee,
         });
       }
     }
@@ -305,6 +311,8 @@ export async function fetchAndUpsertOrder(orderId: string): Promise<SaleRow[]> {
   const rows = parseOrders(responseXml);
   if (rows.length === 0) return [];
 
+  const settings = await loadPnlSettings();
+
   const realItemIds = Array.from(new Set(
     rows
       .map((r) => r.ebay_item_id)
@@ -322,10 +330,34 @@ export async function fetchAndUpsertOrder(orderId: string): Promise<SaleRow[]> {
   const { error } = await supabaseAdmin
     .from('ebay_sales')
     .upsert(
-      rows.map((r) => ({ ...r, synced_at: new Date().toISOString() })),
+      rows.map((r) => ({
+        ...applyCostDefaultsToRow(r, settings),
+        synced_at: new Date().toISOString(),
+      })),
       { onConflict: 'order_number,ebay_item_id', ignoreDuplicates: true }
     );
   if (error) throw error;
 
   return rows;
+}
+
+export async function loadPnlSettings(): Promise<PnlSettings> {
+  try {
+    const { data } = await supabaseAdmin
+      .from('pnl_settings')
+      .select('*')
+      .eq('id', 1)
+      .maybeSingle();
+    if (!data) return DEFAULT_PNL_SETTINGS;
+    return {
+      id: 1,
+      default_shipping_cost: Number(data.default_shipping_cost),
+      default_supplies_cost: Number(data.default_supplies_cost),
+      default_fee_rate: Number(data.default_fee_rate),
+      default_processing_fee: Number(data.default_processing_fee),
+      default_ad_rate: Number(data.default_ad_rate),
+    };
+  } catch {
+    return DEFAULT_PNL_SETTINGS;
+  }
 }
