@@ -16,7 +16,6 @@ import {
   type SaleRow,
 } from '@/app/lib/ebay-orders';
 import { applyCostDefaultsToRow } from '@/app/lib/pnl';
-import { fetchSellerLabelCosts } from '@/app/lib/ebay-finances';
 
 // -----------------------------------------------------------------------
 // eBay Trading API: GetOrders with OrderStatus=Completed
@@ -27,8 +26,9 @@ import { fetchSellerLabelCosts } from '@/app/lib/ebay-finances';
 //   ?page=1    — single eBay page (omit to walk every page in the lookback)
 //   ?sync=false — skip eBay call, just return DB rows
 //
-// Existing sales keep their SKU/ads/supplies. eBay fee + shipping_cost are
-// overwritten from GetOrders whenever those fields are present.
+// Existing sales keep SKU/ads/supplies/shipping. eBay fee is backfilled from
+// GetOrders FinalValueFee when present. Seller-paid postage is a separate
+// manual action: POST /api/ebay/seller-costs.
 //
 // PATCH /api/ebay/sold-orders         — update a single sale's SKU
 //   body: { id, sku }
@@ -138,34 +138,6 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Seller-paid eBay labels live in Finances, not GetOrders.ActualShippingCost
-    // (that's buyer-paid). Look a few days past the sales window — labels are
-    // usually bought after the order is created.
-    const labelFrom = new Date(fromDate);
-    labelFrom.setDate(labelFrom.getDate() - 1);
-    const labelTo = new Date(toDate);
-    labelTo.setDate(labelTo.getDate() + 14);
-    const { byOrderId: labelCosts, error: financesError } = await fetchSellerLabelCosts(
-      labelFrom.toISOString(),
-      labelTo.toISOString()
-    );
-
-    const postageAssigned = new Set<string>();
-    for (const r of uniqueRows) {
-      const financed = labelCosts.get(r.order_number);
-      if (financed != null) {
-        r.shipping_cost = postageAssigned.has(r.order_number) ? 0 : financed;
-        postageAssigned.add(r.order_number);
-        continue;
-      }
-      if (postageAssigned.has(r.order_number)) {
-        r.shipping_cost = 0;
-        continue;
-      }
-      postageAssigned.add(r.order_number);
-      // keep pickSellerShippingCost (eBay label estimate / GSP only) or null
-    }
-
     const settings = await loadPnlSettings();
     const rowsWithCosts = uniqueRows.map((r) => applyCostDefaultsToRow(r, settings));
 
@@ -187,33 +159,28 @@ export async function GET(request: NextRequest) {
         synced = inserted?.length ?? 0;
       }
 
-      // Overwrite eBay fee + seller postage. shipping_cost is always written
-      // (including null) so previously saved *buyer-paid* ActualShippingCost
-      // values get cleared when we don't have a seller-paid label charge.
-      let costsUpdated = 0;
+      // Backfill FinalValueFee only — never overwrite seller postage here.
+      let feesUpdated = 0;
+      const withFee = uniqueRows.filter((r) => r.ebay_fee != null);
       const CHUNK = 15;
-      for (let i = 0; i < uniqueRows.length; i += CHUNK) {
-        const chunk = uniqueRows.slice(i, i + CHUNK);
+      for (let i = 0; i < withFee.length; i += CHUNK) {
+        const chunk = withFee.slice(i, i + CHUNK);
         const counts = await Promise.all(
           chunk.map(async (r) => {
-            const patch: Record<string, number | null> = {
-              shipping_cost: r.shipping_cost,
-            };
-            if (r.ebay_fee != null) patch.ebay_fee = r.ebay_fee;
             let q = supabaseAdmin
               .from('ebay_sales')
-              .update(patch)
+              .update({ ebay_fee: r.ebay_fee })
               .eq('order_number', r.order_number);
             if (r.ebay_item_id) q = q.eq('ebay_item_id', r.ebay_item_id);
             const { data, error } = await q.select('id');
             if (error) {
-              console.error('[sold-orders] cost refresh:', error.message);
+              console.error('[sold-orders] fee refresh:', error.message);
               return 0;
             }
             return data?.length ?? 0;
           })
         );
-        costsUpdated += counts.reduce((a, b) => a + b, 0);
+        feesUpdated += counts.reduce((a, b) => a + b, 0);
       }
 
       const { data: allSales, error: fetchErr } = await supabaseAdmin
@@ -225,8 +192,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({
         sales: allSales ?? [],
         synced,
-        costsUpdated,
-        financesError,
+        feesUpdated,
         totalPages,
         currentPage: fetchAllPages ? totalPages : startPage,
       });
@@ -242,8 +208,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       sales: allSales ?? [],
       synced: 0,
-      costsUpdated: 0,
-      financesError,
+      feesUpdated: 0,
       totalPages,
       currentPage: fetchAllPages ? totalPages : startPage,
     });

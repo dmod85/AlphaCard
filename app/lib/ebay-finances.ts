@@ -7,6 +7,9 @@ import { getValidToken } from '@/app/lib/ebay-auth';
  * GET https://apiz.ebay.com/sell/finances/v1/transaction
  *   filter=transactionType:{SHIPPING_LABEL}
  * Requires scope: https://api.ebay.com/oauth/api_scope/sell.finances
+ *
+ * eBay's filter language needs literal `{ } [ ] :` in the query string.
+ * URLSearchParams encodes those and the API then returns nothing useful.
  */
 
 function financesRoot(): string {
@@ -17,6 +20,9 @@ function financesRoot(): string {
 
 export type LabelCostResult = {
     byOrderId: Map<string, number>;
+    bySalesRecord: Map<string, number>;
+    labelsFound: number;
+    sampleOrderIds: string[];
     error: string | null;
 };
 
@@ -26,6 +32,7 @@ interface FinancesTransaction {
     transactionType?: string;
     bookingEntry?: string;
     amount?: { value?: string; currency?: string };
+    references?: Array<{ referenceType?: string; referenceId?: string }>;
 }
 
 function signedAmount(tx: FinancesTransaction): number {
@@ -34,16 +41,25 @@ function signedAmount(tx: FinancesTransaction): number {
     return tx.bookingEntry === 'CREDIT' ? -raw : raw;
 }
 
+function addAmount(map: Map<string, number>, key: string | undefined, amt: number) {
+    const k = (key || '').trim();
+    if (!k || k === '0') return;
+    map.set(k, (map.get(k) ?? 0) + amt);
+}
+
 export async function fetchSellerLabelCosts(
     fromIso: string,
     toIso: string
 ): Promise<LabelCostResult> {
     const byOrderId = new Map<string, number>();
+    const bySalesRecord = new Map<string, number>();
+    const sampleOrderIds: string[] = [];
+    let labelsFound = 0;
     let token: string;
     try {
         token = await getValidToken();
     } catch {
-        return { byOrderId, error: 'EBAY_AUTH_REQUIRED' };
+        return { byOrderId, bySalesRecord, labelsFound, sampleOrderIds, error: 'EBAY_AUTH_REQUIRED' };
     }
 
     const limit = 200;
@@ -52,17 +68,15 @@ export async function fetchSellerLabelCosts(
 
     try {
         while (offset < total) {
-            const params = new URLSearchParams();
-            params.append('filter', 'transactionType:{SHIPPING_LABEL}');
-            params.append('filter', `transactionDate:[${fromIso}..${toIso}]`);
-            params.set('limit', String(limit));
-            params.set('offset', String(offset));
+            const qs =
+                `filter=transactionType:{SHIPPING_LABEL}` +
+                `&filter=transactionDate:[${fromIso}..${toIso}]` +
+                `&limit=${limit}&offset=${offset}`;
 
-            const res = await fetch(`${financesRoot()}/sell/finances/v1/transaction?${params}`, {
+            const res = await fetch(`${financesRoot()}/sell/finances/v1/transaction?${qs}`, {
                 headers: {
                     Authorization: `Bearer ${token}`,
                     Accept: 'application/json',
-                    'Content-Type': 'application/json',
                     'X-EBAY-C-MARKETPLACE-ID': 'EBAY_US',
                 },
             });
@@ -71,18 +85,27 @@ export async function fetchSellerLabelCosts(
 
             if (res.status === 401 || res.status === 403) {
                 const body = await res.text();
-                console.error('[ebay-finances] auth/scope error:', res.status, body.slice(0, 500));
+                console.error('[ebay-finances] auth/scope error:', res.status, body.slice(0, 800));
                 return {
                     byOrderId,
+                    bySalesRecord,
+                    labelsFound,
+                    sampleOrderIds,
                     error:
-                        'Reconnect eBay at /ebay-connect to grant Finances access (needed for seller-paid label costs).',
+                        'Finances access denied. Reconnect eBay at /ebay-connect (Agree to the updated permissions), then use Refresh label costs.',
                 };
             }
 
             if (!res.ok) {
                 const body = await res.text();
-                console.error('[ebay-finances] getTransactions failed:', res.status, body.slice(0, 500));
-                return { byOrderId, error: `Finances API ${res.status}` };
+                console.error('[ebay-finances] getTransactions failed:', res.status, body.slice(0, 800));
+                return {
+                    byOrderId,
+                    bySalesRecord,
+                    labelsFound,
+                    sampleOrderIds,
+                    error: `Finances API ${res.status}: ${body.slice(0, 180)}`,
+                };
             }
 
             const data = (await res.json()) as {
@@ -96,9 +119,13 @@ export async function fetchSellerLabelCosts(
             for (const tx of txs) {
                 const amt = signedAmount(tx);
                 if (!amt) continue;
-                const orderId = (tx.orderId || '').trim();
-                if (!orderId || orderId === '0') continue;
-                byOrderId.set(orderId, (byOrderId.get(orderId) ?? 0) + amt);
+                labelsFound += 1;
+                addAmount(byOrderId, tx.orderId, amt);
+                addAmount(bySalesRecord, tx.salesRecordReference, amt);
+                for (const ref of tx.references ?? []) {
+                    if (/order/i.test(ref.referenceType || '')) addAmount(byOrderId, ref.referenceId, amt);
+                }
+                if (tx.orderId && sampleOrderIds.length < 8) sampleOrderIds.push(tx.orderId);
             }
 
             offset += txs.length;
@@ -106,8 +133,35 @@ export async function fetchSellerLabelCosts(
         }
     } catch (err: any) {
         console.error('[ebay-finances] fetch error:', err);
-        return { byOrderId, error: err.message || 'Finances fetch failed' };
+        return {
+            byOrderId,
+            bySalesRecord,
+            labelsFound,
+            sampleOrderIds,
+            error: err.message || 'Finances fetch failed',
+        };
     }
 
-    return { byOrderId, error: null };
+    return { byOrderId, bySalesRecord, labelsFound, sampleOrderIds, error: null };
+}
+
+export function matchLabelAmount(
+    orderNumber: string,
+    salesRecord: string | null | undefined,
+    labels: LabelCostResult
+): number | null {
+    if (labels.byOrderId.has(orderNumber)) return labels.byOrderId.get(orderNumber)!;
+    if (salesRecord && labels.bySalesRecord.has(salesRecord)) {
+        return labels.bySalesRecord.get(salesRecord)!;
+    }
+    const needle = orderNumber.toLowerCase();
+    const ids = Array.from(labels.byOrderId.keys());
+    for (let i = 0; i < ids.length; i++) {
+        const id = ids[i];
+        const hay = id.toLowerCase();
+        if (hay === needle || hay.endsWith(needle) || needle.endsWith(hay)) {
+            return labels.byOrderId.get(id) ?? null;
+        }
+    }
+    return null;
 }

@@ -597,6 +597,7 @@ export default function SalesPage() {
   const [purchases, setPurchases] = useState<Purchase[]>([]);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
+  const [refreshingLabels, setRefreshingLabels] = useState(false);
   const [syncMsg, setSyncMsg] = useState('');
   const [search, setSearch] = useState('');
   const [days, setDays] = useState(90);
@@ -651,7 +652,6 @@ export default function SalesPage() {
     } catch { /* silent */ }
   }, []);
 
-  // Show DB rows immediately, then auto-sync the last 1 day from eBay.
   useEffect(() => {
     const ac = new AbortController();
 
@@ -681,36 +681,12 @@ export default function SalesPage() {
       } finally {
         if (!ac.signal.aborted) setLoading(false);
       }
-
-      if (ac.signal.aborted) return;
-
-      setSyncing(true);
-      try {
-        const res = await fetch('/api/ebay/sold-orders?days=1', { signal: ac.signal });
-        const data = await res.json();
-        if (ac.signal.aborted) return;
-        if (!res.ok) throw new Error(data.error);
-        setSales(data.sales ?? []);
-        setLastSync(new Date().toISOString());
-        if ((data.synced ?? 0) > 0) {
-          setSyncMsg(
-            `✓ Synced ${data.synced} new order${data.synced === 1 ? '' : 's'} from the last day.`
-          );
-        }
-      } catch (e: any) {
-        if (e?.name === 'AbortError') return;
-        if (!ac.signal.aborted) setSyncMsg(`✗ Auto-sync failed: ${e.message}`);
-      } finally {
-        if (!ac.signal.aborted) setSyncing(false);
-      }
     }
 
     init();
     return () => ac.abort();
   }, []);
 
-  // Manual sync from eBay (uses the lookback dropdown). Re-pulls all pages and
-  // overwrites saved eBay fee + shipping with whatever GetOrders returns.
   async function handleSync() {
     setSyncing(true);
     setSyncMsg('');
@@ -720,19 +696,43 @@ export default function SalesPage() {
       if (!res.ok) throw new Error(data.error);
       setSales(data.sales ?? []);
       const newOrders = data.synced ?? 0;
-      const costs = data.costsUpdated ?? 0;
-      let msg =
-        `✓ Synced ${newOrders} new order${newOrders === 1 ? '' : 's'} from the last ${days} day${days === 1 ? '' : 's'}` +
-        (costs ? `, updated fees/shipping on ${costs} sale${costs === 1 ? '' : 's'}.` : '.');
-      if (data.financesError) {
-        msg += ` Seller-paid labels: ${data.financesError}`;
-      }
-      setSyncMsg(msg);
+      setSyncMsg(
+        `✓ Synced ${newOrders} new order${newOrders === 1 ? '' : 's'} from the last ${days} day${days === 1 ? '' : 's'}.`
+      );
       setLastSync(new Date().toISOString());
     } catch (e: any) {
       setSyncMsg(`✗ Sync failed: ${e.message}`);
     } finally {
       setSyncing(false);
+    }
+  }
+
+  async function handleRefreshLabels() {
+    setRefreshingLabels(true);
+    setSyncMsg('');
+    try {
+      const res = await fetch('/api/ebay/seller-costs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ days }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setSales(data.sales ?? []);
+      const found = data.labelsFound ?? 0;
+      const matched = data.matchedOrders ?? 0;
+      let msg = `✓ Found ${found} seller-paid label${found === 1 ? '' : 's'}, matched ${matched} order${matched === 1 ? '' : 's'}.`;
+      if (found > 0 && matched === 0) {
+        const fromEbay = (data.sampleLabelOrderIds || []).join(', ') || 'none';
+        const fromSales = (data.sampleSaleOrderIds || []).join(', ') || 'none';
+        msg += ` No order-id match. Label order IDs: ${fromEbay}. Sale order #s: ${fromSales}.`;
+      }
+      if (data.warning) msg += ` ${data.warning}`;
+      setSyncMsg(msg);
+    } catch (e: any) {
+      setSyncMsg(`✗ Label cost refresh failed: ${e.message}`);
+    } finally {
+      setRefreshingLabels(false);
     }
   }
 
@@ -841,7 +841,7 @@ export default function SalesPage() {
             <h1 className="text-xl font-bold text-white">eBay Sales</h1>
             <p className="text-xs text-gray-500 mt-0.5 flex items-center gap-2">
               <span>
-                Auto-syncs the last day on load
+                Sync orders and label costs from the buttons on the right
                 {lastSync && (
                   <span className="ml-2 text-gray-600">· Last sync: {fmtDate(lastSync)}</span>
                 )}
@@ -876,7 +876,7 @@ export default function SalesPage() {
             </div>
             <button
               onClick={handleSync}
-              disabled={syncing}
+              disabled={syncing || refreshingLabels}
               className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition"
             >
               {syncing ? (
@@ -885,7 +885,22 @@ export default function SalesPage() {
                   Syncing…
                 </>
               ) : (
-                <>🔄 Sync from eBay</>
+                <>🔄 Sync orders</>
+              )}
+            </button>
+            <button
+              onClick={handleRefreshLabels}
+              disabled={syncing || refreshingLabels}
+              title="Pull seller-paid eBay shipping label charges (not what the buyer paid)"
+              className="flex items-center gap-2 px-4 py-2 bg-gray-800 hover:bg-gray-700 disabled:opacity-50 text-white text-sm font-medium rounded-lg border border-gray-700 transition"
+            >
+              {refreshingLabels ? (
+                <>
+                  <span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  Labels…
+                </>
+              ) : (
+                <>📦 Refresh label costs</>
               )}
             </button>
           </div>
