@@ -17,6 +17,8 @@ export const EBAY_SCOPES = [
   'https://api.ebay.com/oauth/api_scope/sell.inventory',
   'https://api.ebay.com/oauth/api_scope/sell.fulfillment',
   'https://api.ebay.com/oauth/api_scope/sell.marketing',
+  // Seller-paid eBay shipping labels (Finances getTransactions SHIPPING_LABEL)
+  'https://api.ebay.com/oauth/api_scope/sell.finances',
   // Required for the ITEM_MARKED_SHIPPED webhook subscription — that topic
   // is USER-scoped (per-seller), not application-scoped, so managing its
   // Notification API destination/subscription needs a user token carrying

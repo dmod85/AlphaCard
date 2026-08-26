@@ -74,16 +74,13 @@ function positiveAmount(n: number | null | undefined): number | null {
 }
 
 /**
- * Seller postage from a completed GetOrders payload.
- * https://developer.ebay.com/api-docs/user-guides/static/trading-user-guide/shipping-key-calls.html
+ * Seller postage hints from GetOrders — NEVER ActualShippingCost / ShippingServiceCost
+ * (those are what the buyer paid).
  *
- * Priority:
- * 1. eBayEstimatedLabelCost — what it costs to buy the eBay shipping label
- * 2. GSP/EIS domestic-leg TotalShippingCost — what the seller pays to the hub
- * 3. Transaction.ActualShippingCost — actual shipping after checkout
- *
- * Buyer-charged ShippingServiceCost is stored separately as order_shipping_cost
- * and is not the seller's postage.
+ * Real seller-paid eBay label charges come from the Finances API
+ * (see fetchSellerLabelCosts). This only keeps:
+ * 1. eBayEstimatedLabelCost when eBay actually returns a positive label price
+ * 2. GSP/EIS domestic-leg TotalShippingCost (seller pays to get the package to the hub)
  */
 export function pickSellerShippingCost(txXml: string, orderXml: string): number | null {
   const labelCost =
@@ -94,10 +91,7 @@ export function pickSellerShippingCost(txXml: string, orderXml: string): number 
   const gspMatch = orderXml.match(
     /<SellerShipmentToLogisticsProvider>[\s\S]*?<TotalShippingCost[^>]*>(.*?)<\/TotalShippingCost>/
   );
-  const gspCost = gspMatch ? positiveAmount(parseFloat(gspMatch[1])) : null;
-  if (gspCost != null) return gspCost;
-
-  return positiveAmount(parseNumOrNull(txXml, 'ActualShippingCost'));
+  return gspMatch ? positiveAmount(parseFloat(gspMatch[1])) : null;
 }
 
 export function buildGetOrdersRequest(

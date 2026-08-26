@@ -721,10 +721,13 @@ export default function SalesPage() {
       setSales(data.sales ?? []);
       const newOrders = data.synced ?? 0;
       const costs = data.costsUpdated ?? 0;
-      setSyncMsg(
+      let msg =
         `✓ Synced ${newOrders} new order${newOrders === 1 ? '' : 's'} from the last ${days} day${days === 1 ? '' : 's'}` +
-        (costs ? `, updated fees/shipping on ${costs} sale${costs === 1 ? '' : 's'}.` : '.')
-      );
+        (costs ? `, updated fees/shipping on ${costs} sale${costs === 1 ? '' : 's'}.` : '.');
+      if (data.financesError) {
+        msg += ` Seller-paid labels: ${data.financesError}`;
+      }
+      setSyncMsg(msg);
       setLastSync(new Date().toISOString());
     } catch (e: any) {
       setSyncMsg(`✗ Sync failed: ${e.message}`);
@@ -1012,7 +1015,7 @@ export default function SalesPage() {
             {
               label: 'Shipping',
               value: fmt$(shipping),
-              sub: expenseSum('shipping') > 0 ? `incl. ${fmt$(expenseSum('shipping'))} logged` : 'from eBay when shipped',
+              sub: expenseSum('shipping') > 0 ? `incl. ${fmt$(expenseSum('shipping'))} logged` : 'seller-paid eBay labels',
             },
             {
               label: 'Supplies',

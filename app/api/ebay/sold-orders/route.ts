@@ -16,6 +16,7 @@ import {
   type SaleRow,
 } from '@/app/lib/ebay-orders';
 import { applyCostDefaultsToRow } from '@/app/lib/pnl';
+import { fetchSellerLabelCosts } from '@/app/lib/ebay-finances';
 
 // -----------------------------------------------------------------------
 // eBay Trading API: GetOrders with OrderStatus=Completed
@@ -137,6 +138,34 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    // Seller-paid eBay labels live in Finances, not GetOrders.ActualShippingCost
+    // (that's buyer-paid). Look a few days past the sales window — labels are
+    // usually bought after the order is created.
+    const labelFrom = new Date(fromDate);
+    labelFrom.setDate(labelFrom.getDate() - 1);
+    const labelTo = new Date(toDate);
+    labelTo.setDate(labelTo.getDate() + 14);
+    const { byOrderId: labelCosts, error: financesError } = await fetchSellerLabelCosts(
+      labelFrom.toISOString(),
+      labelTo.toISOString()
+    );
+
+    const postageAssigned = new Set<string>();
+    for (const r of uniqueRows) {
+      const financed = labelCosts.get(r.order_number);
+      if (financed != null) {
+        r.shipping_cost = postageAssigned.has(r.order_number) ? 0 : financed;
+        postageAssigned.add(r.order_number);
+        continue;
+      }
+      if (postageAssigned.has(r.order_number)) {
+        r.shipping_cost = 0;
+        continue;
+      }
+      postageAssigned.add(r.order_number);
+      // keep pickSellerShippingCost (eBay label estimate / GSP only) or null
+    }
+
     const settings = await loadPnlSettings();
     const rowsWithCosts = uniqueRows.map((r) => applyCostDefaultsToRow(r, settings));
 
@@ -158,19 +187,19 @@ export async function GET(request: NextRequest) {
         synced = inserted?.length ?? 0;
       }
 
-      // Overwrite eBay fee + seller postage from GetOrders whenever eBay sent a
-      // real value. SKU / ads / supplies are left alone. This is how a re-sync
-      // replaces old $0.63 (etc.) defaults with actual API costs.
+      // Overwrite eBay fee + seller postage. shipping_cost is always written
+      // (including null) so previously saved *buyer-paid* ActualShippingCost
+      // values get cleared when we don't have a seller-paid label charge.
       let costsUpdated = 0;
-      const toRefresh = uniqueRows.filter((r) => r.ebay_fee != null || r.shipping_cost != null);
       const CHUNK = 15;
-      for (let i = 0; i < toRefresh.length; i += CHUNK) {
-        const chunk = toRefresh.slice(i, i + CHUNK);
+      for (let i = 0; i < uniqueRows.length; i += CHUNK) {
+        const chunk = uniqueRows.slice(i, i + CHUNK);
         const counts = await Promise.all(
           chunk.map(async (r) => {
-            const patch: Record<string, number> = {};
+            const patch: Record<string, number | null> = {
+              shipping_cost: r.shipping_cost,
+            };
             if (r.ebay_fee != null) patch.ebay_fee = r.ebay_fee;
-            if (r.shipping_cost != null) patch.shipping_cost = r.shipping_cost;
             let q = supabaseAdmin
               .from('ebay_sales')
               .update(patch)
@@ -197,6 +226,7 @@ export async function GET(request: NextRequest) {
         sales: allSales ?? [],
         synced,
         costsUpdated,
+        financesError,
         totalPages,
         currentPage: fetchAllPages ? totalPages : startPage,
       });
@@ -213,6 +243,7 @@ export async function GET(request: NextRequest) {
       sales: allSales ?? [],
       synced: 0,
       costsUpdated: 0,
+      financesError,
       totalPages,
       currentPage: fetchAllPages ? totalPages : startPage,
     });
