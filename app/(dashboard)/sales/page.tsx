@@ -34,6 +34,7 @@ interface Sale {
   advertising_fee?: number | null;
   shipping_cost?: number | null;
   supplies_cost?: number | null;
+  order_shipping_cost?: number | null;
 }
 
 interface Expense {
@@ -721,11 +722,27 @@ export default function SalesPage() {
       setSales(data.sales ?? []);
       const found = data.labelsFound ?? 0;
       const matched = data.matchedOrders ?? 0;
-      let msg = `✓ Found ${found} seller-paid label${found === 1 ? '' : 's'}, matched ${matched} order${matched === 1 ? '' : 's'}.`;
+      const extra = data.perOrderFilled ?? 0;
+      let msg = `✓ Found ${found} seller-paid label${found === 1 ? '' : 's'}, matched ${matched} order${matched === 1 ? '' : 's'}`;
+      if (extra) msg += ` (${extra} via per-order lookup)`;
+      msg += '.';
+      if (data.typicalLabelCost != null) {
+        const typical = Number(data.typicalLabelCost);
+        const min = Number(data.minLabelCost);
+        const max = Number(data.maxLabelCost);
+        msg += ` Typical label ${fmt$(typical)}`;
+        if (min !== max) msg += ` (range ${fmt$(min)}–${fmt$(max)})`;
+        msg += '. Italic amounts are estimates; solid amounts are from eBay order earnings (fees, ads, seller-paid labels). Buyer-paid shipping is added into Net.';
+      }
       if (found > 0 && matched === 0) {
         const fromEbay = (data.sampleLabelOrderIds || []).join(', ') || 'none';
         const fromSales = (data.sampleSaleOrderIds || []).join(', ') || 'none';
         msg += ` No order-id match. Label order IDs: ${fromEbay}. Sale order #s: ${fromSales}.`;
+      }
+      if (data.debug?.amount != null) {
+        msg += ` Order ${data.debug.orderId}: ${fmt$(Number(data.debug.amount))} (${data.debug.source || 'eBay'}).`;
+      } else if (data.debug?.orderId) {
+        msg += ` Order ${data.debug.orderId}: no seller-paid label found. Types: ${(data.debug.txTypes || []).join(', ') || 'none'}.`;
       }
       if (data.warning) msg += ` ${data.warning}`;
       setSyncMsg(msg);
@@ -806,7 +823,10 @@ export default function SalesPage() {
   });
 
   // Period P&L — actual (all-in) costs
-  const totalRevenue = periodSales.reduce((s, r) => s + Number(r.sold_for || 0), 0);
+  const totalRevenue = periodSales.reduce((s, r) => {
+    const c = resolvedSaleCosts(r, settings);
+    return s + c.soldFor + c.buyerShipping;
+  }, 0);
   const purchaseCost = periodPurchases.reduce((s, p) => s + Number(p.cost || 0), 0);
   const saleCostTotals = periodSales.reduce(
     (acc, r) => {
@@ -891,7 +911,7 @@ export default function SalesPage() {
             <button
               onClick={handleRefreshLabels}
               disabled={syncing || refreshingLabels}
-              title="Pull seller-paid eBay shipping label charges (not what the buyer paid)"
+              title="Pull Seller Hub selling costs: transaction fees, ad fees, and seller-paid labels"
               className="flex items-center gap-2 px-4 py-2 bg-gray-800 hover:bg-gray-700 disabled:opacity-50 text-white text-sm font-medium rounded-lg border border-gray-700 transition"
             >
               {refreshingLabels ? (
@@ -900,7 +920,7 @@ export default function SalesPage() {
                   Labels…
                 </>
               ) : (
-                <>📦 Refresh label costs</>
+                <>📦 Refresh eBay costs</>
               )}
             </button>
           </div>
@@ -1216,9 +1236,14 @@ export default function SalesPage() {
                       {sale.quantity_sold}
                     </td>
 
-                    {/* Sold For */}
+                    {/* Sold For (item). Buyer-paid shipping is added into Net. */}
                     <td className="px-3 py-3 text-sm text-green-400 font-semibold tabular-nums">
                       {fmt$(sale.sold_for)}
+                      {costs.buyerShipping > 0 && (
+                        <div className="text-[10px] font-normal text-gray-500">
+                          +{fmt$(costs.buyerShipping)} ship
+                        </div>
+                      )}
                     </td>
 
                     {/* eBay Fee */}

@@ -36,6 +36,7 @@ export function estimateAdFee(soldFor: number, settings: PnlSettings): number {
 
 export interface SaleCostInput {
     sold_for: number;
+    order_shipping_cost?: number | null;
     ebay_fee?: number | null;
     advertising_fee?: number | null;
     shipping_cost?: number | null;
@@ -43,14 +44,17 @@ export interface SaleCostInput {
 }
 
 export function resolvedSaleCosts(sale: SaleCostInput, settings: PnlSettings) {
-    const ebayFee = sale.ebay_fee != null ? Number(sale.ebay_fee) : estimateEbayFee(sale.sold_for, settings);
-    const advertising = sale.advertising_fee != null ? Number(sale.advertising_fee) : estimateAdFee(sale.sold_for, settings);
+    const soldFor = Number(sale.sold_for || 0);
+    const buyerShipping = Number(sale.order_shipping_cost || 0);
+    const feeBasis = soldFor + buyerShipping;
+    const ebayFee = sale.ebay_fee != null ? Number(sale.ebay_fee) : estimateEbayFee(feeBasis, settings);
+    const advertising = sale.advertising_fee != null ? Number(sale.advertising_fee) : estimateAdFee(feeBasis, settings);
     const shipping = sale.shipping_cost != null ? Number(sale.shipping_cost) : Number(settings.default_shipping_cost);
     const supplies = sale.supplies_cost != null ? Number(sale.supplies_cost) : Number(settings.default_supplies_cost);
-    const soldFor = Number(sale.sold_for || 0);
     const saleCosts = roundMoney(ebayFee + advertising + shipping + supplies);
-    const net = roundMoney(soldFor - saleCosts);
-    return { ebayFee, advertising, shipping, supplies, saleCosts, net, soldFor };
+    // Buyer-paid shipping is revenue; seller-paid label is a cost (shipping).
+    const net = roundMoney(soldFor + buyerShipping - saleCosts);
+    return { ebayFee, advertising, shipping, supplies, saleCosts, net, soldFor, buyerShipping };
 }
 
 export function applyCostDefaultsToRow<T extends {
