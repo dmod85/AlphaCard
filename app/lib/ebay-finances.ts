@@ -30,9 +30,17 @@ interface FinancesTransaction {
     orderId?: string;
     salesRecordReference?: string;
     transactionType?: string;
+    transactionMemo?: string;
+    feeType?: string;
     bookingEntry?: string;
     amount?: { value?: string; currency?: string };
     references?: Array<{ referenceType?: string; referenceId?: string }>;
+    orderLineItems?: Array<{
+        marketplaceFees?: Array<{
+            feeType?: string;
+            amount?: { value?: string; currency?: string };
+        }>;
+    }>;
 }
 
 function signedAmount(tx: FinancesTransaction): number {
@@ -186,20 +194,59 @@ async function financesGet(token: string, qs: string): Promise<{
     return { status: res.status, json, text };
 }
 
-function labelAmountFromTxs(txs: FinancesTransaction[]): number | null {
-    let sum = 0;
-    let found = false;
+function classifyFee(type: string, amt: number, into: { ebayFee: number; adFee: number; hasFee: boolean; hasAd: boolean }) {
+    const t = type.toUpperCase();
+    if (t.includes('AD_FEE') || t.includes('ADVERTISE') || t.includes('PROMOTED')) {
+        into.adFee += amt;
+        into.hasAd = true;
+    } else if (
+        t.includes('FINAL_VALUE') ||
+        t.includes('INSERTION') ||
+        t.includes('BELOW_STANDARD') ||
+        t.includes('REGULATORY')
+    ) {
+        into.ebayFee += amt;
+        into.hasFee = true;
+    }
+}
+
+function parseTransactionCosts(txs: FinancesTransaction[]): OrderEarningsCosts {
+    let shippingLabel = 0;
+    let hasLabel = false;
+    const fees = { ebayFee: 0, adFee: 0, hasFee: false, hasAd: false };
+
     for (const tx of txs) {
         const type = (tx.transactionType || '').toUpperCase();
-        const memo = String((tx as any).transactionMemo || '');
-        const isLabel =
+        const memo = String(tx.transactionMemo || '');
+        if (
             type === 'SHIPPING_LABEL' ||
-            /shipping\s*label/i.test(memo);
-        if (!isLabel) continue;
-        sum += signedAmount(tx);
-        found = true;
+            /shipping\s*label/i.test(memo) ||
+            (type === 'NON_SALE_CHARGE' && /SHIPPING/i.test(tx.feeType || ''))
+        ) {
+            shippingLabel += signedAmount(tx);
+            hasLabel = true;
+        }
+        if (tx.feeType && type !== 'SHIPPING_LABEL' && type !== 'NON_SALE_CHARGE') {
+            classifyFee(tx.feeType, Math.abs(signedAmount(tx)), fees);
+        } else if (tx.feeType && type === 'NON_SALE_CHARGE' && !/SHIPPING/i.test(tx.feeType || '')) {
+            classifyFee(tx.feeType, Math.abs(signedAmount(tx)), fees);
+        }
+        const lines = tx.orderLineItems || [];
+        for (let i = 0; i < lines.length; i++) {
+            const mfees = lines[i].marketplaceFees || [];
+            for (let j = 0; j < mfees.length; j++) {
+                const amt = absMoney(mfees[j].amount?.value);
+                if (amt != null) classifyFee(mfees[j].feeType || '', amt, fees);
+            }
+        }
     }
-    return found ? sum : null;
+
+    return {
+        shippingLabel: hasLabel ? Math.round(Math.abs(shippingLabel) * 100) / 100 : null,
+        ebayFee: fees.hasFee ? Math.round(fees.ebayFee * 100) / 100 : null,
+        adFee: fees.hasAd ? Math.round(fees.adFee * 100) / 100 : null,
+        buyerShipping: null,
+    };
 }
 
 function absMoney(v: unknown): number | null {
@@ -294,26 +341,26 @@ export async function fetchLabelCostForOrderDetailed(orderId: string): Promise<O
         return empty;
     }
 
-    const earnings = await fetchOrderEarningsRaw(token, orderId);
-    const parsed = earnings
-        ? parseOrderEarnings(earnings)
-        : { shippingLabel: null, ebayFee: null, adFee: null, buyerShipping: null };
-
     const qs = `filter=orderId:{${orderId}}&limit=200`;
     const { status, json } = await financesGet(token, qs);
     const txs = status < 400 ? (json.transactions ?? []) : [];
     const txTypes = txs.map((t) => `${t.transactionType || '?'}:${t.amount?.value || '?'}`);
-    const fromTx = labelAmountFromTxs(txs);
+    const fromTx = parseTransactionCosts(txs);
 
-    const amount = fromTx ?? parsed.shippingLabel ?? null;
-    const source = fromTx != null ? 'transaction' : parsed.shippingLabel != null ? 'order_earnings' : null;
+    const earnings = await fetchOrderEarningsRaw(token, orderId);
+    const fromEarn = earnings
+        ? parseOrderEarnings(earnings)
+        : { shippingLabel: null, ebayFee: null, adFee: null, buyerShipping: null };
+
+    const amount = fromTx.shippingLabel ?? fromEarn.shippingLabel ?? null;
+    const source = fromTx.shippingLabel != null ? 'transaction' : fromEarn.shippingLabel != null ? 'order_earnings' : null;
 
     return {
         amount,
         source,
         txTypes,
-        ebayFee: parsed.ebayFee,
-        adFee: parsed.adFee,
-        buyerShipping: parsed.buyerShipping,
+        ebayFee: fromTx.ebayFee ?? fromEarn.ebayFee,
+        adFee: fromTx.adFee ?? fromEarn.adFee,
+        buyerShipping: fromEarn.buyerShipping,
     };
 }

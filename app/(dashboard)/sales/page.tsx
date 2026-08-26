@@ -625,12 +625,27 @@ export default function SalesPage() {
     }
   });
 
+  const firstSaleIdByOrder = new Map<string, string>();
+  sales.forEach(s => {
+    if (!firstSaleIdByOrder.has(s.order_number)) firstSaleIdByOrder.set(s.order_number, s.id);
+  });
+
+  function saleCosts(sale: Sale) {
+    const head = firstSaleIdByOrder.get(sale.order_number) === sale.id;
+    return resolvedSaleCosts({
+      ...sale,
+      order_shipping_cost: head ? sale.order_shipping_cost : 0,
+      // Extra lines of a combined invoice shouldn't inherit the $0.78 default.
+      shipping_cost: sale.shipping_cost != null ? sale.shipping_cost : (head ? null : 0),
+    }, settings);
+  }
+
   // SKU -> net proceeds (after fees/ads/ship/supplies) and gross sold-for
   const skuTotalNetMap = new Map<string, number>();
   const skuTotalGrossMap = new Map<string, number>();
   sales.forEach(s => {
     if (s.sku) {
-      const { net, soldFor } = resolvedSaleCosts(s, settings);
+      const { net, soldFor } = saleCosts(s);
       skuTotalNetMap.set(s.sku, (skuTotalNetMap.get(s.sku) ?? 0) + net);
       skuTotalGrossMap.set(s.sku, (skuTotalGrossMap.get(s.sku) ?? 0) + soldFor);
     }
@@ -824,13 +839,13 @@ export default function SalesPage() {
 
   // Period P&L — actual (all-in) costs
   const totalRevenue = periodSales.reduce((s, r) => {
-    const c = resolvedSaleCosts(r, settings);
+    const c = saleCosts(r);
     return s + c.soldFor + c.buyerShipping;
   }, 0);
   const purchaseCost = periodPurchases.reduce((s, p) => s + Number(p.cost || 0), 0);
   const saleCostTotals = periodSales.reduce(
     (acc, r) => {
-      const c = resolvedSaleCosts(r, settings);
+      const c = saleCosts(r);
       acc.ebayFees += c.ebayFee;
       acc.advertising += c.advertising;
       acc.shipping += c.shipping;
@@ -1175,7 +1190,8 @@ export default function SalesPage() {
             <tbody>
               {filtered.map(sale => {
                 const match = sale.sku ? skuMap.get(sale.sku) : null;
-                const costs = resolvedSaleCosts(sale, settings);
+                const isOrderHead = firstSaleIdByOrder.get(sale.order_number) === sale.id;
+                const costs = saleCosts(sale);
                 return (
                   <tr
                     key={sale.id}
@@ -1239,7 +1255,7 @@ export default function SalesPage() {
                     {/* Sold For (item). Buyer-paid shipping is added into Net. */}
                     <td className="px-3 py-3 text-sm text-green-400 font-semibold tabular-nums">
                       {fmt$(sale.sold_for)}
-                      {costs.buyerShipping > 0 && (
+                      {isOrderHead && costs.buyerShipping > 0 && (
                         <div className="text-[10px] font-normal text-gray-500">
                           +{fmt$(costs.buyerShipping)} ship
                         </div>
@@ -1258,7 +1274,13 @@ export default function SalesPage() {
 
                     {/* Ship */}
                     <td className="px-3 py-3">
-                      <CostCell saleId={sale.id} field="shipping_cost" value={sale.shipping_cost ?? null} fallback={costs.shipping} onSaved={handleCostSaved} />
+                      <CostCell
+                        saleId={sale.id}
+                        field="shipping_cost"
+                        value={isOrderHead ? (sale.shipping_cost ?? null) : (sale.shipping_cost ?? 0)}
+                        fallback={isOrderHead ? costs.shipping : 0}
+                        onSaved={handleCostSaved}
+                      />
                     </td>
 
                     {/* Supplies */}
