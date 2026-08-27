@@ -18,11 +18,22 @@ function financesRoot(): string {
         : 'https://apiz.sandbox.ebay.com';
 }
 
+export type UnlabeledLabel = {
+    amount: number;
+    date: string;
+    buyer: string;
+    orderId: string;
+    refs: string;
+};
+
 export type LabelCostResult = {
     byOrderId: Map<string, number>;
     bySalesRecord: Map<string, number>;
+    byBuyerDate: Map<string, number[]>;
     labelsFound: number;
+    unlabeledCount: number;
     sampleOrderIds: string[];
+    sampleUnlabeled: UnlabeledLabel[];
     error: string | null;
 };
 
@@ -34,6 +45,8 @@ interface FinancesTransaction {
     feeType?: string;
     bookingEntry?: string;
     amount?: { value?: string; currency?: string };
+    transactionDate?: string;
+    buyer?: { username?: string };
     references?: Array<{ referenceType?: string; referenceId?: string }>;
     orderLineItems?: Array<{
         marketplaceFees?: Array<{
@@ -55,19 +68,39 @@ function addAmount(map: Map<string, number>, key: string | undefined, amt: numbe
     map.set(k, (map.get(k) ?? 0) + amt);
 }
 
+function buyerDateKey(buyer: string, day: string) {
+    return `${buyer.trim().toLowerCase()}|${day.slice(0, 10)}`;
+}
+
+function emptyLabelResult(error: string | null): LabelCostResult {
+    return {
+        byOrderId: new Map(),
+        bySalesRecord: new Map(),
+        byBuyerDate: new Map(),
+        labelsFound: 0,
+        unlabeledCount: 0,
+        sampleOrderIds: [],
+        sampleUnlabeled: [],
+        error,
+    };
+}
+
 export async function fetchSellerLabelCosts(
     fromIso: string,
     toIso: string
 ): Promise<LabelCostResult> {
     const byOrderId = new Map<string, number>();
     const bySalesRecord = new Map<string, number>();
+    const byBuyerDate = new Map<string, number[]>();
     const sampleOrderIds: string[] = [];
+    const sampleUnlabeled: UnlabeledLabel[] = [];
     let labelsFound = 0;
+    let unlabeledCount = 0;
     let token: string;
     try {
         token = await getValidToken();
     } catch {
-        return { byOrderId, bySalesRecord, labelsFound, sampleOrderIds, error: 'EBAY_AUTH_REQUIRED' };
+        return emptyLabelResult('EBAY_AUTH_REQUIRED');
     }
 
     const limit = 200;
@@ -94,26 +127,15 @@ export async function fetchSellerLabelCosts(
             if (res.status === 401 || res.status === 403) {
                 const body = await res.text();
                 console.error('[ebay-finances] auth/scope error:', res.status, body.slice(0, 800));
-                return {
-                    byOrderId,
-                    bySalesRecord,
-                    labelsFound,
-                    sampleOrderIds,
-                    error:
-                        'Finances access denied. Reconnect eBay at /ebay-connect (Agree to the updated permissions), then use Refresh label costs.',
-                };
+                return emptyLabelResult(
+                    'Finances access denied. Reconnect eBay at /ebay-connect (Agree to the updated permissions), then use Refresh label costs.'
+                );
             }
 
             if (!res.ok) {
                 const body = await res.text();
                 console.error('[ebay-finances] getTransactions failed:', res.status, body.slice(0, 800));
-                return {
-                    byOrderId,
-                    bySalesRecord,
-                    labelsFound,
-                    sampleOrderIds,
-                    error: `Finances API ${res.status}: ${body.slice(0, 180)}`,
-                };
+                return emptyLabelResult(`Finances API ${res.status}: ${body.slice(0, 180)}`);
             }
 
             const data = (await res.json()) as {
@@ -128,10 +150,33 @@ export async function fetchSellerLabelCosts(
                 const amt = signedAmount(tx);
                 if (!amt) continue;
                 labelsFound += 1;
+                const hadOrder = !!(tx.orderId && tx.orderId !== '0');
                 addAmount(byOrderId, tx.orderId, amt);
                 addAmount(bySalesRecord, tx.salesRecordReference, amt);
+                const refBits: string[] = [];
                 for (const ref of tx.references ?? []) {
-                    if (/order/i.test(ref.referenceType || '')) addAmount(byOrderId, ref.referenceId, amt);
+                    addAmount(byOrderId, ref.referenceId, amt);
+                    refBits.push(`${ref.referenceType || ''}:${ref.referenceId || ''}`);
+                }
+                if (!hadOrder) {
+                    unlabeledCount += 1;
+                    if (sampleUnlabeled.length < 15) {
+                        sampleUnlabeled.push({
+                            amount: amt,
+                            date: tx.transactionDate || '',
+                            buyer: tx.buyer?.username || '',
+                            orderId: tx.orderId || '',
+                            refs: refBits.join(',') || (tx.salesRecordReference || ''),
+                        });
+                    }
+                }
+                const user = tx.buyer?.username;
+                const day = tx.transactionDate || '';
+                if (user && day) {
+                    const k = buyerDateKey(user, day);
+                    const arr = byBuyerDate.get(k) ?? [];
+                    arr.push(amt);
+                    byBuyerDate.set(k, arr);
                 }
                 if (tx.orderId && sampleOrderIds.length < 8) sampleOrderIds.push(tx.orderId);
             }
@@ -141,22 +186,27 @@ export async function fetchSellerLabelCosts(
         }
     } catch (err: any) {
         console.error('[ebay-finances] fetch error:', err);
-        return {
-            byOrderId,
-            bySalesRecord,
-            labelsFound,
-            sampleOrderIds,
-            error: err.message || 'Finances fetch failed',
-        };
+        return emptyLabelResult(err.message || 'Finances fetch failed');
     }
 
-    return { byOrderId, bySalesRecord, labelsFound, sampleOrderIds, error: null };
+    return {
+        byOrderId,
+        bySalesRecord,
+        byBuyerDate,
+        labelsFound,
+        unlabeledCount,
+        sampleOrderIds,
+        sampleUnlabeled,
+        error: null,
+    };
 }
 
 export function matchLabelAmount(
     orderNumber: string,
     salesRecord: string | null | undefined,
-    labels: LabelCostResult
+    labels: LabelCostResult,
+    buyer?: string | null,
+    saleDate?: string | null
 ): number | null {
     if (labels.byOrderId.has(orderNumber)) return labels.byOrderId.get(orderNumber)!;
     if (salesRecord && labels.bySalesRecord.has(salesRecord)) {
@@ -169,6 +219,29 @@ export function matchLabelAmount(
         const hay = id.toLowerCase();
         if (hay === needle || hay.endsWith(needle) || needle.endsWith(hay)) {
             return labels.byOrderId.get(id) ?? null;
+        }
+    }
+    // SHIPPING_LABEL txs often omit orderId. If this buyer has exactly one
+    // label that day (or several with the same amount, typical eSE), use it.
+    if (buyer && saleDate && labels.byBuyerDate) {
+        const days = [saleDate.slice(0, 10)];
+        const d = new Date(`${saleDate.slice(0, 10)}T12:00:00Z`);
+        d.setUTCDate(d.getUTCDate() + 1);
+        days.push(d.toISOString().slice(0, 10));
+        const candidates: number[] = [];
+        for (let i = 0; i < days.length; i++) {
+            const arr = labels.byBuyerDate.get(buyerDateKey(buyer, days[i]));
+            if (arr) {
+                for (let j = 0; j < arr.length; j++) candidates.push(arr[j]);
+            }
+        }
+        if (candidates.length === 1) return candidates[0];
+        if (candidates.length > 1) {
+            let same = true;
+            for (let i = 1; i < candidates.length; i++) {
+                if (candidates[i] !== candidates[0]) { same = false; break; }
+            }
+            if (same) return candidates[0];
         }
     }
     return null;
@@ -346,7 +419,7 @@ export async function fetchLabelCostForOrderDetailed(orderId: string): Promise<O
     const txs = status < 400 ? (json.transactions ?? []) : [];
     const txTypes = [
         `http:${status}`,
-        ...txs.map((t) => `${t.transactionType || '?'}:${t.amount?.value || '?'}`),
+        ...txs.map((t) => `${t.transactionType || '?'}:${t.amount?.value || '?'}:${t.feeType || ''}`),
     ];
     const fromTx = parseTransactionCosts(txs);
 
@@ -365,8 +438,18 @@ export async function fetchLabelCostForOrderDetailed(orderId: string): Promise<O
         if (earnings) fromEarn = parseOrderEarnings(earnings);
     }
 
-    const amount = fromTx.shippingLabel ?? fromEarn.shippingLabel ?? null;
-    const source = fromTx.shippingLabel != null ? 'transaction' : fromEarn.shippingLabel != null ? 'order_earnings' : null;
+    let amount = fromTx.shippingLabel ?? fromEarn.shippingLabel ?? null;
+    let source: OrderLabelLookup['source'] =
+        fromTx.shippingLabel != null ? 'transaction' : fromEarn.shippingLabel != null ? 'order_earnings' : null;
+
+    if (amount == null) {
+        const fromFulfillment = await fetchFulfillmentLabelCost(token, orderId);
+        if (fromFulfillment != null) {
+            amount = fromFulfillment;
+            source = 'order_earnings';
+            txTypes.push(`fulfillment_label:${fromFulfillment}`);
+        }
+    }
 
     return {
         amount,
@@ -377,3 +460,40 @@ export async function fetchLabelCostForOrderDetailed(orderId: string): Promise<O
         buyerShipping: fromEarn.buyerShipping,
     };
 }
+
+async function fetchFulfillmentLabelCost(token: string, orderId: string): Promise<number | null> {
+    const root = process.env.EBAY_ENVIRONMENT?.trim() === 'PRODUCTION'
+        ? 'https://api.ebay.com'
+        : 'https://api.sandbox.ebay.com';
+    try {
+        const res = await fetch(`${root}/sell/fulfillment/v1/order/${encodeURIComponent(orderId)}`, {
+            headers: {
+                Authorization: `Bearer ${token}`,
+                Accept: 'application/json',
+                'X-EBAY-C-MARKETPLACE-ID': 'EBAY_US',
+            },
+        });
+        if (!res.ok) return null;
+        const data = await res.json();
+        const hits: number[] = [];
+        const walk = (o: any) => {
+            if (!o || typeof o !== 'object') return;
+            const keys = Object.keys(o);
+            for (let i = 0; i < keys.length; i++) {
+                const k = keys[i];
+                const v = o[k];
+                if (/label/i.test(k) && v && typeof v === 'object' && v.value != null) {
+                    const n = Math.abs(parseFloat(v.value));
+                    if (Number.isFinite(n) && n > 0 && n < 80) hits.push(n);
+                }
+                if (v && typeof v === 'object') walk(v);
+            }
+        };
+        walk(data);
+        return hits.length ? hits[0] : null;
+    } catch {
+        return null;
+    }
+}
+
+

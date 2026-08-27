@@ -30,7 +30,7 @@ export async function POST(request: NextRequest) {
 
         const { data: sales, error: salesErr } = await supabaseAdmin
             .from('ebay_sales')
-            .select('id, order_number, sales_record_number, sale_date, tracking_number, shipping_cost')
+            .select('id, order_number, sales_record_number, sale_date, tracking_number, shipping_cost, buyer')
             .order('sale_date', { ascending: true });
         if (salesErr) throw salesErr;
 
@@ -94,6 +94,9 @@ export async function POST(request: NextRequest) {
             const labels = await fetchSellerLabelCosts(fromDate.toISOString(), toDate.toISOString());
             labelsFound = labels.labelsFound;
             warning = labels.error;
+            if (!warning && labels.unlabeledCount > 0) {
+                warning = `${labels.unlabeledCount} shipping-label charges have no order id — matching those by buyer + date.`;
+            }
             for (let i = 0; i < labels.sampleOrderIds.length; i++) {
                 sampleLabelOrderIds.push(labels.sampleOrderIds[i]);
             }
@@ -113,7 +116,13 @@ export async function POST(request: NextRequest) {
 
             for (const [orderNumber, lines] of Array.from(byOrder.entries())) {
                 const record = lines[0]?.sales_record_number as string | null;
-                const amount = matchLabelAmount(orderNumber, record, labels);
+                const amount = matchLabelAmount(
+                    orderNumber,
+                    record,
+                    labels,
+                    lines[0]?.buyer,
+                    lines[0]?.sale_date
+                );
                 if (amount == null) continue;
                 matchedOrders += 1;
                 matchedOrderNumbers.add(orderNumber);
@@ -153,6 +162,16 @@ export async function POST(request: NextRequest) {
                 await Promise.all(
                     chunk.map(async ({ orderNumber, lines }) => {
                         const detail = await fetchLabelCostForOrderDetailed(orderNumber);
+                        if (detail.amount == null) {
+                            const fallback = matchLabelAmount(
+                                orderNumber,
+                                lines[0]?.sales_record_number,
+                                labels,
+                                lines[0]?.buyer,
+                                lines[0]?.sale_date
+                            );
+                            if (fallback != null) detail.amount = fallback;
+                        }
                         if (
                             detail.amount == null &&
                             detail.ebayFee == null &&
@@ -206,6 +225,48 @@ export async function GET(request: NextRequest) {
     if (!orderId) {
         return NextResponse.json({ error: 'orderId required' }, { status: 400 });
     }
+
+    const { data: sale } = await supabaseAdmin
+        .from('ebay_sales')
+        .select('order_number, buyer, sale_date, tracking_number, sales_record_number, shipping_cost')
+        .eq('order_number', orderId)
+        .limit(1)
+        .maybeSingle();
+
     const detail = await fetchLabelCostForOrderDetailed(orderId);
-    return NextResponse.json({ orderId, ...detail });
+
+    let matchedViaBuyer: number | null = null;
+    let unlabeled: { amount: number; date: string; buyer: string; orderId: string; refs: string }[] = [];
+    let labelsFound = 0;
+    let unlabeledCount = 0;
+    if (sale?.sale_date) {
+        const from = new Date(sale.sale_date);
+        from.setDate(from.getDate() - 1);
+        const to = new Date(sale.sale_date);
+        to.setDate(to.getDate() + 3);
+        const labels = await fetchSellerLabelCosts(from.toISOString(), to.toISOString());
+        labelsFound = labels.labelsFound;
+        unlabeledCount = labels.unlabeledCount;
+        unlabeled = labels.sampleUnlabeled;
+        matchedViaBuyer = matchLabelAmount(
+            orderId,
+            sale.sales_record_number,
+            labels,
+            sale.buyer,
+            sale.sale_date
+        );
+    }
+
+    return NextResponse.json({
+        orderId,
+        saleBuyer: sale?.buyer || null,
+        saleDate: sale?.sale_date || null,
+        storedShipping: sale?.shipping_cost ?? null,
+        ...detail,
+        amount: detail.amount ?? matchedViaBuyer,
+        matchedViaBuyer,
+        labelsFoundNearby: labelsFound,
+        unlabeledCount,
+        unlabeledSample: unlabeled,
+    });
 }
