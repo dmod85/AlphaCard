@@ -35,6 +35,7 @@ interface Sale {
   shipping_cost?: number | null;
   supplies_cost?: number | null;
   order_shipping_cost?: number | null;
+  exclude_from_stats?: boolean;
 }
 
 interface Expense {
@@ -612,6 +613,7 @@ export default function SalesPage() {
   const [settings, setSettings] = useState<PnlSettings>(DEFAULT_PNL_SETTINGS);
   const [showExpenses, setShowExpenses] = useState(false);
   const [showDefaults, setShowDefaults] = useState(false);
+  const [showExcluded, setShowExcluded] = useState(true);
 
   // Build a SKU -> total cost lookup
   const skuTotalCostMap = new Map<string, number>();
@@ -640,10 +642,12 @@ export default function SalesPage() {
     }, settings);
   }
 
+  const statsSales = sales.filter(s => !s.exclude_from_stats);
+
   // SKU -> net proceeds (after fees/ads/ship/supplies) and gross sold-for
   const skuTotalNetMap = new Map<string, number>();
   const skuTotalGrossMap = new Map<string, number>();
-  sales.forEach(s => {
+  statsSales.forEach(s => {
     if (s.sku) {
       const { net, soldFor } = saleCosts(s);
       skuTotalNetMap.set(s.sku, (skuTotalNetMap.get(s.sku) ?? 0) + net);
@@ -834,8 +838,27 @@ export default function SalesPage() {
     setSelectedSales(newSet);
   }
 
+  async function handleExcludeFromStats(ids: string[], excluded: boolean) {
+    if (ids.length === 0) return;
+    setSales(prev => prev.map(s => ids.includes(s.id) ? { ...s, exclude_from_stats: excluded } : s));
+    try {
+      const res = await fetch('/api/ebay/sold-orders', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids, exclude_from_stats: excluded }),
+      });
+      if (!res.ok) {
+        setSales(prev => prev.map(s => ids.includes(s.id) ? { ...s, exclude_from_stats: !excluded } : s));
+      }
+    } catch {
+      setSales(prev => prev.map(s => ids.includes(s.id) ? { ...s, exclude_from_stats: !excluded } : s));
+    }
+  }
+
   // Period-scoped rows (P&L ignores the search box so ROI stays apples-to-apples)
   const periodSales = sales.filter(s => isInPeriod(s.sale_date, viewDays));
+  const periodStatsSales = periodSales.filter(s => !s.exclude_from_stats);
+  const excludedInPeriod = periodSales.length - periodStatsSales.length;
   const periodPurchases = purchases.filter(p => isInPeriod(p.purchase_date, viewDays));
   const periodExpenses = expenses.filter(e => isInPeriod(e.expense_date, viewDays));
 
@@ -845,8 +868,9 @@ export default function SalesPage() {
       .reduce((s, e) => s + Number(e.amount || 0), 0);
   }
 
-  // Filter table by period + search
+  // Filter table by period + search (excluded rows stay visible unless toggled off)
   const filtered = periodSales.filter(s => {
+    if (!showExcluded && s.exclude_from_stats) return false;
     if (!search) return true;
     const q = search.toLowerCase();
     return (
@@ -857,13 +881,13 @@ export default function SalesPage() {
     );
   });
 
-  // Period P&L — actual (all-in) costs
-  const totalRevenue = periodSales.reduce((s, r) => {
+  // Period P&L — actual (all-in) costs, skipping sales hidden from stats
+  const totalRevenue = periodStatsSales.reduce((s, r) => {
     const c = saleCosts(r);
     return s + c.soldFor + c.buyerShipping;
   }, 0);
   const purchaseCost = periodPurchases.reduce((s, p) => s + Number(p.cost || 0), 0);
-  const saleCostTotals = periodSales.reduce(
+  const saleCostTotals = periodStatsSales.reduce(
     (acc, r) => {
       const c = saleCosts(r);
       acc.ebayFees += c.ebayFee;
@@ -884,7 +908,7 @@ export default function SalesPage() {
   // inventory bought this period. A $2,050 card from an older $110 lot was
   // inflating ROI when the denominator was only this period's purchases.
   const periodGrossBySku = new Map<string, number>();
-  periodSales.forEach(s => {
+  periodStatsSales.forEach(s => {
     if (!s.sku) return;
     periodGrossBySku.set(s.sku, (periodGrossBySku.get(s.sku) ?? 0) + saleCosts(s).soldFor);
   });
@@ -903,8 +927,8 @@ export default function SalesPage() {
   const profit = totalRevenue - totalCosts;
   const roiPct = soldCogs > 0 ? (profit / soldCogs) * 100 : null;
   const roiExCostsPct = soldCogs > 0 ? ((totalRevenue - soldCogs) / soldCogs) * 100 : null;
-  const avgSale = periodSales.length ? totalRevenue / periodSales.length : 0;
-  const matched = periodSales.filter(s => s.sku && skuTotalCostMap.has(s.sku)).length;
+  const avgSale = periodStatsSales.length ? totalRevenue / periodStatsSales.length : 0;
+  const matched = periodStatsSales.filter(s => s.sku && skuTotalCostMap.has(s.sku)).length;
 
   return (
     <div className="h-full flex flex-col bg-gray-950 overflow-hidden">
@@ -1033,7 +1057,7 @@ export default function SalesPage() {
             {
               label: 'Sales Revenue',
               value: fmt$(totalRevenue),
-              sub: `${periodSales.length} sale${periodSales.length === 1 ? '' : 's'} · avg ${fmt$(avgSale)}`,
+              sub: `${periodStatsSales.length} sale${periodStatsSales.length === 1 ? '' : 's'} · avg ${fmt$(avgSale)}${excludedInPeriod ? ` · ${excludedInPeriod} hidden` : ''}`,
               color: 'text-green-400',
             },
             {
@@ -1115,7 +1139,7 @@ export default function SalesPage() {
             },
             {
               label: 'Matched SKUs',
-              value: `${matched} / ${periodSales.length}`,
+              value: `${matched} / ${periodStatsSales.length}`,
               sub: otherExpenses > 0 ? `+ ${fmt$(otherExpenses)} other` : 'sales linked to a purchase',
             },
           ].map(s => (
@@ -1139,6 +1163,20 @@ export default function SalesPage() {
               onChange={e => setSearch(e.target.value)}
             />
           </div>
+
+          {excludedInPeriod > 0 && (
+            <button
+              type="button"
+              onClick={() => setShowExcluded(v => !v)}
+              className={`shrink-0 px-2.5 py-1.5 rounded-md text-xs font-medium border transition ${showExcluded
+                ? 'bg-amber-900/20 text-amber-300 border-amber-500/30'
+                : 'bg-gray-900 text-gray-400 border-gray-800 hover:text-white'
+                }`}
+              title={showExcluded ? 'Excluded sales are dimmed in the table but omitted from revenue/ROI' : 'Show excluded sales in the table'}
+            >
+              {showExcluded ? `Showing ${excludedInPeriod} hidden` : `${excludedInPeriod} hidden from stats`}
+            </button>
+          )}
 
           {selectedSales.size > 0 && (
             <div className="flex items-center gap-3 bg-blue-900/20 border border-blue-500/30 rounded-lg px-4 py-1.5 transition-all">
@@ -1177,6 +1215,21 @@ export default function SalesPage() {
                   'Apply'
                 )}
               </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const ids = Array.from(selectedSales);
+                  const allHidden = ids.every(id => sales.find(s => s.id === id)?.exclude_from_stats);
+                  handleExcludeFromStats(ids, !allHidden);
+                  setSelectedSales(new Set());
+                }}
+                className="px-3 py-1 bg-gray-800 hover:bg-gray-700 text-white text-sm font-medium rounded transition border border-gray-600"
+                title="Omit selected sales from revenue, costs, and ROI"
+              >
+                {Array.from(selectedSales).every(id => sales.find(s => s.id === id)?.exclude_from_stats)
+                  ? 'Include in stats'
+                  : 'Hide from stats'}
+              </button>
             </div>
           )}
         </div>
@@ -1194,7 +1247,9 @@ export default function SalesPage() {
                 ? 'No sales yet — syncing from eBay, or click Sync to pull a longer window.'
                 : search
                   ? 'No sales match your search.'
-                  : `No sales in ${periodLabel(viewDays).toLowerCase()}.`}
+                  : !showExcluded && excludedInPeriod > 0
+                    ? 'Hidden sales are filtered out of the table — click “hidden from stats” to show them.'
+                    : `No sales in ${periodLabel(viewDays).toLowerCase()}.`}
             </p>
           </div>
         ) : (
@@ -1226,6 +1281,7 @@ export default function SalesPage() {
                 <th className="px-3 py-3">ROI</th>
                 <th className="px-3 py-3">ROI ex-costs</th>
                 <th className="px-3 py-3">Shipped</th>
+                <th className="px-3 py-3 w-16">Stats</th>
               </tr>
             </thead>
             <tbody>
@@ -1233,10 +1289,11 @@ export default function SalesPage() {
                 const match = sale.sku ? skuMap.get(sale.sku) : null;
                 const isOrderHead = firstSaleIdByOrder.get(sale.order_number) === sale.id;
                 const costs = saleCosts(sale);
+                const excluded = !!sale.exclude_from_stats;
                 return (
                   <tr
                     key={sale.id}
-                    className={`border-b border-gray-800/60 hover:bg-gray-800/40 transition ${selectedSales.has(sale.id) ? 'bg-blue-900/10' : ''}`}
+                    className={`border-b border-gray-800/60 hover:bg-gray-800/40 transition ${selectedSales.has(sale.id) ? 'bg-blue-900/10' : ''} ${excluded ? 'opacity-40' : ''}`}
                   >
                     {/* Checkbox */}
                     <td className="px-3 py-2">
@@ -1266,6 +1323,9 @@ export default function SalesPage() {
                     {/* Title */}
                     <td className="px-3 py-3 text-sm text-gray-200 max-w-xs">
                       <span className="line-clamp-2">{sale.item_title}</span>
+                      {excluded && (
+                        <div className="text-[10px] text-amber-400/80 mt-0.5">Hidden from revenue / ROI</div>
+                      )}
                     </td>
 
                     {/* SKU — inline editable */}
@@ -1346,6 +1406,7 @@ export default function SalesPage() {
                     {/* ROI — net proceeds vs lot cost (includes shipping) */}
                     <td className="px-3 py-3 text-sm tabular-nums">
                       {(() => {
+                        if (excluded) return <span className="text-gray-600">—</span>;
                         if (!sale.sku || !skuTotalCostMap.has(sale.sku)) return <span className="text-gray-600">—</span>;
                         const cost = skuTotalCostMap.get(sale.sku)!;
                         if (cost === 0) return <span className="text-gray-600">—</span>;
@@ -1360,6 +1421,7 @@ export default function SalesPage() {
                     {/* ROI excluding selling costs — sold-for vs lot cost only */}
                     <td className="px-3 py-3 text-sm tabular-nums">
                       {(() => {
+                        if (excluded) return <span className="text-gray-600">—</span>;
                         if (!sale.sku || !skuTotalCostMap.has(sale.sku)) return <span className="text-gray-600">—</span>;
                         const cost = skuTotalCostMap.get(sale.sku)!;
                         if (cost === 0) return <span className="text-gray-600">—</span>;
@@ -1400,6 +1462,20 @@ export default function SalesPage() {
                           </a>
                         </div>
                       </div>
+                    </td>
+
+                    <td className="px-3 py-3">
+                      <button
+                        type="button"
+                        onClick={() => handleExcludeFromStats([sale.id], !excluded)}
+                        title={excluded ? 'Include this sale in revenue and ROI' : 'Hide this sale from revenue and ROI'}
+                        className={`text-xs px-2 py-0.5 rounded border transition ${excluded
+                          ? 'text-amber-300 border-amber-500/40 bg-amber-900/20 hover:bg-amber-900/40'
+                          : 'text-gray-500 border-gray-800 hover:text-white hover:border-gray-600'
+                          }`}
+                      >
+                        {excluded ? 'Show' : 'Hide'}
+                      </button>
                     </td>
                   </tr>
                 );

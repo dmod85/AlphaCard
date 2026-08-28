@@ -1,4 +1,5 @@
 import { supabaseAdmin } from '@/app/lib/supabase-admin';
+import { withExclusionFlags } from '@/app/lib/sale-exclusions';
 import {
     assignUnlabeledLabels,
     fetchLabelCostForOrderDetailed,
@@ -125,7 +126,7 @@ export async function applySellerLabelCosts(
             .select('*')
             .order('sale_date', { ascending: false });
         if (error) throw error;
-        return (data ?? []) as Record<string, unknown>[];
+        return (await withExclusionFlags((data ?? []) as Array<{ id: string }>)) as Record<string, unknown>[];
     };
 
     if (orderId) {

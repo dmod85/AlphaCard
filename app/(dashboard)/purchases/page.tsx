@@ -257,19 +257,19 @@ function PurchaseModal({
   const [form, setForm] = useState(
     initial
       ? {
-          purchase_date: initial.purchase_date,
-          year: initial.year?.toString() ?? '',
-          brand: initial.brand ?? '',
-          series: initial.series ?? '',
-          sport: initial.sport ?? '',
-          team: initial.team ?? '',
-          box_size: initial.box_size ?? '',
-          cost: initial.cost?.toString() ?? '',
-          quantity: initial.quantity?.toString() ?? '1',
-          sku: initial.sku ?? '',
-          bought_from: initial.bought_from ?? 'eBay',
-          notes: initial.notes ?? '',
-        }
+        purchase_date: initial.purchase_date,
+        year: initial.year?.toString() ?? '',
+        brand: initial.brand ?? '',
+        series: initial.series ?? '',
+        sport: initial.sport ?? '',
+        team: initial.team ?? '',
+        box_size: initial.box_size ?? '',
+        cost: initial.cost?.toString() ?? '',
+        quantity: initial.quantity?.toString() ?? '1',
+        sku: initial.sku ?? '',
+        bought_from: initial.bought_from ?? 'eBay',
+        notes: initial.notes ?? '',
+      }
       : { ...EMPTY_FORM }
   );
   const [saving, setSaving] = useState(false);
@@ -496,7 +496,7 @@ function EditableCell({
       let parsedValue: any = value;
       if (type === 'number') parsedValue = parseFloat(value) || 0;
       if (value === '' && type !== 'text') parsedValue = null;
-      
+
       const res = await fetch('/api/purchases', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
@@ -564,8 +564,8 @@ function EditableCell({
       title={`Edit ${field}`}
     >
       <span className={display ? '' : 'text-gray-500 italic text-[11px]'}>
-        {type === 'number' && display 
-          ? (isCurrency ? `$${parseFloat(display).toFixed(2)}` : display) 
+        {type === 'number' && display
+          ? (isCurrency ? `$${parseFloat(display).toFixed(2)}` : display)
           : display || '—'}
       </span>
       <span className="text-blue-500 text-[10px] opacity-0 group-hover:opacity-100 transition">✎</span>
@@ -581,8 +581,8 @@ function SoldBadge({ sold, total }: { sold: number; total: number }) {
   const pct = capped / total;
   const color =
     sold === 0 ? 'text-gray-500 bg-gray-800' :
-    pct >= 1 ? 'text-green-400 bg-green-500/10' :
-    'text-yellow-400 bg-yellow-500/10';
+      pct >= 1 ? 'text-green-400 bg-green-500/10' :
+        'text-yellow-400 bg-yellow-500/10';
   return (
     <div className="flex items-center gap-2">
       <span className={`text-[11px] font-medium px-1.5 py-0.5 rounded ${color}`}>
@@ -744,8 +744,8 @@ function SkuGroupRow({
           <td className="px-3 py-2 text-xs text-gray-400"><EditableCell purchase={p} field="box_size" type="select" options={BOX_SIZES} onSaved={onRefresh} /></td>
           <td className="px-3 py-2 text-xs text-green-400 tabular-nums"><EditableCell purchase={p} field="cost" type="number" onSaved={onRefresh} /></td>
           <td className="px-3 py-2 text-xs text-gray-300 tabular-nums"><EditableCell purchase={p} field="quantity" type="number" onSaved={onRefresh} /></td>
-          <td className="px-3 py-2" /> {/* empty Sold for sub-row (rolled up in parent) */}
-          <td className="px-3 py-2" /> {/* empty Total Sales for sub-row */}
+          <td className="px-3 py-2" />
+          <td className="px-3 py-2" />
           <td className="px-3 py-2">
             <SkuPill sku={p.sku} onCopy={onCopySkU} />
           </td>
@@ -813,7 +813,7 @@ export default function PurchasesPage() {
     const skuTotalSalesMap = new Map<string, number>();
     const skuQuantitySoldMap = new Map<string, number>();
     sales.forEach(s => {
-      if (s.sku) {
+      if (s.sku && !s.exclude_from_stats) {
         skuTotalSalesMap.set(s.sku, (skuTotalSalesMap.get(s.sku) ?? 0) + s.sold_for);
         skuQuantitySoldMap.set(s.sku, (skuQuantitySoldMap.get(s.sku) ?? 0) + (s.quantity_sold ?? 1));
       }

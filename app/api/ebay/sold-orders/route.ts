@@ -17,6 +17,7 @@ import {
 } from '@/app/lib/ebay-orders';
 import { applyCostDefaultsToRow } from '@/app/lib/pnl';
 import { applySellerLabelCosts } from '@/app/lib/ebay-label-costs';
+import { setSalesExcluded, withExclusionFlags } from '@/app/lib/sale-exclusions';
 
 // -----------------------------------------------------------------------
 // eBay Trading API: GetOrders with OrderStatus=Completed
@@ -52,7 +53,7 @@ export async function GET(request: NextRequest) {
         .select('*')
         .order('sale_date', { ascending: false });
       if (error) throw error;
-      return NextResponse.json({ sales: data ?? [], synced: 0 });
+      return NextResponse.json({ sales: await withExclusionFlags(data ?? []), synced: 0 });
     }
 
     // Build date range:
@@ -204,7 +205,7 @@ export async function GET(request: NextRequest) {
       });
       labelsMatched = labelResult.matchedOrders;
       return NextResponse.json({
-        sales: labelResult.sales,
+        sales: await withExclusionFlags(labelResult.sales as Array<{ id: string }>),
         synced,
         feesUpdated,
         labelsMatched,
@@ -222,7 +223,7 @@ export async function GET(request: NextRequest) {
     if (fetchErr) throw fetchErr;
 
     return NextResponse.json({
-      sales: allSales ?? [],
+      sales: await withExclusionFlags(allSales ?? []),
       synced,
       feesUpdated,
       labelsMatched,
@@ -241,8 +242,8 @@ export async function GET(request: NextRequest) {
 }
 
 // -----------------------------------------------------------------------
-// PATCH handler — update sku and/or per-sale cost fields
-// body: { id | ids, sku?, ebay_fee?, advertising_fee?, shipping_cost?, supplies_cost? }
+// PATCH handler — update sku, costs, or exclude_from_stats
+// body: { id | ids, sku?, ebay_fee?, advertising_fee?, shipping_cost?, supplies_cost?, exclude_from_stats? }
 // -----------------------------------------------------------------------
 const PATCH_MONEY_FIELDS = ['ebay_fee', 'advertising_fee', 'shipping_cost', 'supplies_cost'] as const;
 
@@ -254,6 +255,13 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: 'id or ids required' }, { status: 400 });
     }
 
+    const targetIds: string[] = ids && ids.length > 0 ? ids.map(String) : [String(id)];
+
+    if (body.exclude_from_stats !== undefined && sku === undefined && !PATCH_MONEY_FIELDS.some((f) => body[f] !== undefined)) {
+      await setSalesExcluded(targetIds, !!body.exclude_from_stats);
+      return NextResponse.json({ ok: true, ids: targetIds, exclude_from_stats: !!body.exclude_from_stats });
+    }
+
     const updates: Record<string, unknown> = {};
     if (sku !== undefined) updates.sku = sku || null;
     for (const field of PATCH_MONEY_FIELDS) {
@@ -261,7 +269,13 @@ export async function PATCH(request: NextRequest) {
         updates[field] = body[field] === null || body[field] === '' ? null : parseFloat(body[field]);
       }
     }
+    if (body.exclude_from_stats !== undefined) {
+      await setSalesExcluded(targetIds, !!body.exclude_from_stats);
+    }
     if (Object.keys(updates).length === 0) {
+      if (body.exclude_from_stats !== undefined) {
+        return NextResponse.json({ ok: true, ids: targetIds, exclude_from_stats: !!body.exclude_from_stats });
+      }
       return NextResponse.json({ error: 'no fields to update' }, { status: 400 });
     }
 
