@@ -158,7 +158,11 @@ export function parseOrders(xml: string): SaleRow[] {
     const orderNumber =
       order.match(/<OrderID>(.*?)<\/OrderID>/)?.[1] || '';
     const buyer =
-      decodeXml(order.match(/<UserID>(.*?)<\/UserID>/)?.[1] || '') || null;
+      decodeXml(
+        order.match(/<Buyer>[\s\S]*?<UserID>(.*?)<\/UserID>/)?.[1] ||
+        order.match(/<UserID>(.*?)<\/UserID>/)?.[1] ||
+        ''
+      ) || null;
     const createdTime =
       order.match(/<CreatedTime>(.*?)<\/CreatedTime>/)?.[1] || null;
 
@@ -188,7 +192,10 @@ export function parseOrders(xml: string): SaleRow[] {
     const trackingNumber = order.match(/<ShipmentTrackingNumber>(.*?)<\/ShipmentTrackingNumber>/)?.[1] || null;
     const carrier = order.match(/<ShippingCarrierUsed>(.*?)<\/ShippingCarrierUsed>/)?.[1] || null;
     const shippedAt = order.match(/<ShippedTime>(.*?)<\/ShippedTime>/)?.[1] || null;
-    const salesRecordNumber = order.match(/<SalesRecordNumber>(.*?)<\/SalesRecordNumber>/)?.[1] || null;
+    const salesRecordNumber =
+      order.match(/<SellingManagerSalesRecordNumber>(.*?)<\/SellingManagerSalesRecordNumber>/)?.[1] ||
+      order.match(/<SalesRecordNumber>(.*?)<\/SalesRecordNumber>/)?.[1] ||
+      null;
 
     // Each order may contain multiple line items
     const transactionRegex = /<Transaction>([\s\S]*?)<\/Transaction>/g;
@@ -247,7 +254,9 @@ export function parseOrders(xml: string): SaleRow[] {
           ship_to_country: shipToCountry,
           ship_to_phone: shipToPhone,
           sales_record_number:
-            tx.match(/<SalesRecordNumber>(.*?)<\/SalesRecordNumber>/)?.[1] || salesRecordNumber,
+            tx.match(/<SellingManagerSalesRecordNumber>(.*?)<\/SellingManagerSalesRecordNumber>/)?.[1] ||
+            tx.match(/<SalesRecordNumber>(.*?)<\/SalesRecordNumber>/)?.[1] ||
+            salesRecordNumber,
           shipping_service: shippingService,
           order_subtotal: orderSubtotal,
           order_shipping_cost: orderShippingCost,

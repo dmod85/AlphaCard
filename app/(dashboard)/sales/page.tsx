@@ -692,6 +692,24 @@ export default function SalesPage() {
         if (salesData.sales?.length > 0) {
           setLastSync(salesData.sales[0].synced_at);
         }
+        if (!ac.signal.aborted) setLoading(false);
+
+        // Postpaid eSE label fees land after the sale. Pull them so $0.78
+        // stops showing as an italic estimate when eBay already charged it.
+        try {
+          const labelRes = await fetch('/api/ebay/seller-costs', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ days: 14, quick: true, onlyBlank: true }),
+            signal: ac.signal,
+          });
+          const labelData = await labelRes.json();
+          if (!ac.signal.aborted && labelRes.ok && Array.isArray(labelData.sales)) {
+            setSales(labelData.sales);
+          }
+        } catch (e: any) {
+          if (e?.name === 'AbortError') return;
+        }
       } catch (e: any) {
         if (e?.name === 'AbortError') return;
       } finally {
@@ -712,9 +730,11 @@ export default function SalesPage() {
       if (!res.ok) throw new Error(data.error);
       setSales(data.sales ?? []);
       const newOrders = data.synced ?? 0;
-      setSyncMsg(
-        `✓ Synced ${newOrders} new order${newOrders === 1 ? '' : 's'} from the last ${days} day${days === 1 ? '' : 's'}.`
-      );
+      const labelsMatched = data.labelsMatched ?? 0;
+      let msg = `✓ Synced ${newOrders} new order${newOrders === 1 ? '' : 's'} from the last ${days} day${days === 1 ? '' : 's'}`;
+      if (labelsMatched) msg += `, filled ${labelsMatched} seller-paid label${labelsMatched === 1 ? '' : 's'}`;
+      msg += '.';
+      setSyncMsg(msg);
       setLastSync(new Date().toISOString());
     } catch (e: any) {
       setSyncMsg(`✗ Sync failed: ${e.message}`);
@@ -730,7 +750,7 @@ export default function SalesPage() {
       const res = await fetch('/api/ebay/seller-costs', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ days }),
+        body: JSON.stringify({ days: Math.max(days, 14) }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
@@ -859,11 +879,30 @@ export default function SalesPage() {
   const shipping = saleCostTotals.shipping + expenseSum('shipping');
   const supplies = saleCostTotals.supplies + expenseSum('supplies');
   const otherExpenses = expenseSum('other');
-  const totalCosts = purchaseCost + ebayFees + advertising + shipping + supplies + otherExpenses;
+
+  // Cost of goods for items *sold* this period (allocated lot cost), not
+  // inventory bought this period. A $2,050 card from an older $110 lot was
+  // inflating ROI when the denominator was only this period's purchases.
+  const periodGrossBySku = new Map<string, number>();
+  periodSales.forEach(s => {
+    if (!s.sku) return;
+    periodGrossBySku.set(s.sku, (periodGrossBySku.get(s.sku) ?? 0) + saleCosts(s).soldFor);
+  });
+  let soldCogs = 0;
+  periodGrossBySku.forEach((periodGross, sku) => {
+    const lot = skuTotalCostMap.get(sku);
+    if (lot == null) return;
+    const allGross = skuTotalGrossMap.get(sku) || 0;
+    const share = allGross > 0 ? periodGross / allGross : 1;
+    soldCogs += lot * share;
+  });
+  soldCogs = Math.round((soldCogs + Number.EPSILON) * 100) / 100;
+
+  const sellingCosts = ebayFees + advertising + shipping + supplies + otherExpenses;
+  const totalCosts = soldCogs + sellingCosts;
   const profit = totalRevenue - totalCosts;
-  const roiPct = totalCosts > 0 ? (profit / totalCosts) * 100 : null;
-  const grossProfit = totalRevenue - purchaseCost;
-  const roiExCostsPct = purchaseCost > 0 ? (grossProfit / purchaseCost) * 100 : null;
+  const roiPct = soldCogs > 0 ? (profit / soldCogs) * 100 : null;
+  const roiExCostsPct = soldCogs > 0 ? ((totalRevenue - soldCogs) / soldCogs) * 100 : null;
   const avgSale = periodSales.length ? totalRevenue / periodSales.length : 0;
   const matched = periodSales.filter(s => s.sku && skuTotalCostMap.has(s.sku)).length;
 
@@ -1000,19 +1039,19 @@ export default function SalesPage() {
             {
               label: 'Total Costs',
               value: fmt$(totalCosts),
-              sub: 'purchases + fees + ads + ship + supplies',
+              sub: 'cogs + fees + ads + ship + supplies',
               color: 'text-orange-400',
             },
             {
               label: 'Net Profit',
               value: `${profit >= 0 ? '' : '−'}${fmt$(Math.abs(profit))}`,
-              sub: 'revenue − all costs',
+              sub: 'revenue − cogs − selling costs',
               color: profit > 0 ? 'text-green-400' : profit < 0 ? 'text-red-400' : 'text-gray-400',
             },
             {
               label: 'Actual ROI',
               value: roiPct === null ? '—' : `${roiPct > 0 ? '+' : ''}${roiPct.toFixed(1)}%`,
-              sub: totalCosts > 0 ? 'after fees, ads, ship, supplies' : 'no costs in period',
+              sub: soldCogs > 0 ? 'net vs cost of goods sold' : 'no matched lots in period',
               color:
                 roiPct === null
                   ? 'text-gray-400'
@@ -1025,7 +1064,7 @@ export default function SalesPage() {
             {
               label: 'ROI ex-costs',
               value: roiExCostsPct === null ? '—' : `${roiExCostsPct > 0 ? '+' : ''}${roiExCostsPct.toFixed(1)}%`,
-              sub: purchaseCost > 0 ? 'sales vs purchases only' : 'no purchases in period',
+              sub: soldCogs > 0 ? 'sales vs cost of goods sold' : 'no matched lots in period',
               color:
                 roiExCostsPct === null
                   ? 'text-gray-400'
@@ -1048,9 +1087,11 @@ export default function SalesPage() {
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-4">
           {[
             {
-              label: 'Purchases',
-              value: fmt$(purchaseCost),
-              sub: `${periodPurchases.length} lot${periodPurchases.length === 1 ? '' : 's'}`,
+              label: 'Cost of goods',
+              value: fmt$(soldCogs),
+              sub: purchaseCost > 0
+                ? `${fmt$(purchaseCost)} bought this period`
+                : 'lots matched to sales',
             },
             {
               label: 'eBay Fees',

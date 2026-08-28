@@ -30,6 +30,8 @@ export type LabelCostResult = {
     byOrderId: Map<string, number>;
     bySalesRecord: Map<string, number>;
     byBuyerDate: Map<string, number[]>;
+    byOrderBuyer: Map<string, string>;
+    unlabeled: UnlabeledLabel[];
     labelsFound: number;
     unlabeledCount: number;
     sampleOrderIds: string[];
@@ -77,6 +79,8 @@ function emptyLabelResult(error: string | null): LabelCostResult {
         byOrderId: new Map(),
         bySalesRecord: new Map(),
         byBuyerDate: new Map(),
+        byOrderBuyer: new Map(),
+        unlabeled: [],
         labelsFound: 0,
         unlabeledCount: 0,
         sampleOrderIds: [],
@@ -92,8 +96,9 @@ export async function fetchSellerLabelCosts(
     const byOrderId = new Map<string, number>();
     const bySalesRecord = new Map<string, number>();
     const byBuyerDate = new Map<string, number[]>();
+    const byOrderBuyer = new Map<string, string>();
+    const unlabeled: UnlabeledLabel[] = [];
     const sampleOrderIds: string[] = [];
-    const sampleUnlabeled: UnlabeledLabel[] = [];
     let labelsFound = 0;
     let unlabeledCount = 0;
     let token: string;
@@ -153,24 +158,26 @@ export async function fetchSellerLabelCosts(
                 const hadOrder = !!(tx.orderId && tx.orderId !== '0');
                 addAmount(byOrderId, tx.orderId, amt);
                 addAmount(bySalesRecord, tx.salesRecordReference, amt);
+                const user = tx.buyer?.username;
+                if (hadOrder && user) byOrderBuyer.set(tx.orderId!, user);
                 const refBits: string[] = [];
                 for (const ref of tx.references ?? []) {
                     addAmount(byOrderId, ref.referenceId, amt);
+                    if (ref.referenceType === 'ORDER_ID' && user && ref.referenceId) {
+                        byOrderBuyer.set(ref.referenceId, user);
+                    }
                     refBits.push(`${ref.referenceType || ''}:${ref.referenceId || ''}`);
                 }
                 if (!hadOrder) {
                     unlabeledCount += 1;
-                    if (sampleUnlabeled.length < 15) {
-                        sampleUnlabeled.push({
-                            amount: amt,
-                            date: tx.transactionDate || '',
-                            buyer: tx.buyer?.username || '',
-                            orderId: tx.orderId || '',
-                            refs: refBits.join(',') || (tx.salesRecordReference || ''),
-                        });
-                    }
+                    unlabeled.push({
+                        amount: amt,
+                        date: tx.transactionDate || '',
+                        buyer: user || '',
+                        orderId: tx.orderId || '',
+                        refs: refBits.join(',') || (tx.salesRecordReference || ''),
+                    });
                 }
-                const user = tx.buyer?.username;
                 const day = tx.transactionDate || '';
                 if (user && day) {
                     const k = buyerDateKey(user, day);
@@ -193,12 +200,24 @@ export async function fetchSellerLabelCosts(
         byOrderId,
         bySalesRecord,
         byBuyerDate,
+        byOrderBuyer,
+        unlabeled,
         labelsFound,
         unlabeledCount,
         sampleOrderIds,
-        sampleUnlabeled,
+        sampleUnlabeled: unlabeled.slice(0, 15),
         error: null,
     };
+}
+
+function dateOffsets(iso: string, from: number, to: number): string[] {
+    const days: string[] = [];
+    for (let i = from; i <= to; i++) {
+        const d = new Date(`${iso.slice(0, 10)}T12:00:00Z`);
+        d.setUTCDate(d.getUTCDate() + i);
+        days.push(d.toISOString().slice(0, 10));
+    }
+    return days;
 }
 
 export function matchLabelAmount(
@@ -206,7 +225,8 @@ export function matchLabelAmount(
     salesRecord: string | null | undefined,
     labels: LabelCostResult,
     buyer?: string | null,
-    saleDate?: string | null
+    saleDate?: string | null,
+    shippedAt?: string | null
 ): number | null {
     if (labels.byOrderId.has(orderNumber)) return labels.byOrderId.get(orderNumber)!;
     if (salesRecord && labels.bySalesRecord.has(salesRecord)) {
@@ -221,30 +241,112 @@ export function matchLabelAmount(
             return labels.byOrderId.get(id) ?? null;
         }
     }
-    // SHIPPING_LABEL txs often omit orderId. If this buyer has exactly one
-    // label that day (or several with the same amount, typical eSE), use it.
-    if (buyer && saleDate && labels.byBuyerDate) {
-        const days = [saleDate.slice(0, 10)];
-        const d = new Date(`${saleDate.slice(0, 10)}T12:00:00Z`);
-        d.setUTCDate(d.getUTCDate() + 1);
-        days.push(d.toISOString().slice(0, 10));
+    // Postpaid eSE labels often omit orderId. Match buyer across sale→ship window.
+    if (buyer && (saleDate || shippedAt) && labels.byBuyerDate) {
+        const days = new Set<string>();
+        if (saleDate) dateOffsets(saleDate, -1, 10).forEach((d) => days.add(d));
+        if (shippedAt) dateOffsets(shippedAt, -1, 2).forEach((d) => days.add(d));
         const candidates: number[] = [];
-        for (let i = 0; i < days.length; i++) {
-            const arr = labels.byBuyerDate.get(buyerDateKey(buyer, days[i]));
-            if (arr) {
-                for (let j = 0; j < arr.length; j++) candidates.push(arr[j]);
-            }
-        }
+        days.forEach((day) => {
+            const arr = labels.byBuyerDate.get(buyerDateKey(buyer, day));
+            if (arr) arr.forEach((a) => candidates.push(a));
+        });
         if (candidates.length === 1) return candidates[0];
-        if (candidates.length > 1) {
-            let same = true;
-            for (let i = 1; i < candidates.length; i++) {
-                if (candidates[i] !== candidates[0]) { same = false; break; }
-            }
-            if (same) return candidates[0];
+        if (candidates.length > 1 && candidates.every((a) => a === candidates[0])) {
+            return candidates[0];
         }
     }
     return null;
+}
+
+export type LabelMatchOrder = {
+    orderNumber: string;
+    buyer?: string | null;
+    saleDate?: string | null;
+    shippedAt?: string | null;
+    tracking?: string | null;
+    service?: string | null;
+};
+
+function ms(iso: string | null | undefined): number | null {
+    if (!iso) return null;
+    const t = Date.parse(iso);
+    return Number.isFinite(t) ? t : null;
+}
+
+function isEseService(service: string | null | undefined): boolean {
+    return /envelope|ese|uspsfirstclass|us_first_class/i.test(service || '');
+}
+
+function isEseAmount(n: number): boolean {
+    return n >= 0.5 && n <= 1.5;
+}
+
+function labelInOrderWindow(labelMs: number, saleMs: number | null, shipMs: number | null): boolean {
+    const start = (saleMs ?? shipMs);
+    if (start == null) return false;
+    const end = (shipMs ?? saleMs)! + 10 * 24 * 3600 * 1000;
+    return labelMs >= start - 24 * 3600 * 1000 && labelMs <= end;
+}
+
+/** 1:1 assign unlabeled SHIPPING_LABEL charges to unmatched shipped orders. */
+export function assignUnlabeledLabels(
+    orders: LabelMatchOrder[],
+    unlabeled: UnlabeledLabel[],
+    alreadyMatched: Set<string>
+): Map<string, number> {
+    const assigned = new Map<string, number>();
+    const remaining = unlabeled.filter((l) => l.amount > 0).map((l) => ({ ...l }));
+    const open = orders.filter((o) => !alreadyMatched.has(o.orderNumber));
+
+    const take = (orderNumber: string, idx: number) => {
+        assigned.set(orderNumber, remaining[idx].amount);
+        remaining.splice(idx, 1);
+    };
+
+    for (const o of open) {
+        if (!o.buyer) continue;
+        const buyer = o.buyer.trim().toLowerCase();
+        const hits: number[] = [];
+        for (let i = 0; i < remaining.length; i++) {
+            const l = remaining[i];
+            if ((l.buyer || '').trim().toLowerCase() !== buyer) continue;
+            const lms = ms(l.date);
+            if (lms == null) continue;
+            if (!labelInOrderWindow(lms, ms(o.saleDate), ms(o.shippedAt))) continue;
+            hits.push(i);
+        }
+        if (hits.length === 1) take(o.orderNumber, hits[0]);
+        else if (hits.length > 1 && hits.every((i) => remaining[i].amount === remaining[hits[0]].amount)) {
+            take(o.orderNumber, hits[0]);
+        }
+    }
+
+    const leftover = open.filter(
+        (o) => !assigned.has(o.orderNumber) && (o.tracking || o.shippedAt)
+    );
+    for (let li = remaining.length - 1; li >= 0; li--) {
+        const l = remaining[li];
+        const lms = ms(l.date);
+        if (lms == null) continue;
+        let best: { orderNumber: string; dist: number } | null = null;
+        for (const o of leftover) {
+            if (assigned.has(o.orderNumber)) continue;
+            if (isEseService(o.service) !== isEseAmount(l.amount)) continue;
+            const saleMs = ms(o.saleDate);
+            const shipMs = ms(o.shippedAt);
+            if (!labelInOrderWindow(lms, saleMs, shipMs)) continue;
+            const dist = Math.abs(lms - (shipMs ?? saleMs)!);
+            if (dist > 3 * 24 * 3600 * 1000) continue;
+            if (!best || dist < best.dist) best = { orderNumber: o.orderNumber, dist };
+        }
+        if (best) {
+            assigned.set(best.orderNumber, l.amount);
+            remaining.splice(li, 1);
+        }
+    }
+
+    return assigned;
 }
 
 async function financesGet(token: string, qs: string): Promise<{

@@ -16,6 +16,7 @@ import {
   type SaleRow,
 } from '@/app/lib/ebay-orders';
 import { applyCostDefaultsToRow } from '@/app/lib/pnl';
+import { applySellerLabelCosts } from '@/app/lib/ebay-label-costs';
 
 // -----------------------------------------------------------------------
 // eBay Trading API: GetOrders with OrderStatus=Completed
@@ -26,9 +27,9 @@ import { applyCostDefaultsToRow } from '@/app/lib/pnl';
 //   ?page=1    — single eBay page (omit to walk every page in the lookback)
 //   ?sync=false — skip eBay call, just return DB rows
 //
-// Existing sales keep SKU/ads/supplies/shipping. eBay fee is backfilled from
-// GetOrders FinalValueFee when present. Seller-paid postage is a separate
-// manual action: POST /api/ebay/seller-costs.
+// Existing sales keep SKU/ads/supplies. eBay fee is backfilled from
+// GetOrders FinalValueFee when present. Seller-paid postage is matched from
+// Finances SHIPPING_LABEL txs (postpaid eSE) after each sync.
 //
 // PATCH /api/ebay/sold-orders         — update a single sale's SKU
 //   body: { id, sku }
@@ -144,6 +145,7 @@ export async function GET(request: NextRequest) {
     // Insert only NEW rows — ignoreDuplicates:true skips existing (order_number, ebay_item_id)
     // so we never overwrite manually-edited SKUs / costs and the synced count reflects truly new rows.
     let synced = 0;
+    let feesUpdated = 0;
     if (rowsWithCosts.length > 0) {
       const { data: inserted, error: upsertError } = await supabaseAdmin
         .from('ebay_sales')
@@ -159,17 +161,24 @@ export async function GET(request: NextRequest) {
         synced = inserted?.length ?? 0;
       }
 
-      // Backfill FinalValueFee only — never overwrite seller postage here.
-      let feesUpdated = 0;
-      const withFee = uniqueRows.filter((r) => r.ebay_fee != null);
+      // Backfill fee + identity fields on existing rows. Seller postage comes
+      // from Finances (postpaid eSE labels) via applySellerLabelCosts below.
       const CHUNK = 15;
-      for (let i = 0; i < withFee.length; i += CHUNK) {
-        const chunk = withFee.slice(i, i + CHUNK);
+      for (let i = 0; i < uniqueRows.length; i += CHUNK) {
+        const chunk = uniqueRows.slice(i, i + CHUNK);
         const counts = await Promise.all(
           chunk.map(async (r) => {
+            const patch: Record<string, unknown> = {};
+            if (r.ebay_fee != null) patch.ebay_fee = r.ebay_fee;
+            if (r.buyer) patch.buyer = r.buyer;
+            if (r.sales_record_number) patch.sales_record_number = r.sales_record_number;
+            if (r.shipping_service) patch.shipping_service = r.shipping_service;
+            if (r.tracking_number) patch.tracking_number = r.tracking_number;
+            if (r.shipped_at) patch.shipped_at = r.shipped_at;
+            if (Object.keys(patch).length === 0) return 0;
             let q = supabaseAdmin
               .from('ebay_sales')
-              .update({ ebay_fee: r.ebay_fee })
+              .update(patch)
               .eq('order_number', r.order_number);
             if (r.ebay_item_id) q = q.eq('ebay_item_id', r.ebay_item_id);
             const { data, error } = await q.select('id');
@@ -182,23 +191,30 @@ export async function GET(request: NextRequest) {
         );
         feesUpdated += counts.reduce((a, b) => a + b, 0);
       }
+    }
 
-      const { data: allSales, error: fetchErr } = await supabaseAdmin
-        .from('ebay_sales')
-        .select('*')
-        .order('sale_date', { ascending: false });
-      if (fetchErr) throw fetchErr;
-
+    // Postpaid shipping-label fees often land after GetOrders. Scan Finances
+    // for at least 14 days so yesterday's eSE charges match today's payouts.
+    let labelsMatched = 0;
+    try {
+      const labelResult = await applySellerLabelCosts({
+        days: Math.max(days, 14),
+        quick: true,
+        onlyBlank: true,
+      });
+      labelsMatched = labelResult.matchedOrders;
       return NextResponse.json({
-        sales: allSales ?? [],
+        sales: labelResult.sales,
         synced,
         feesUpdated,
+        labelsMatched,
         totalPages,
         currentPage: fetchAllPages ? totalPages : startPage,
       });
+    } catch (labelErr: any) {
+      console.error('[sold-orders] label costs:', labelErr?.message || labelErr);
     }
 
-    // No new rows from eBay — still return DB
     const { data: allSales, error: fetchErr } = await supabaseAdmin
       .from('ebay_sales')
       .select('*')
@@ -207,8 +223,9 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       sales: allSales ?? [],
-      synced: 0,
-      feesUpdated: 0,
+      synced,
+      feesUpdated,
+      labelsMatched,
       totalPages,
       currentPage: fetchAllPages ? totalPages : startPage,
     });
