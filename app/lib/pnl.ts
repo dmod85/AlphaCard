@@ -25,6 +25,40 @@ export function roundMoney(n: number): number {
     return Math.round((n + Number.EPSILON) * 100) / 100;
 }
 
+/**
+ * Average cost per card in a lot.
+ *
+ * Purchases are lots/boxes (cost + quantity). Dumping the full lot into
+ * P&L when the first card sells treats unsold inventory as an expense.
+ * If more cards sold than were recorded on the purchase, spread the lot
+ * across cards sold so we never invent leftover inventory.
+ */
+export function lotUnitCost(lotCost: number, qtyPurchased: number, qtySoldAllTime = 0): number {
+    const cost = Number(lotCost) || 0;
+    const purchased = Math.max(Number(qtyPurchased) || 0, 0);
+    const sold = Math.max(Number(qtySoldAllTime) || 0, 0);
+    const basis = Math.max(purchased, sold, 1);
+    return cost / basis;
+}
+
+/** COGS for one sale: unit cost × quantity sold. */
+export function saleUnitCogs(unitCost: number, quantitySold: number): number {
+    return roundMoney(unitCost * Math.max(Number(quantitySold) || 1, 0));
+}
+
+/** Unsold remainder of a lot, valued at average unit cost. */
+export function remainingLotValue(lotCost: number, qtyPurchased: number, qtySoldAllTime: number): number {
+    const purchased = Math.max(Number(qtyPurchased) || 0, 0);
+    const sold = Math.max(Number(qtySoldAllTime) || 0, 0);
+    const remainingQty = Math.max(purchased - sold, 0);
+    return roundMoney(lotUnitCost(lotCost, purchased, sold) * remainingQty);
+}
+
+export function roiPct(profit: number, cost: number): number | null {
+    if (!(cost > 0)) return null;
+    return (profit / cost) * 100;
+}
+
 export function estimateEbayFee(soldFor: number, settings: PnlSettings): number {
     return roundMoney(Number(soldFor || 0) * settings.default_fee_rate + settings.default_processing_fee);
 }

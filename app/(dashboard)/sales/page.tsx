@@ -5,7 +5,12 @@ import { useSalesRealtimeSync } from '../hooks/useRealtime';
 import {
   DEFAULT_PNL_SETTINGS,
   EXPENSE_CATEGORIES,
+  lotUnitCost,
+  remainingLotValue,
   resolvedSaleCosts,
+  roiPct,
+  roundMoney,
+  saleUnitCogs,
   type ExpenseCategory,
   type PnlSettings,
 } from '@/app/lib/pnl';
@@ -52,6 +57,7 @@ interface Purchase {
   series: string | null;
   sport: string | null;
   cost: number;
+  quantity: number;
   purchase_date: string | null;
 }
 
@@ -109,7 +115,7 @@ const EXPENSE_LABELS: Record<ExpenseCategory, string> = {
 function getGroupedPurchases(purchases: Purchase[], includeSku?: string | null) {
   const uniqueSkusMap = new Map(purchases.filter(p => p.sku).map(p => [p.sku!, p]));
   if (includeSku && !uniqueSkusMap.has(includeSku)) {
-    uniqueSkusMap.set(includeSku, { sku: includeSku, brand: 'Unknown', series: null, sport: null, cost: 0, purchase_date: null });
+    uniqueSkusMap.set(includeSku, { sku: includeSku, brand: 'Unknown', series: null, sport: null, cost: 0, quantity: 1, purchase_date: null });
   }
   const uniqueSkus = Array.from(uniqueSkusMap.values());
   const groups: Record<string, Purchase[]> = {};
@@ -615,12 +621,14 @@ export default function SalesPage() {
   const [showDefaults, setShowDefaults] = useState(false);
   const [showExcluded, setShowExcluded] = useState(true);
 
-  // Build a SKU -> total cost lookup
+  // SKU -> lot cost / cards purchased (a SKU is often a box or lot, not one card)
   const skuTotalCostMap = new Map<string, number>();
+  const skuQtyPurchasedMap = new Map<string, number>();
   const skuMap = new Map<string, Purchase>();
   purchases.forEach(p => {
     if (p.sku) {
-      skuTotalCostMap.set(p.sku, (skuTotalCostMap.get(p.sku) ?? 0) + p.cost);
+      skuTotalCostMap.set(p.sku, (skuTotalCostMap.get(p.sku) ?? 0) + Number(p.cost || 0));
+      skuQtyPurchasedMap.set(p.sku, (skuQtyPurchasedMap.get(p.sku) ?? 0) + (p.quantity || 1));
       if (!skuMap.has(p.sku)) {
         skuMap.set(p.sku, p);
       }
@@ -644,16 +652,21 @@ export default function SalesPage() {
 
   const statsSales = sales.filter(s => !s.exclude_from_stats);
 
-  // SKU -> net proceeds (after fees/ads/ship/supplies) and gross sold-for
+  // SKU -> lifetime net and cards sold (for unit cost + lot-level tooltip)
   const skuTotalNetMap = new Map<string, number>();
-  const skuTotalGrossMap = new Map<string, number>();
+  const skuQtySoldAllMap = new Map<string, number>();
   statsSales.forEach(s => {
     if (s.sku) {
-      const { net, soldFor } = saleCosts(s);
-      skuTotalNetMap.set(s.sku, (skuTotalNetMap.get(s.sku) ?? 0) + net);
-      skuTotalGrossMap.set(s.sku, (skuTotalGrossMap.get(s.sku) ?? 0) + soldFor);
+      skuTotalNetMap.set(s.sku, (skuTotalNetMap.get(s.sku) ?? 0) + saleCosts(s).net);
+      skuQtySoldAllMap.set(s.sku, (skuQtySoldAllMap.get(s.sku) ?? 0) + (s.quantity_sold || 1));
     }
   });
+
+  function unitCostForSku(sku: string): number | null {
+    const lot = skuTotalCostMap.get(sku);
+    if (lot == null) return null;
+    return lotUnitCost(lot, skuQtyPurchasedMap.get(sku) ?? 0, skuQtySoldAllMap.get(sku) ?? 0);
+  }
 
   // Load purchases for match column
   const loadPurchases = useCallback(async () => {
@@ -904,29 +917,53 @@ export default function SalesPage() {
   const supplies = saleCostTotals.supplies + expenseSum('supplies');
   const otherExpenses = expenseSum('other');
 
-  // Cost of goods for items *sold* this period (allocated lot cost), not
-  // inventory bought this period. A $2,050 card from an older $110 lot was
-  // inflating ROI when the denominator was only this period's purchases.
-  const periodGrossBySku = new Map<string, number>();
+  // True COGS: average unit cost × cards actually sold this period.
+  // Full-lot allocation (and "bought this period") both charge unsold
+  // inventory against profit. Remaining cards stay on the balance sheet.
+  let soldCogs = 0;
+  let periodQtySoldMatched = 0;
+  let remainingInSoldLots = 0;
+  let remainingQtyInSoldLots = 0;
+  const seenSoldSkus = new Set<string>();
   periodStatsSales.forEach(s => {
     if (!s.sku) return;
-    periodGrossBySku.set(s.sku, (periodGrossBySku.get(s.sku) ?? 0) + saleCosts(s).soldFor);
+    const unit = unitCostForSku(s.sku);
+    if (unit == null) return;
+    const qty = s.quantity_sold || 1;
+    soldCogs += unit * qty;
+    periodQtySoldMatched += qty;
+    if (!seenSoldSkus.has(s.sku)) {
+      seenSoldSkus.add(s.sku);
+      const lot = skuTotalCostMap.get(s.sku) ?? 0;
+      const purchased = skuQtyPurchasedMap.get(s.sku) ?? 0;
+      const soldAll = skuQtySoldAllMap.get(s.sku) ?? 0;
+      remainingInSoldLots += remainingLotValue(lot, purchased, soldAll);
+      remainingQtyInSoldLots += Math.max(purchased - soldAll, 0);
+    }
   });
-  let soldCogs = 0;
-  periodGrossBySku.forEach((periodGross, sku) => {
-    const lot = skuTotalCostMap.get(sku);
-    if (lot == null) return;
-    const allGross = skuTotalGrossMap.get(sku) || 0;
-    const share = allGross > 0 ? periodGross / allGross : 1;
-    soldCogs += lot * share;
+  // Unsold remainder of lots bought this period with no sales yet — still
+  // inventory, not COGS.
+  periodPurchases.forEach(p => {
+    if (!p.sku || seenSoldSkus.has(p.sku) || !skuTotalCostMap.has(p.sku)) return;
+    seenSoldSkus.add(p.sku);
+    const lot = skuTotalCostMap.get(p.sku) ?? 0;
+    const purchased = skuQtyPurchasedMap.get(p.sku) ?? 0;
+    const soldAll = skuQtySoldAllMap.get(p.sku) ?? 0;
+    remainingInSoldLots += remainingLotValue(lot, purchased, soldAll);
+    remainingQtyInSoldLots += Math.max(purchased - soldAll, 0);
   });
-  soldCogs = Math.round((soldCogs + Number.EPSILON) * 100) / 100;
+  soldCogs = roundMoney(soldCogs);
+  remainingInSoldLots = roundMoney(remainingInSoldLots);
+  const avgUnitCost = periodQtySoldMatched > 0 ? soldCogs / periodQtySoldMatched : 0;
+  const qtyUndercounted = Array.from(seenSoldSkus).some(sku =>
+    (skuQtySoldAllMap.get(sku) ?? 0) > (skuQtyPurchasedMap.get(sku) ?? 0)
+  );
 
   const sellingCosts = ebayFees + advertising + shipping + supplies + otherExpenses;
   const totalCosts = soldCogs + sellingCosts;
   const profit = totalRevenue - totalCosts;
-  const roiPct = soldCogs > 0 ? (profit / soldCogs) * 100 : null;
-  const roiExCostsPct = soldCogs > 0 ? ((totalRevenue - soldCogs) / soldCogs) * 100 : null;
+  const actualRoiPct = roiPct(profit, soldCogs);
+  const roiExCostsPct = roiPct(totalRevenue - soldCogs, soldCogs);
   const avgSale = periodStatsSales.length ? totalRevenue / periodStatsSales.length : 0;
   const matched = periodStatsSales.filter(s => s.sku && skuTotalCostMap.has(s.sku)).length;
 
@@ -1057,38 +1094,38 @@ export default function SalesPage() {
             {
               label: 'Sales Revenue',
               value: fmt$(totalRevenue),
-              sub: `${periodStatsSales.length} sale${periodStatsSales.length === 1 ? '' : 's'} · avg ${fmt$(avgSale)}${excludedInPeriod ? ` · ${excludedInPeriod} hidden` : ''}`,
+              sub: `${periodStatsSales.length} sale${periodStatsSales.length === 1 ? '' : 's'} · avg ${fmt$(avgSale)}${excludedInPeriod ? ` · ${excludedInPeriod} hidden` : ''}${matched < periodStatsSales.length ? ` · ${matched}/${periodStatsSales.length} matched` : ''}`,
               color: 'text-green-400',
             },
             {
               label: 'Total Costs',
               value: fmt$(totalCosts),
-              sub: 'cogs + fees + ads + ship + supplies',
+              sub: 'sold-card cost + fees + ads + ship + supplies',
               color: 'text-orange-400',
             },
             {
               label: 'Net Profit',
               value: `${profit >= 0 ? '' : '−'}${fmt$(Math.abs(profit))}`,
-              sub: 'revenue − cogs − selling costs',
+              sub: 'revenue − sold-card cost − selling costs',
               color: profit > 0 ? 'text-green-400' : profit < 0 ? 'text-red-400' : 'text-gray-400',
             },
             {
               label: 'Actual ROI',
-              value: roiPct === null ? '—' : `${roiPct > 0 ? '+' : ''}${roiPct.toFixed(1)}%`,
-              sub: soldCogs > 0 ? 'net vs cost of goods sold' : 'no matched lots in period',
+              value: actualRoiPct === null ? '—' : `${actualRoiPct > 0 ? '+' : ''}${actualRoiPct.toFixed(1)}%`,
+              sub: soldCogs > 0 ? 'net vs cost of cards sold' : 'no matched lots in period',
               color:
-                roiPct === null
+                actualRoiPct === null
                   ? 'text-gray-400'
-                  : roiPct > 0
+                  : actualRoiPct > 0
                     ? 'text-green-400'
-                    : roiPct < 0
+                    : actualRoiPct < 0
                       ? 'text-red-400'
                       : 'text-gray-400',
             },
             {
               label: 'ROI ex-costs',
               value: roiExCostsPct === null ? '—' : `${roiExCostsPct > 0 ? '+' : ''}${roiExCostsPct.toFixed(1)}%`,
-              sub: soldCogs > 0 ? 'sales vs cost of goods sold' : 'no matched lots in period',
+              sub: soldCogs > 0 ? 'sales vs cost of cards sold' : 'no matched lots in period',
               color:
                 roiExCostsPct === null
                   ? 'text-gray-400'
@@ -1108,14 +1145,33 @@ export default function SalesPage() {
         </div>
 
         {/* Cost breakdown */}
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-4">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-7 gap-3 mb-4">
           {[
             {
-              label: 'Cost of goods',
+              label: 'Cost of goods sold',
               value: fmt$(soldCogs),
-              sub: purchaseCost > 0
-                ? `${fmt$(purchaseCost)} bought this period`
-                : 'lots matched to sales',
+              title: 'Lot cost ÷ cards in the lot × cards sold. Unsold cards are not an expense.',
+              sub: soldCogs > 0
+                ? `${periodQtySoldMatched} card${periodQtySoldMatched === 1 ? '' : 's'} × avg ${fmt$(avgUnitCost)}${qtyUndercounted ? ' · check lot qty' : ''}`
+                : matched < periodStatsSales.length
+                  ? `${periodStatsSales.length - matched} sale${periodStatsSales.length - matched === 1 ? '' : 's'} unmatched`
+                  : 'no matched lots in period',
+            },
+            {
+              label: 'Still on hand',
+              value: fmt$(remainingInSoldLots),
+              title: 'Unsold remainder of lots you sold from or bought this period, at average unit cost.',
+              sub: remainingQtyInSoldLots > 0
+                ? `${remainingQtyInSoldLots} unsold card${remainingQtyInSoldLots === 1 ? '' : 's'} in those lots`
+                : qtyUndercounted
+                  ? 'lot qty looks low — edit purchases'
+                  : 'lots from these sales are fully sold',
+            },
+            {
+              label: 'Bought this period',
+              value: fmt$(purchaseCost),
+              title: 'Cash spent on purchases in this period. Not subtracted from profit until those cards sell.',
+              sub: 'cash outlay · unsold stays on hand',
             },
             {
               label: 'eBay Fees',
@@ -1135,15 +1191,14 @@ export default function SalesPage() {
             {
               label: 'Supplies',
               value: fmt$(supplies),
-              sub: expenseSum('supplies') > 0 ? `incl. ${fmt$(expenseSum('supplies'))} logged` : 'sleeves, mailers, etc.',
-            },
-            {
-              label: 'Matched SKUs',
-              value: `${matched} / ${periodStatsSales.length}`,
-              sub: otherExpenses > 0 ? `+ ${fmt$(otherExpenses)} other` : 'sales linked to a purchase',
+              sub: otherExpenses > 0
+                ? `+ ${fmt$(otherExpenses)} other`
+                : expenseSum('supplies') > 0
+                  ? `incl. ${fmt$(expenseSum('supplies'))} logged`
+                  : 'sleeves, mailers, etc.',
             },
           ].map(s => (
-            <div key={s.label} className="bg-gray-900/70 border border-gray-800 rounded-lg px-3 py-2.5">
+            <div key={s.label} className="bg-gray-900/70 border border-gray-800 rounded-lg px-3 py-2.5" title={'title' in s ? s.title : undefined}>
               <p className="text-[10px] text-gray-500 uppercase tracking-wider">{s.label}</p>
               <p className="text-sm font-semibold mt-0.5 text-gray-200 tabular-nums">{s.value}</p>
               <p className="text-[10px] text-gray-600 mt-0.5">{s.sub}</p>
@@ -1277,7 +1332,7 @@ export default function SalesPage() {
                 <th className="px-3 py-3">Ship</th>
                 <th className="px-3 py-3">Supplies</th>
                 <th className="px-3 py-3">Net</th>
-                <th className="px-3 py-3">Lot Cost</th>
+                <th className="px-3 py-3">Unit Cost</th>
                 <th className="px-3 py-3">ROI</th>
                 <th className="px-3 py-3">ROI ex-costs</th>
                 <th className="px-3 py-3">Shipped</th>
@@ -1394,39 +1449,53 @@ export default function SalesPage() {
                       {fmt$(costs.net)}
                     </td>
 
-                    {/* Lot Cost */}
+                    {/* Unit cost of this sale (lot ÷ cards), not the whole lot */}
                     <td className="px-3 py-3 text-sm text-gray-300 tabular-nums">
-                      {sale.sku && skuTotalCostMap.has(sale.sku) ? (
-                        fmt$(skuTotalCostMap.get(sale.sku)!)
-                      ) : (
-                        <span className="text-gray-600 italic text-xs">no match</span>
-                      )}
+                      {(() => {
+                        if (!sale.sku) return <span className="text-gray-600 italic text-xs">no match</span>;
+                        const unit = unitCostForSku(sale.sku);
+                        if (unit == null) return <span className="text-gray-600 italic text-xs">no match</span>;
+                        const cogs = saleUnitCogs(unit, sale.quantity_sold || 1);
+                        const lot = skuTotalCostMap.get(sale.sku) ?? 0;
+                        const purchased = skuQtyPurchasedMap.get(sale.sku) ?? 0;
+                        const soldAll = skuQtySoldAllMap.get(sale.sku) ?? 0;
+                        const lotRoi = roiPct((skuTotalNetMap.get(sale.sku) ?? 0) - lot, lot);
+                        return (
+                          <span
+                            title={`lot ${fmt$(lot)} / ${Math.max(purchased, soldAll, 1)} cards${lotRoi != null ? ` · lot ROI ${lotRoi > 0 ? '+' : ''}${lotRoi.toFixed(1)}%` : ''}`}
+                          >
+                            {fmt$(cogs)}
+                          </span>
+                        );
+                      })()}
                     </td>
 
-                    {/* ROI — net proceeds vs lot cost (includes shipping) */}
+                    {/* ROI — this sale's net vs its unit cost */}
                     <td className="px-3 py-3 text-sm tabular-nums">
                       {(() => {
                         if (excluded) return <span className="text-gray-600">—</span>;
-                        if (!sale.sku || !skuTotalCostMap.has(sale.sku)) return <span className="text-gray-600">—</span>;
-                        const cost = skuTotalCostMap.get(sale.sku)!;
-                        if (cost === 0) return <span className="text-gray-600">—</span>;
-                        const totalNetForSku = skuTotalNetMap.get(sale.sku) ?? 0;
-                        const roi = ((totalNetForSku - cost) / cost) * 100;
+                        if (!sale.sku) return <span className="text-gray-600">—</span>;
+                        const unit = unitCostForSku(sale.sku);
+                        if (unit == null || unit === 0) return <span className="text-gray-600">—</span>;
+                        const cogs = saleUnitCogs(unit, sale.quantity_sold || 1);
+                        const roi = roiPct(costs.net - cogs, cogs);
+                        if (roi == null) return <span className="text-gray-600">—</span>;
                         const color = roi > 0 ? 'text-green-400' : roi < 0 ? 'text-red-400' : 'text-gray-400';
                         const sign = roi > 0 ? '+' : '';
                         return <span className={`font-medium ${color}`}>{sign}{roi.toFixed(1)}%</span>;
                       })()}
                     </td>
 
-                    {/* ROI excluding selling costs — sold-for vs lot cost only */}
+                    {/* ROI excluding selling costs — sold-for vs unit cost */}
                     <td className="px-3 py-3 text-sm tabular-nums">
                       {(() => {
                         if (excluded) return <span className="text-gray-600">—</span>;
-                        if (!sale.sku || !skuTotalCostMap.has(sale.sku)) return <span className="text-gray-600">—</span>;
-                        const cost = skuTotalCostMap.get(sale.sku)!;
-                        if (cost === 0) return <span className="text-gray-600">—</span>;
-                        const totalGross = skuTotalGrossMap.get(sale.sku) ?? 0;
-                        const roi = ((totalGross - cost) / cost) * 100;
+                        if (!sale.sku) return <span className="text-gray-600">—</span>;
+                        const unit = unitCostForSku(sale.sku);
+                        if (unit == null || unit === 0) return <span className="text-gray-600">—</span>;
+                        const cogs = saleUnitCogs(unit, sale.quantity_sold || 1);
+                        const roi = roiPct(costs.soldFor - cogs, cogs);
+                        if (roi == null) return <span className="text-gray-600">—</span>;
                         const color = roi > 0 ? 'text-green-400' : roi < 0 ? 'text-red-400' : 'text-gray-400';
                         const sign = roi > 0 ? '+' : '';
                         return <span className={`font-medium ${color}`}>{sign}{roi.toFixed(1)}%</span>;
