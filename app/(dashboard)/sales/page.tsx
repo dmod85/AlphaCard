@@ -5,6 +5,7 @@ import { useSalesRealtimeSync } from '../hooks/useRealtime';
 import {
   DEFAULT_PNL_SETTINGS,
   EXPENSE_CATEGORIES,
+  lotSoldRoi,
   lotUnitCost,
   remainingLotValue,
   resolvedSaleCosts,
@@ -652,12 +653,15 @@ export default function SalesPage() {
 
   const statsSales = sales.filter(s => !s.exclude_from_stats);
 
-  // SKU -> lifetime net and cards sold (for unit cost + lot-level tooltip)
+  // SKU -> lifetime net / revenue / cards sold (unit cost + lot ROI on every row)
   const skuTotalNetMap = new Map<string, number>();
+  const skuTotalRevenueMap = new Map<string, number>();
   const skuQtySoldAllMap = new Map<string, number>();
   statsSales.forEach(s => {
     if (s.sku) {
-      skuTotalNetMap.set(s.sku, (skuTotalNetMap.get(s.sku) ?? 0) + saleCosts(s).net);
+      const c = saleCosts(s);
+      skuTotalNetMap.set(s.sku, (skuTotalNetMap.get(s.sku) ?? 0) + c.net);
+      skuTotalRevenueMap.set(s.sku, (skuTotalRevenueMap.get(s.sku) ?? 0) + c.soldFor + c.buyerShipping);
       skuQtySoldAllMap.set(s.sku, (skuQtySoldAllMap.get(s.sku) ?? 0) + (s.quantity_sold || 1));
     }
   });
@@ -666,6 +670,18 @@ export default function SalesPage() {
     const lot = skuTotalCostMap.get(sku);
     if (lot == null) return null;
     return lotUnitCost(lot, skuQtyPurchasedMap.get(sku) ?? 0, skuQtySoldAllMap.get(sku) ?? 0);
+  }
+
+  function lotRoiForSku(sku: string) {
+    const lot = skuTotalCostMap.get(sku);
+    if (lot == null) return null;
+    return lotSoldRoi(
+      skuTotalNetMap.get(sku) ?? 0,
+      skuTotalRevenueMap.get(sku) ?? 0,
+      lot,
+      skuQtyPurchasedMap.get(sku) ?? 0,
+      skuQtySoldAllMap.get(sku) ?? 0,
+    );
   }
 
   // Load purchases for match column
@@ -1333,8 +1349,18 @@ export default function SalesPage() {
                 <th className="px-3 py-3">Supplies</th>
                 <th className="px-3 py-3">Net</th>
                 <th className="px-3 py-3">Unit Cost</th>
-                <th className="px-3 py-3">ROI</th>
-                <th className="px-3 py-3">ROI ex-costs</th>
+                <th
+                  className="px-3 py-3"
+                  title="All sales of this SKU vs cost of those cards. Same % on every row from the lot. Unsold cards are not included."
+                >
+                  Lot ROI
+                </th>
+                <th
+                  className="px-3 py-3"
+                  title="Lot revenue (sold-for + buyer shipping) vs cost of cards sold. Ignores fees, ads, postage, supplies."
+                >
+                  Lot ROI ex-costs
+                </th>
                 <th className="px-3 py-3">Shipped</th>
                 <th className="px-3 py-3 w-16">Stats</th>
               </tr>
@@ -1459,7 +1485,7 @@ export default function SalesPage() {
                         const lot = skuTotalCostMap.get(sale.sku) ?? 0;
                         const purchased = skuQtyPurchasedMap.get(sale.sku) ?? 0;
                         const soldAll = skuQtySoldAllMap.get(sale.sku) ?? 0;
-                        const lotRoi = roiPct((skuTotalNetMap.get(sale.sku) ?? 0) - lot, lot);
+                        const lotRoi = lotRoiForSku(sale.sku)?.actual;
                         return (
                           <span
                             title={`lot ${fmt$(lot)} / ${Math.max(purchased, soldAll, 1)} cards${lotRoi != null ? ` · lot ROI ${lotRoi > 0 ? '+' : ''}${lotRoi.toFixed(1)}%` : ''}`}
@@ -1470,35 +1496,49 @@ export default function SalesPage() {
                       })()}
                     </td>
 
-                    {/* ROI — this sale's net vs its unit cost */}
+                    {/* Lot ROI — all sales of this SKU vs cost of cards sold */}
                     <td className="px-3 py-3 text-sm tabular-nums">
                       {(() => {
                         if (excluded) return <span className="text-gray-600">—</span>;
                         if (!sale.sku) return <span className="text-gray-600">—</span>;
-                        const unit = unitCostForSku(sale.sku);
-                        if (unit == null || unit === 0) return <span className="text-gray-600">—</span>;
-                        const cogs = saleUnitCogs(unit, sale.quantity_sold || 1);
-                        const roi = roiPct(costs.net - cogs, cogs);
+                        const metrics = lotRoiForSku(sale.sku);
+                        const roi = metrics?.actual ?? null;
                         if (roi == null) return <span className="text-gray-600">—</span>;
                         const color = roi > 0 ? 'text-green-400' : roi < 0 ? 'text-red-400' : 'text-gray-400';
                         const sign = roi > 0 ? '+' : '';
-                        return <span className={`font-medium ${color}`}>{sign}{roi.toFixed(1)}%</span>;
+                        const net = skuTotalNetMap.get(sale.sku) ?? 0;
+                        const soldAll = skuQtySoldAllMap.get(sale.sku) ?? 0;
+                        return (
+                          <span
+                            className={`font-medium ${color}`}
+                            title={`${sale.sku}: ${soldAll} sold · net ${fmt$(net)} vs sold-card cost ${fmt$(metrics!.soldCogs)}`}
+                          >
+                            {sign}{roi.toFixed(1)}%
+                          </span>
+                        );
                       })()}
                     </td>
 
-                    {/* ROI excluding selling costs — sold-for vs unit cost */}
+                    {/* Lot ROI excluding selling costs — revenue vs cost of cards sold */}
                     <td className="px-3 py-3 text-sm tabular-nums">
                       {(() => {
                         if (excluded) return <span className="text-gray-600">—</span>;
                         if (!sale.sku) return <span className="text-gray-600">—</span>;
-                        const unit = unitCostForSku(sale.sku);
-                        if (unit == null || unit === 0) return <span className="text-gray-600">—</span>;
-                        const cogs = saleUnitCogs(unit, sale.quantity_sold || 1);
-                        const roi = roiPct(costs.soldFor - cogs, cogs);
+                        const metrics = lotRoiForSku(sale.sku);
+                        const roi = metrics?.exCosts ?? null;
                         if (roi == null) return <span className="text-gray-600">—</span>;
                         const color = roi > 0 ? 'text-green-400' : roi < 0 ? 'text-red-400' : 'text-gray-400';
                         const sign = roi > 0 ? '+' : '';
-                        return <span className={`font-medium ${color}`}>{sign}{roi.toFixed(1)}%</span>;
+                        const revenue = skuTotalRevenueMap.get(sale.sku) ?? 0;
+                        const soldAll = skuQtySoldAllMap.get(sale.sku) ?? 0;
+                        return (
+                          <span
+                            className={`font-medium ${color}`}
+                            title={`${sale.sku}: ${soldAll} sold · revenue ${fmt$(revenue)} vs sold-card cost ${fmt$(metrics!.soldCogs)}`}
+                          >
+                            {sign}{roi.toFixed(1)}%
+                          </span>
+                        );
                       })()}
                     </td>
 

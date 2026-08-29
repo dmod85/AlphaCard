@@ -59,6 +59,31 @@ export function roiPct(profit: number, cost: number): number | null {
     return (profit / cost) * 100;
 }
 
+/**
+ * One ROI for every sale from a SKU: lifetime results vs cost of cards sold.
+ * Unsold remainder stays inventory (same rule as headline P&L).
+ *
+ * actual  = (lifetime net − sold COGS) / sold COGS
+ * exCosts = (lifetime revenue − sold COGS) / sold COGS
+ * revenue is sold-for + buyer shipping, matching the top "ROI ex-costs" card.
+ */
+export function lotSoldRoi(
+    lifetimeNet: number,
+    lifetimeRevenue: number,
+    lotCost: number,
+    qtyPurchased: number,
+    qtySoldAll: number
+): { soldCogs: number; actual: number | null; exCosts: number | null } {
+    const sold = Math.max(Number(qtySoldAll) || 0, 0);
+    // Don't use saleUnitCogs here: it treats qty 0 as 1.
+    const soldCogs = roundMoney(lotUnitCost(lotCost, qtyPurchased, sold) * sold);
+    return {
+        soldCogs,
+        actual: roiPct(lifetimeNet - soldCogs, soldCogs),
+        exCosts: roiPct(lifetimeRevenue - soldCogs, soldCogs),
+    };
+}
+
 export function estimateEbayFee(soldFor: number, settings: PnlSettings): number {
     return roundMoney(Number(soldFor || 0) * settings.default_fee_rate + settings.default_processing_fee);
 }
