@@ -657,7 +657,7 @@ function SalesPageContent() {
 
   const statsSales = sales.filter(s => !s.exclude_from_stats);
 
-  // SKU -> lifetime net / revenue / cards sold (unit cost + lot ROI on every row)
+  // SKU -> lifetime net / revenue / cards sold (card cost + lot ROI)
   const skuTotalNetMap = new Map<string, number>();
   const skuTotalRevenueMap = new Map<string, number>();
   const skuQtySoldAllMap = new Map<string, number>();
@@ -927,6 +927,15 @@ function SalesPageContent() {
       (s.buyer ?? '').toLowerCase().includes(q)
     );
   });
+
+  // Lot ROI is a SKU-level number — show it once, on the first in-stats row of each SKU.
+  const firstLotRoiRowIds = new Set<string>();
+  const seenSkuForRoi = new Set<string>();
+  for (const s of filtered) {
+    if (!s.sku || s.exclude_from_stats || seenSkuForRoi.has(s.sku)) continue;
+    seenSkuForRoi.add(s.sku);
+    firstLotRoiRowIds.add(s.id);
+  }
 
   // Period P&L — actual (all-in) costs, skipping sales hidden from stats
   const totalRevenue = periodStatsSales.reduce((s, r) => {
@@ -1399,17 +1408,27 @@ function SalesPageContent() {
                 <th className="px-3 py-3">Ads</th>
                 <th className="px-3 py-3">Ship</th>
                 <th className="px-3 py-3">Supplies</th>
-                <th className="px-3 py-3">Net</th>
-                <th className="px-3 py-3">Unit Cost</th>
                 <th
                   className="px-3 py-3"
-                  title="All sales of this SKU vs cost of those cards. Same % on every row from the lot. Unsold cards are not included."
+                  title="After eBay fees, ads, labels, and supplies. Does not subtract what you paid for the card."
+                >
+                  Net
+                </th>
+                <th
+                  className="px-3 py-3"
+                  title="Your cost for the cards on this row: lot cost ÷ cards in the lot, times quantity. Not profit."
+                >
+                  Card cost
+                </th>
+                <th
+                  className="px-3 py-3"
+                  title="All-in for this purchase: (net after selling costs − cost of cards sold) / cost of cards sold. Shown once per SKU. Unsold cards are not included."
                 >
                   Lot ROI
                 </th>
                 <th
                   className="px-3 py-3"
-                  title="Lot revenue (sold-for + buyer shipping) vs cost of cards sold. Ignores fees, ads, postage, supplies."
+                  title="Lot revenue (sold-for + buyer shipping) vs cost of cards sold. Ignores fees, ads, postage, supplies. Shown once per SKU."
                 >
                   Lot ROI ex-costs
                 </th>
@@ -1423,6 +1442,7 @@ function SalesPageContent() {
                 const isOrderHead = firstSaleIdByOrder.get(sale.order_number) === sale.id;
                 const costs = saleCosts(sale);
                 const excluded = !!sale.exclude_from_stats;
+                const showLotRoi = firstLotRoiRowIds.has(sale.id);
                 return (
                   <tr
                     key={sale.id}
@@ -1527,43 +1547,53 @@ function SalesPageContent() {
                       {fmt$(costs.net)}
                     </td>
 
-                    {/* Unit cost of this sale (lot ÷ cards), not the whole lot */}
+                    {/* Card cost of this sale (lot ÷ cards × qty), not the whole lot */}
                     <td className="px-3 py-3 text-sm text-gray-300 tabular-nums">
                       {(() => {
                         if (!sale.sku) return <span className="text-gray-600 italic text-xs">no match</span>;
                         const unit = unitCostForSku(sale.sku);
                         if (unit == null) return <span className="text-gray-600 italic text-xs">no match</span>;
-                        const cogs = saleUnitCogs(unit, sale.quantity_sold || 1);
+                        const qty = sale.quantity_sold || 1;
+                        const cogs = saleUnitCogs(unit, qty);
                         const lot = skuTotalCostMap.get(sale.sku) ?? 0;
                         const purchased = skuQtyPurchasedMap.get(sale.sku) ?? 0;
                         const soldAll = skuQtySoldAllMap.get(sale.sku) ?? 0;
-                        const lotRoi = lotRoiForSku(sale.sku)?.actual;
+                        const basis = Math.max(purchased, soldAll, 1);
                         return (
                           <span
-                            title={`lot ${fmt$(lot)} / ${Math.max(purchased, soldAll, 1)} cards${lotRoi != null ? ` · lot ROI ${lotRoi > 0 ? '+' : ''}${lotRoi.toFixed(1)}%` : ''}`}
+                            title={`lot ${fmt$(lot)} ÷ ${basis} cards = ${fmt$(unit)} each${qty > 1 ? ` · this row ${fmt$(unit)} × ${qty} = ${fmt$(cogs)}` : ''}${soldAll > purchased ? ' · sold more than recorded on the purchase' : ''}`}
                           >
                             {fmt$(cogs)}
+                            {qty > 1 && (
+                              <span className="block text-[10px] font-normal text-gray-500">
+                                {fmt$(unit)} × {qty}
+                              </span>
+                            )}
                           </span>
                         );
                       })()}
                     </td>
 
-                    {/* Lot ROI — all sales of this SKU vs cost of cards sold */}
-                    <td className="px-3 py-3 text-sm tabular-nums">
+                    {/* Lot ROI — once per SKU, all-in vs cost of cards sold */}
+                    <td
+                      className="px-3 py-3 text-sm tabular-nums"
+                      title={!showLotRoi && sale.sku ? 'Lot ROI is shown on the first sale of this SKU' : undefined}
+                    >
                       {(() => {
-                        if (excluded) return <span className="text-gray-600">—</span>;
-                        if (!sale.sku) return <span className="text-gray-600">—</span>;
-                        const metrics = lotRoiForSku(sale.sku);
+                        if (!showLotRoi) {
+                          return <span className="sr-only">same lot as first {sale.sku} row</span>;
+                        }
+                        const metrics = lotRoiForSku(sale.sku!);
                         const roi = metrics?.actual ?? null;
                         if (roi == null) return <span className="text-gray-600">—</span>;
                         const color = roi > 0 ? 'text-green-400' : roi < 0 ? 'text-red-400' : 'text-gray-400';
                         const sign = roi > 0 ? '+' : '';
-                        const net = skuTotalNetMap.get(sale.sku) ?? 0;
-                        const soldAll = skuQtySoldAllMap.get(sale.sku) ?? 0;
+                        const net = skuTotalNetMap.get(sale.sku!) ?? 0;
+                        const soldAll = skuQtySoldAllMap.get(sale.sku!) ?? 0;
                         return (
                           <span
                             className={`font-medium ${color}`}
-                            title={`${sale.sku}: ${soldAll} sold · net ${fmt$(net)} vs sold-card cost ${fmt$(metrics!.soldCogs)}`}
+                            title={`${sale.sku}: ${soldAll} sold · net ${fmt$(net)} − card cost ${fmt$(metrics!.soldCogs)} = ${fmt$(net - metrics!.soldCogs)}`}
                           >
                             {sign}{roi.toFixed(1)}%
                           </span>
@@ -1571,22 +1601,26 @@ function SalesPageContent() {
                       })()}
                     </td>
 
-                    {/* Lot ROI excluding selling costs — revenue vs cost of cards sold */}
-                    <td className="px-3 py-3 text-sm tabular-nums">
+                    {/* Lot ROI excluding selling costs — once per SKU */}
+                    <td
+                      className="px-3 py-3 text-sm tabular-nums"
+                      title={!showLotRoi && sale.sku ? 'Lot ROI is shown on the first sale of this SKU' : undefined}
+                    >
                       {(() => {
-                        if (excluded) return <span className="text-gray-600">—</span>;
-                        if (!sale.sku) return <span className="text-gray-600">—</span>;
-                        const metrics = lotRoiForSku(sale.sku);
+                        if (!showLotRoi) {
+                          return <span className="sr-only">same lot as first {sale.sku} row</span>;
+                        }
+                        const metrics = lotRoiForSku(sale.sku!);
                         const roi = metrics?.exCosts ?? null;
                         if (roi == null) return <span className="text-gray-600">—</span>;
                         const color = roi > 0 ? 'text-green-400' : roi < 0 ? 'text-red-400' : 'text-gray-400';
                         const sign = roi > 0 ? '+' : '';
-                        const revenue = skuTotalRevenueMap.get(sale.sku) ?? 0;
-                        const soldAll = skuQtySoldAllMap.get(sale.sku) ?? 0;
+                        const revenue = skuTotalRevenueMap.get(sale.sku!) ?? 0;
+                        const soldAll = skuQtySoldAllMap.get(sale.sku!) ?? 0;
                         return (
                           <span
                             className={`font-medium ${color}`}
-                            title={`${sale.sku}: ${soldAll} sold · revenue ${fmt$(revenue)} vs sold-card cost ${fmt$(metrics!.soldCogs)}`}
+                            title={`${sale.sku}: ${soldAll} sold · revenue ${fmt$(revenue)} vs card cost ${fmt$(metrics!.soldCogs)}`}
                           >
                             {sign}{roi.toFixed(1)}%
                           </span>
