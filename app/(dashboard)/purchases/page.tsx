@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { Suspense, useState, useEffect, useRef, useCallback } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -603,7 +604,7 @@ function SoldBadge({ sold, total }: { sold: number; total: number }) {
 function SkuPill({ sku, onCopy }: { sku: string | null; onCopy: (s: string) => void }) {
   if (!sku) return <span className="text-gray-700 text-xs italic">—</span>;
   return (
-    <div className="flex items-center gap-1 group">
+    <div className="flex items-center gap-1 group" onClick={e => e.stopPropagation()}>
       <span className="text-[11px] text-gray-400 font-mono bg-gray-800 px-2 py-0.5 rounded">
         {sku}
       </span>
@@ -627,6 +628,7 @@ function SkuGroupRow({
   onAddSub,
   onCopySkU,
   onRefresh,
+  onViewSales,
 }: {
   group: SkuGroup;
   onEdit: (p: Purchase) => void;
@@ -634,30 +636,49 @@ function SkuGroupRow({
   onAddSub: (sku: string) => void;
   onCopySkU: (sku: string) => void;
   onRefresh: () => void;
+  onViewSales: (sku: string, e?: React.MouseEvent) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const hasSubs = group.purchases.length > 1;
   const first = group.purchases[0];
 
+  function handleRowClick(e: React.MouseEvent, sku: string | null) {
+    if (!sku) return;
+    onViewSales(sku, e);
+  }
+
   return (
     <>
       {/* Parent / summary row */}
       <tr
-        className={`border-b border-gray-800/60 hover:bg-gray-800/30 transition cursor-pointer select-none ${expanded ? 'bg-gray-800/20' : ''}`}
-        onClick={() => hasSubs && setExpanded(e => !e)}
+        className={`border-b border-gray-800/60 hover:bg-gray-800/30 transition select-none ${expanded ? 'bg-gray-800/20' : ''} ${group.sku ? 'cursor-pointer' : ''}`}
+        onClick={e => handleRowClick(e, group.sku)}
+        title={group.sku ? 'View all sales from this purchase' : undefined}
       >
         <td className="px-4 py-3 text-gray-400 text-xs w-6">
           {hasSubs && (
-            <span className={`inline-block transition-transform ${expanded ? 'rotate-90' : ''}`}>▶</span>
+            <button
+              type="button"
+              onClick={e => { e.stopPropagation(); setExpanded(v => !v); }}
+              title={expanded ? 'Hide purchases in this group' : 'Show purchases in this group'}
+              className="p-1 -m-1 rounded hover:bg-gray-700/60"
+            >
+              <span className={`inline-block transition-transform ${expanded ? 'rotate-90' : ''}`}>▶</span>
+            </button>
           )}
         </td>
         <td className="px-3 py-3 text-sm text-gray-300 whitespace-nowrap">
           <div className="flex items-center gap-2">
             <EditableCell purchase={first} field="purchase_date" type="date" onSaved={onRefresh} />
             {hasSubs && (
-              <span className="text-[10px] bg-gray-700 text-gray-400 px-1.5 py-0.5 rounded-full">
+              <button
+                type="button"
+                onClick={e => { e.stopPropagation(); setExpanded(v => !v); }}
+                title={expanded ? 'Hide purchases in this group' : 'Show purchases in this group'}
+                className="text-[10px] bg-gray-700 text-gray-400 px-1.5 py-0.5 rounded-full hover:bg-gray-600"
+              >
                 ×{group.purchases.length}
-              </span>
+              </button>
             )}
           </div>
         </td>
@@ -686,10 +707,10 @@ function SkuGroupRow({
             <EditableCell purchase={first} field="quantity" type="number" onSaved={onRefresh} />
           )}
         </td>
-        <td className="px-3 py-3">
+        <td className="px-3 py-3" title={group.sku ? 'View all sales from this purchase' : undefined}>
           <SoldBadge sold={group.quantitySold} total={group.totalQuantity} />
         </td>
-        <td className="px-3 py-3 text-sm tabular-nums">
+        <td className="px-3 py-3 text-sm tabular-nums" title={group.sku ? 'View all sales from this purchase' : undefined}>
           {group.totalSales > 0 ? (
             <div className="flex items-center gap-2">
               <span className="text-green-400 font-medium">${group.totalSales.toFixed(2)}</span>
@@ -734,7 +755,12 @@ function SkuGroupRow({
 
       {/* Sub-purchase rows */}
       {expanded && group.purchases.map((p) => (
-        <tr key={p.id} className="bg-gray-800/10 border-b border-gray-800/30 hover:bg-gray-800/25 transition">
+        <tr
+          key={p.id}
+          className={`bg-gray-800/10 border-b border-gray-800/30 hover:bg-gray-800/25 transition ${p.sku ? 'cursor-pointer' : ''}`}
+          onClick={e => handleRowClick(e, p.sku)}
+          title={p.sku ? 'View all sales from this purchase' : undefined}
+        >
           <td className="px-4 py-2 w-6" />
           <td className="px-3 py-2 text-xs text-gray-400 pl-8"><EditableCell purchase={p} field="purchase_date" type="date" onSaved={onRefresh} /></td>
           <td className="px-3 py-2 text-xs text-gray-400"><EditableCell purchase={p} field="year" type="number" onSaved={onRefresh} /></td>
@@ -751,7 +777,7 @@ function SkuGroupRow({
           </td>
           <td className="px-3 py-2 text-xs text-gray-400"><EditableCell purchase={p} field="bought_from" type="select" options={SOURCES} onSaved={onRefresh} /></td>
           <td className="px-3 py-2">
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
               <button onClick={() => onEdit(p)} title="Edit" className="text-[13px] text-gray-400 hover:text-white transition px-2 py-0.5 rounded hover:bg-gray-700">✎</button>
               <button
                 onClick={() => { if (confirm('Delete this purchase?')) onDelete(p.id); }}
@@ -768,10 +794,12 @@ function SkuGroupRow({
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
-export default function PurchasesPage() {
+function PurchasesPageContent() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const [purchases, setPurchases] = useState<Purchase[]>([]);
   const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState('');
+  const [search, setSearch] = useState(searchParams.get('sku') ?? '');
   const [showModal, setShowModal] = useState(false);
   const [editPurchase, setEditPurchase] = useState<Purchase | null>(null);
   const [showCsv, setShowCsv] = useState(false);
@@ -862,6 +890,15 @@ export default function PurchasesPage() {
     });
   }
 
+  function handleViewSales(sku: string, e?: React.MouseEvent) {
+    const href = `/sales?sku=${encodeURIComponent(sku)}`;
+    if (e && (e.metaKey || e.ctrlKey || e.button === 1)) {
+      window.open(href, '_blank');
+      return;
+    }
+    router.push(href);
+  }
+
   return (
     <div className="h-full flex flex-col bg-gray-950 overflow-hidden">
       {/* Header */}
@@ -869,7 +906,7 @@ export default function PurchasesPage() {
         <div className="flex items-center justify-between mb-4">
           <div>
             <h1 className="text-xl font-bold text-white">Card Purchases</h1>
-            <p className="text-xs text-gray-500 mt-0.5">Track every lot, box, and card you buy</p>
+            <p className="text-xs text-gray-500 mt-0.5">Track every lot, box, and card you buy · click a purchase to see its sales</p>
           </div>
           <div className="flex items-center gap-2">
             <button
@@ -953,6 +990,7 @@ export default function PurchasesPage() {
                   onAddSub={handleAddSub}
                   onCopySkU={handleCopySku}
                   onRefresh={() => load(search)}
+                  onViewSales={handleViewSales}
                 />
               ))}
             </tbody>
@@ -991,5 +1029,13 @@ export default function PurchasesPage() {
       )}
       {toast && <Toast message={toast} onDone={() => setToast(null)} />}
     </div>
+  );
+}
+
+export default function PurchasesPage() {
+  return (
+    <Suspense fallback={<div className="h-full flex items-center justify-center bg-gray-950 text-gray-500 text-sm">Loading…</div>}>
+      <PurchasesPageContent />
+    </Suspense>
   );
 }

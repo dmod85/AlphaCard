@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { Suspense, useState, useEffect, useCallback, useRef } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useSalesRealtimeSync } from '../hooks/useRealtime';
 import {
   DEFAULT_PNL_SETTINGS,
@@ -600,7 +601,10 @@ function ItemImage({ url, title }: { url: string | null; title: string }) {
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
-export default function SalesPage() {
+function SalesPageContent() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const skuFilter = searchParams.get('sku')?.trim() || '';
   const [sales, setSales] = useState<Sale[]>([]);
   const { isConnected: liveConnected, lastUpdate: liveUpdate } = useSalesRealtimeSync(setSales);
   const [purchases, setPurchases] = useState<Purchase[]>([]);
@@ -610,7 +614,7 @@ export default function SalesPage() {
   const [syncMsg, setSyncMsg] = useState('');
   const [search, setSearch] = useState('');
   const [days, setDays] = useState(90);
-  const [viewDays, setViewDays] = useState(14);
+  const [viewDays, setViewDays] = useState(skuFilter ? 0 : 14);
   const [lastSync, setLastSync] = useState<string | null>(null);
 
   const [selectedSales, setSelectedSales] = useState<Set<string>>(new Set());
@@ -754,6 +758,13 @@ export default function SalesPage() {
     return () => ac.abort();
   }, []);
 
+  useEffect(() => {
+    if (skuFilter) {
+      setViewDays(0);
+      setSelectedSales(new Set());
+    }
+  }, [skuFilter]);
+
   async function handleSync() {
     setSyncing(true);
     setSyncMsg('');
@@ -884,12 +895,19 @@ export default function SalesPage() {
     }
   }
 
-  // Period-scoped rows (P&L ignores the search box so ROI stays apples-to-apples)
-  const periodSales = sales.filter(s => isInPeriod(s.sale_date, viewDays));
+  // Period-scoped rows (P&L ignores the search box so ROI stays apples-to-apples).
+  // A ?sku= query (from clicking a purchase) scopes everything to that lot.
+  const skuScopedSales = skuFilter
+    ? sales.filter(s => (s.sku ?? '') === skuFilter)
+    : sales;
+  const skuScopedPurchases = skuFilter
+    ? purchases.filter(p => (p.sku ?? '') === skuFilter)
+    : purchases;
+  const periodSales = skuScopedSales.filter(s => isInPeriod(s.sale_date, viewDays));
   const periodStatsSales = periodSales.filter(s => !s.exclude_from_stats);
   const excludedInPeriod = periodSales.length - periodStatsSales.length;
-  const periodPurchases = purchases.filter(p => isInPeriod(p.purchase_date, viewDays));
-  const periodExpenses = expenses.filter(e => isInPeriod(e.expense_date, viewDays));
+  const periodPurchases = skuScopedPurchases.filter(p => isInPeriod(p.purchase_date, viewDays));
+  const periodExpenses = skuFilter ? [] : expenses.filter(e => isInPeriod(e.expense_date, viewDays));
 
   function expenseSum(category: ExpenseCategory) {
     return periodExpenses
@@ -992,7 +1010,9 @@ export default function SalesPage() {
             <h1 className="text-xl font-bold text-white">eBay Sales</h1>
             <p className="text-xs text-gray-500 mt-0.5 flex items-center gap-2">
               <span>
-                Sync orders and label costs from the buttons on the right
+                {skuFilter
+                  ? 'Every sale matched to this purchase'
+                  : 'Sync orders and label costs from the buttons on the right'}
                 {lastSync && (
                   <span className="ml-2 text-gray-600">· Last sync: {fmtDate(lastSync)}</span>
                 )}
@@ -1060,6 +1080,36 @@ export default function SalesPage() {
         {syncMsg && (
           <div className={`mb-3 px-4 py-2 rounded-lg text-sm ${syncMsg.startsWith('✓') ? 'bg-green-500/10 text-green-400 border border-green-500/20' : 'bg-red-500/10 text-red-400 border border-red-500/20'}`}>
             {syncMsg}
+          </div>
+        )}
+
+        {skuFilter && (
+          <div className="mb-3 flex items-center gap-3 px-3 py-2 rounded-lg bg-green-500/10 border border-green-500/20">
+            <span className="text-sm text-green-400 shrink-0">Sales from purchase</span>
+            <span className="text-[11px] text-gray-300 font-mono bg-gray-800 px-2 py-0.5 rounded truncate">
+              {skuFilter}
+            </span>
+            {skuMap.get(skuFilter) && (
+              <span className="text-xs text-gray-400 truncate">
+                {[skuMap.get(skuFilter)!.brand, skuMap.get(skuFilter)!.series].filter(Boolean).join(' ')}
+              </span>
+            )}
+            <span className="text-xs text-gray-500 shrink-0">
+              {filtered.length} sale{filtered.length === 1 ? '' : 's'}
+            </span>
+            <a
+              href={`/purchases?sku=${encodeURIComponent(skuFilter)}`}
+              className="ml-auto text-xs text-gray-400 hover:text-white px-2 py-1 rounded hover:bg-gray-800 transition shrink-0"
+            >
+              Back to purchase
+            </a>
+            <button
+              type="button"
+              onClick={() => router.replace('/sales')}
+              className="text-xs text-gray-400 hover:text-white px-2 py-1 rounded hover:bg-gray-800 transition shrink-0"
+            >
+              Show all sales
+            </button>
           </div>
         )}
 
@@ -1229,7 +1279,7 @@ export default function SalesPage() {
             <input
               type="text"
               className="w-full bg-gray-900 border border-gray-800 rounded-lg pl-9 pr-4 py-2 text-sm text-gray-200 focus:outline-none focus:border-blue-500 transition"
-              placeholder="Search by title, SKU, order #, buyer…"
+              placeholder={skuFilter ? 'Search within this purchase…' : 'Search by title, SKU, order #, buyer…'}
               value={search}
               onChange={e => setSearch(e.target.value)}
             />
@@ -1316,11 +1366,13 @@ export default function SalesPage() {
             <p className="text-sm">
               {sales.length === 0
                 ? 'No sales yet — syncing from eBay, or click Sync to pull a longer window.'
-                : search
-                  ? 'No sales match your search.'
-                  : !showExcluded && excludedInPeriod > 0
-                    ? 'Hidden sales are filtered out of the table — click “hidden from stats” to show them.'
-                    : `No sales in ${periodLabel(viewDays).toLowerCase()}.`}
+                : skuFilter && skuScopedSales.length === 0
+                  ? 'No sales matched to this purchase yet.'
+                  : search
+                    ? 'No sales match your search.'
+                    : !showExcluded && excludedInPeriod > 0
+                      ? 'Hidden sales are filtered out of the table — click “hidden from stats” to show them.'
+                      : `No sales in ${periodLabel(viewDays).toLowerCase()}.`}
             </p>
           </div>
         ) : (
@@ -1617,5 +1669,13 @@ export default function SalesPage() {
         />
       )}
     </div>
+  );
+}
+
+export default function SalesPage() {
+  return (
+    <Suspense fallback={<div className="h-full flex items-center justify-center bg-gray-950 text-gray-500 text-sm">Loading…</div>}>
+      <SalesPageContent />
+    </Suspense>
   );
 }
