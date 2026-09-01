@@ -2,8 +2,43 @@
 
 import { Suspense, useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import {
+  DEFAULT_PNL_SETTINGS,
+  resolvedSaleCosts,
+  type PnlSettings,
+} from '@/app/lib/pnl';
+import {
+  ALLOCATION_MODE_LABELS,
+  ALLOCATION_MODES,
+  POOL_ITEM_STATUS_LABELS,
+  POOL_ITEM_STATUSES,
+  ROI_HELP,
+  allocateLines,
+  computePoolMetrics,
+  defaultAllocationMode,
+  formatRoiPct,
+  parseAllocationMode,
+  poolInputFromPurchases,
+  roiToneClass,
+  sumAllocatedCost,
+  type AllocationMode,
+  type PoolItemStatus,
+  type PoolLine,
+  type PoolMetrics,
+} from '@/app/lib/pool-roi';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
+
+interface PoolItem {
+  id: string;
+  purchase_id?: string;
+  label: string | null;
+  estimated_value: number;
+  allocated_cost: number | null;
+  status: PoolItemStatus;
+  qty: number;
+  sale_id: string | null;
+}
 
 interface Purchase {
   id: string;
@@ -20,6 +55,9 @@ interface Purchase {
   bought_from: string | null;
   notes: string | null;
   created_at: string;
+  allocation_mode: AllocationMode;
+  expected_bulk_recovery: number;
+  items: PoolItem[];
 }
 
 interface SkuGroup {
@@ -29,6 +67,7 @@ interface SkuGroup {
   totalSales: number;
   totalQuantity: number;
   quantitySold: number;
+  metrics: PoolMetrics;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -51,7 +90,43 @@ const EMPTY_FORM = {
   sku: '',
   bought_from: 'eBay',
   notes: '',
+  allocation_mode: 'equal' as AllocationMode,
+  expected_bulk_recovery: '0',
 };
+
+type FormLine = {
+  key: string;
+  id?: string;
+  label: string;
+  estimated_value: string;
+  allocated_cost: string;
+  status: PoolItemStatus;
+  qty: string;
+};
+
+function emptyFormLine(status: PoolItemStatus = 'in_stock'): FormLine {
+  return {
+    key: `tmp-${Math.random().toString(36).slice(2, 9)}`,
+    label: status === 'bulk_leftover' ? 'Bulk leftover' : '',
+    estimated_value: '',
+    allocated_cost: '',
+    status,
+    qty: '1',
+  };
+}
+
+function itemsToFormLines(items: PoolItem[] | undefined): FormLine[] {
+  if (!items?.length) return [];
+  return items.map(it => ({
+    key: it.id,
+    id: it.id,
+    label: it.label ?? '',
+    estimated_value: it.estimated_value != null ? String(it.estimated_value) : '',
+    allocated_cost: it.allocated_cost != null ? String(it.allocated_cost) : '',
+    status: it.status,
+    qty: String(it.qty || 1),
+  }));
+}
 
 // ─── CSV Import Modal ─────────────────────────────────────────────────────────
 
@@ -244,6 +319,127 @@ function Select({
   );
 }
 
+function PoolLinesEditor({
+  mode,
+  cost,
+  bulkRecovery,
+  lines,
+  onChange,
+}: {
+  mode: AllocationMode;
+  cost: number;
+  bulkRecovery: number;
+  lines: FormLine[];
+  onChange: (lines: FormLine[]) => void;
+}) {
+  const poolLines: PoolLine[] = lines.map(l => ({
+    id: l.id,
+    label: l.label,
+    estimatedValue: parseFloat(l.estimated_value) || 0,
+    allocatedCostOverride: l.allocated_cost === '' ? null : parseFloat(l.allocated_cost),
+    status: l.status,
+    qty: parseInt(l.qty, 10) || 1,
+  }));
+  const allocated = allocateLines({
+    purchaseCost: cost,
+    sellableQty: poolLines.reduce((s, l) => s + l.qty, 0) || 1,
+    soldQty: 0,
+    totalNetSales: 0,
+    allocationMode: mode,
+    expectedBulkRecovery: bulkRecovery,
+    lines: poolLines,
+  });
+  const allocatedSum = sumAllocatedCost(allocated);
+  const drift = Math.round((allocatedSum - cost) * 100) / 100;
+
+  function patch(key: string, field: keyof FormLine, val: string) {
+    onChange(lines.map(l => l.key === key ? { ...l, [field]: val } : l));
+  }
+
+  return (
+    <div className="col-span-2 space-y-2">
+      <div className="flex items-center justify-between">
+        <label className="text-xs text-gray-400">
+          Pool cards
+          <span className="ml-2 text-[10px] text-gray-600">
+            {mode === 'weighted' ? 'Estimated values weight the basis' : 'Hits share cost minus bulk recovery'}
+          </span>
+        </label>
+        <span className={`text-[10px] ${Math.abs(drift) < 0.01 ? 'text-gray-500' : 'text-yellow-400'}`}>
+          Allocated {allocatedSum.toFixed(2)} / {cost.toFixed(2)}
+        </span>
+      </div>
+      {lines.length === 0 && (
+        <p className="text-[11px] text-gray-600">
+          {mode === 'residual'
+            ? 'Optional. Without rows, hits equal-split (cost − bulk recovery). Add rows to value-weight hits.'
+            : 'Add a row per card (or per group of similar cards) with an estimated value.'}
+        </p>
+      )}
+      {lines.map((l, i) => (
+        <div key={l.key} className="grid grid-cols-12 gap-1.5 items-center">
+          <input
+            className={`${inputCls} col-span-3 py-1.5 text-xs`}
+            placeholder={l.status === 'bulk_leftover' ? 'Bulk leftover' : 'Label'}
+            value={l.label}
+            onChange={e => patch(l.key, 'label', e.target.value)}
+          />
+          <input
+            className={`${inputCls} col-span-2 py-1.5 text-xs`}
+            placeholder="Est. $"
+            inputMode="decimal"
+            value={l.estimated_value}
+            onChange={e => patch(l.key, 'estimated_value', e.target.value)}
+            title="Estimated value — used to weight basis"
+          />
+          <select
+            className={`${inputCls} col-span-3 py-1.5 text-xs`}
+            value={l.status}
+            onChange={e => patch(l.key, 'status', e.target.value as PoolItemStatus)}
+          >
+            {POOL_ITEM_STATUSES.map(s => (
+              <option key={s} value={s}>{POOL_ITEM_STATUS_LABELS[s]}</option>
+            ))}
+          </select>
+          <input
+            className={`${inputCls} col-span-2 py-1.5 text-xs text-gray-400`}
+            placeholder={`$${allocated[i]?.allocatedCost.toFixed(2) ?? '0.00'}`}
+            inputMode="decimal"
+            value={l.allocated_cost}
+            onChange={e => patch(l.key, 'allocated_cost', e.target.value)}
+            title="Override allocated cost. Leave blank to use computed basis."
+          />
+          <button
+            type="button"
+            onClick={() => onChange(lines.filter(x => x.key !== l.key))}
+            className="col-span-2 text-[11px] text-red-500 hover:text-red-400"
+          >
+            Remove
+          </button>
+        </div>
+      ))}
+      <div className="flex gap-2">
+        <button
+          type="button"
+          onClick={() => onChange([...lines, emptyFormLine('in_stock')])}
+          className="text-[11px] text-blue-400 hover:text-blue-300"
+        >
+          + Add card
+        </button>
+        {mode === 'residual' && !lines.some(l => l.status === 'bulk_leftover') && (
+          <button
+            type="button"
+            onClick={() => onChange([...lines, emptyFormLine('bulk_leftover')])}
+            className="text-[11px] text-yellow-400 hover:text-yellow-300"
+          >
+            + Bulk leftover row
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── Purchase Form Modal ──────────────────────────────────────────────────────
 
 function PurchaseModal({
@@ -270,13 +466,17 @@ function PurchaseModal({
         sku: initial.sku ?? '',
         bought_from: initial.bought_from ?? 'eBay',
         notes: initial.notes ?? '',
+        allocation_mode: parseAllocationMode(initial.allocation_mode),
+        expected_bulk_recovery: (initial.expected_bulk_recovery ?? 0).toString(),
       }
       : { ...EMPTY_FORM }
   );
+  const [lines, setLines] = useState<FormLine[]>(itemsToFormLines(initial?.items));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   // Track whether the user has manually edited the SKU so we don't overwrite it.
   const [skuLocked, setSkuLocked] = useState(!!initial?.sku);
+  const [modeLocked, setModeLocked] = useState(!!initial?.id);
 
   // ── SKU auto-generation: YEAR-BRAND-SERIES-SPORT (spaces→_, uppercase) ──
   function buildAutoSku(year: string, brand: string, series: string, sport: string): string {
@@ -294,6 +494,10 @@ function PurchaseModal({
       // unless the user has manually locked the SKU field.
       if (['year', 'brand', 'series', 'sport'].includes(key) && !skuLocked) {
         next.sku = buildAutoSku(next.year, next.brand, next.series, next.sport);
+      }
+
+      if (key === 'box_size' && !modeLocked) {
+        next.allocation_mode = defaultAllocationMode(val);
       }
 
       return next;
@@ -320,7 +524,17 @@ function PurchaseModal({
     setError('');
     try {
       const method = initial ? 'PATCH' : 'POST';
-      const body = initial ? { id: initial.id, ...form } : form;
+      const items = lines.map(l => ({
+        id: l.id,
+        label: l.label || null,
+        estimated_value: parseFloat(l.estimated_value) || 0,
+        allocated_cost: l.allocated_cost === '' ? null : parseFloat(l.allocated_cost),
+        status: l.status,
+        qty: parseInt(l.qty, 10) || 1,
+      }));
+      const body = initial
+        ? { id: initial.id, ...form, items }
+        : { ...form, items };
       const res = await fetch('/api/purchases', {
         method,
         headers: { 'Content-Type': 'application/json' },
@@ -348,7 +562,54 @@ function PurchaseModal({
         <div className="p-5 grid grid-cols-2 gap-4">
           <Field label="Purchase Date *" value={form.purchase_date} onChange={v => set('purchase_date', v)} type="date" />
           <Field label="Cost ($) *" value={form.cost} onChange={v => set('cost', v)} type="number" inputMode="decimal" placeholder="0.00" />
-          <Field label="# of Cards" value={form.quantity} onChange={v => set('quantity', v.replace(/\D/g, ''))} type="number" inputMode="numeric" placeholder="1" />
+          <div>
+            <label className="block text-xs text-gray-400 mb-1" title={ROI_HELP.sellableQty}>Sellable cards</label>
+            <input
+              type="number"
+              inputMode="numeric"
+              className={inputCls}
+              placeholder="1"
+              value={form.quantity}
+              onChange={e => set('quantity', e.target.value.replace(/\D/g, ''))}
+            />
+            <p className="text-[10px] text-gray-600 mt-1">{ROI_HELP.sellableQty}</p>
+          </div>
+          <div>
+            <label className="block text-xs text-gray-400 mb-1">Allocation</label>
+            <select
+              className={inputCls}
+              value={form.allocation_mode}
+              onChange={e => {
+                setModeLocked(true);
+                set('allocation_mode', e.target.value);
+              }}
+            >
+              {ALLOCATION_MODES.map(m => (
+                <option key={m} value={m}>{ALLOCATION_MODE_LABELS[m]}</option>
+              ))}
+            </select>
+            <p className="text-[10px] text-gray-600 mt-1">
+              {form.allocation_mode === 'equal' && 'Same-tier singles. Each sellable card gets an equal share of cost.'}
+              {form.allocation_mode === 'weighted' && 'Hits and cheap cards in one pool. Basis follows estimated value.'}
+              {form.allocation_mode === 'residual' && 'Ripped box / blaster: leftovers get scrap value, hits get the rest.'}
+            </p>
+          </div>
+          {form.allocation_mode === 'residual' && (
+            <div>
+              <label className="block text-xs text-gray-400 mb-1">Expected bulk recovery ($)</label>
+              <input
+                type="number"
+                inputMode="decimal"
+                className={inputCls}
+                placeholder="0.00"
+                value={form.expected_bulk_recovery}
+                onChange={e => set('expected_bulk_recovery', e.target.value)}
+              />
+              <p className="text-[10px] text-gray-600 mt-1">
+                Leftovers sold as one bulk lot. $0 if they will never be sold — hits then carry the full box cost.
+              </p>
+            </div>
+          )}
 
           {/* Year — text field, numeric keyboard, strips non-digits, max 4 chars */}
           <div>
@@ -410,6 +671,16 @@ function PurchaseModal({
           <Field label="Team" value={form.team} onChange={v => set('team', v)} placeholder="optional" />
           <Select label="Box Size" value={form.box_size} onChange={v => set('box_size', v)} options={BOX_SIZES} />
           <Select label="Bought From" value={form.bought_from} onChange={v => set('bought_from', v)} options={SOURCES} />
+
+          {(form.allocation_mode === 'weighted' || form.allocation_mode === 'residual') && (
+            <PoolLinesEditor
+              mode={form.allocation_mode}
+              cost={parseFloat(form.cost) || 0}
+              bulkRecovery={parseFloat(form.expected_bulk_recovery) || 0}
+              lines={lines}
+              onChange={setLines}
+            />
+          )}
 
           <div className="col-span-2">
             <label className="block text-xs text-gray-400 mb-1">Notes</label>
@@ -576,6 +847,17 @@ function EditableCell({
 
 // ─── Sold Progress Badge ────────────────────────────────────────────────────────
 
+function RoiBadge({ value, title }: { value: number | null; title?: string }) {
+  if (value == null) {
+    return <span className="text-[10px] text-gray-600 bg-gray-800 px-1.5 py-0.5 rounded" title={title}>—</span>;
+  }
+  return (
+    <span className={`text-[10px] bg-gray-800 px-1.5 py-0.5 rounded whitespace-nowrap ${roiToneClass(value)}`} title={title}>
+      {formatRoiPct(value)}
+    </span>
+  );
+}
+
 function SoldBadge({ sold, total }: { sold: number; total: number }) {
   if (total <= 0) return <span className="text-gray-600">—</span>;
   const capped = Math.min(sold, total);
@@ -639,8 +921,10 @@ function SkuGroupRow({
   onViewSales: (sku: string, e?: React.MouseEvent) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
-  const hasSubs = group.purchases.length > 1;
+  const hasItems = group.purchases.some(p => (p.items?.length ?? 0) > 0);
+  const hasSubs = group.purchases.length > 1 || hasItems;
   const first = group.purchases[0];
+  const mode = group.metrics.allocationMode;
 
   function handleRowClick(e: React.MouseEvent, sku: string | null) {
     if (!sku) return;
@@ -686,7 +970,16 @@ function SkuGroupRow({
         <td className="px-3 py-3 text-sm text-gray-200"><EditableCell purchase={first} field="brand" type="select" options={BRANDS} onSaved={onRefresh} /></td>
         <td className="px-3 py-3 text-sm text-blue-300"><EditableCell purchase={first} field="series" onSaved={onRefresh} /></td>
         <td className="px-3 py-3 text-sm text-gray-300"><EditableCell purchase={first} field="sport" type="select" options={SPORTS} onSaved={onRefresh} /></td>
-        <td className="px-3 py-3 text-sm text-gray-400"><EditableCell purchase={first} field="box_size" type="select" options={BOX_SIZES} onSaved={onRefresh} /></td>
+        <td className="px-3 py-3 text-sm text-gray-400">
+          <div className="flex items-center gap-1.5">
+            <EditableCell purchase={first} field="box_size" type="select" options={BOX_SIZES} onSaved={onRefresh} />
+            {mode !== 'equal' && (
+              <span className="text-[9px] uppercase tracking-wide text-yellow-500/80 bg-yellow-500/10 px-1 py-0.5 rounded">
+                {ALLOCATION_MODE_LABELS[mode]}
+              </span>
+            )}
+          </div>
+        </td>
         <td className="px-3 py-3 text-sm text-green-400 font-medium tabular-nums">
           {hasSubs ? (
             <div>
@@ -697,34 +990,44 @@ function SkuGroupRow({
             <EditableCell purchase={first} field="cost" type="number" onSaved={onRefresh} />
           )}
         </td>
-        <td className="px-3 py-3 text-sm text-gray-300 tabular-nums">
+        <td className="px-3 py-3 text-sm text-gray-300 tabular-nums" title={ROI_HELP.sellableQty}>
           {hasSubs ? (
             <div>
-              {group.totalQuantity}
+              {group.metrics.sellableQty}
               <span className="ml-1 text-[10px] text-gray-600">total</span>
             </div>
           ) : (
             <EditableCell purchase={first} field="quantity" type="number" onSaved={onRefresh} />
           )}
         </td>
-        <td className="px-3 py-3" title={group.sku ? 'View all sales from this purchase' : undefined}>
-          <SoldBadge sold={group.quantitySold} total={group.totalQuantity} />
+        <td className="px-3 py-3" title={`${group.metrics.soldQty} sold / ${group.metrics.sellableQty} sellable`}>
+          <SoldBadge sold={group.metrics.soldQty} total={group.metrics.sellableQty} />
         </td>
         <td className="px-3 py-3 text-sm tabular-nums" title={group.sku ? 'View all sales from this purchase' : undefined}>
-          {group.totalSales > 0 ? (
-            <div className="flex items-center gap-2">
-              <span className="text-green-400 font-medium">${group.totalSales.toFixed(2)}</span>
-              {(() => {
-                if (group.totalCost === 0) return null;
-                const roi = ((group.totalSales - group.totalCost) / group.totalCost) * 100;
-                const color = roi > 0 ? 'text-green-400' : roi < 0 ? 'text-red-400' : 'text-gray-400';
-                const sign = roi > 0 ? '+' : '';
-                return <span className={`text-[10px] bg-gray-800 px-1.5 py-0.5 rounded ${color}`}>{sign}{roi.toFixed(1)}%</span>;
-              })()}
-            </div>
+          {group.metrics.totalNetSales > 0 ? (
+            <span className="text-green-400 font-medium">${group.metrics.totalNetSales.toFixed(2)}</span>
           ) : (
             <span className="text-gray-600">—</span>
           )}
+        </td>
+        <td className="px-3 py-3">
+          <RoiBadge value={group.metrics.realizedRoi} title={ROI_HELP.realized} />
+        </td>
+        <td className="px-3 py-3">
+          <RoiBadge value={group.metrics.lotToDateRoi} title={ROI_HELP.lotToDate} />
+        </td>
+        <td className="px-3 py-3 text-xs tabular-nums text-gray-300" title="Sales / purchase cost">
+          {group.metrics.recoveredPct == null ? (
+            <span className="text-gray-600">—</span>
+          ) : (
+            `${Math.round(group.metrics.recoveredPct)}%`
+          )}
+        </td>
+        <td className="px-3 py-3 text-xs tabular-nums text-gray-300" title="Allocated cost of cards sold">
+          {group.metrics.soldQty > 0 ? `$${group.metrics.costOfSold.toFixed(2)}` : <span className="text-gray-600">—</span>}
+        </td>
+        <td className="px-3 py-3 text-xs tabular-nums text-gray-400" title="Purchase cost still sitting in unsold cards">
+          ${group.metrics.remainingCost.toFixed(2)}
         </td>
         <td className="px-3 py-3">
           <SkuPill sku={group.sku} onCopy={onCopySkU} />
@@ -742,7 +1045,7 @@ function SkuGroupRow({
               title="Edit"
               className="text-[13px] text-gray-400 hover:text-white transition px-2 py-1 rounded hover:bg-gray-700"
             >✎</button>
-            {!hasSubs && (
+            {group.purchases.length === 1 && (
               <button
                 onClick={() => { if (confirm('Delete this purchase?')) onDelete(first.id); }}
                 title="Delete"
@@ -754,7 +1057,7 @@ function SkuGroupRow({
       </tr>
 
       {/* Sub-purchase rows */}
-      {expanded && group.purchases.map((p) => (
+      {expanded && group.purchases.length > 1 && group.purchases.map((p) => (
         <tr
           key={p.id}
           className={`bg-gray-800/10 border-b border-gray-800/30 hover:bg-gray-800/25 transition ${p.sku ? 'cursor-pointer' : ''}`}
@@ -772,6 +1075,11 @@ function SkuGroupRow({
           <td className="px-3 py-2 text-xs text-gray-300 tabular-nums"><EditableCell purchase={p} field="quantity" type="number" onSaved={onRefresh} /></td>
           <td className="px-3 py-2" />
           <td className="px-3 py-2" />
+          <td className="px-3 py-2" />
+          <td className="px-3 py-2" />
+          <td className="px-3 py-2" />
+          <td className="px-3 py-2" />
+          <td className="px-3 py-2" />
           <td className="px-3 py-2">
             <SkuPill sku={p.sku} onCopy={onCopySkU} />
           </td>
@@ -785,6 +1093,42 @@ function SkuGroupRow({
                 className="text-[11px] text-red-500 hover:text-red-400 transition px-2 py-0.5 rounded hover:bg-red-500/10"
               >✕</button>
             </div>
+          </td>
+        </tr>
+      ))}
+
+      {expanded && group.metrics.allocatedLines.map((line, i) => (
+        <tr key={line.id || `line-${i}`} className="bg-gray-900/50 border-b border-gray-800/30">
+          <td className="px-4 py-1.5 w-6" />
+          <td className="px-3 py-1.5 text-[11px] text-gray-500 pl-8" colSpan={6}>
+            <span className="text-gray-300">{line.label || `Card ${i + 1}`}</span>
+            {line.estimatedValue > 0 && (
+              <span className="ml-2 text-gray-600">est ${line.estimatedValue.toFixed(2)}</span>
+            )}
+          </td>
+          <td className="px-3 py-1.5 text-[11px] text-green-400/80 tabular-nums">${line.allocatedCost.toFixed(2)}</td>
+          <td className="px-3 py-1.5 text-[11px] text-gray-500 tabular-nums">{line.qty}</td>
+          <td className="px-3 py-1.5" colSpan={10} onClick={e => e.stopPropagation()}>
+            {line.id ? (
+              <select
+                className="bg-gray-800 border border-gray-700 rounded px-1.5 py-0.5 text-[11px] text-gray-300"
+                value={line.status}
+                onChange={async e => {
+                  await fetch('/api/purchases/items', {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id: line.id, status: e.target.value }),
+                  });
+                  onRefresh();
+                }}
+              >
+                {POOL_ITEM_STATUSES.map(s => (
+                  <option key={s} value={s}>{POOL_ITEM_STATUS_LABELS[s]}</option>
+                ))}
+              </select>
+            ) : (
+              <span className="text-[11px] text-gray-500">{POOL_ITEM_STATUS_LABELS[line.status]}</span>
+            )}
           </td>
         </tr>
       ))}
@@ -808,6 +1152,7 @@ function PurchasesPageContent() {
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [sales, setSales] = useState<any[]>([]);
+  const [settings, setSettings] = useState<PnlSettings>(DEFAULT_PNL_SETTINGS);
 
   const load = useCallback(async (q = '') => {
     setLoading(true);
@@ -823,9 +1168,14 @@ function PurchasesPageContent() {
 
   const loadSales = useCallback(async () => {
     try {
-      const res = await fetch('/api/ebay/sold-orders?sync=false');
-      const data = await res.json();
+      const [salesRes, settingsRes] = await Promise.all([
+        fetch('/api/ebay/sold-orders?sync=false'),
+        fetch('/api/pnl-settings'),
+      ]);
+      const data = await salesRes.json();
+      const settingsData = await settingsRes.json();
       setSales(data.sales ?? []);
+      if (settingsData.settings) setSettings(settingsData.settings);
     } catch { /* silent */ }
   }, []);
 
@@ -838,11 +1188,24 @@ function PurchasesPageContent() {
 
   // Group by sku
   const groups: SkuGroup[] = (() => {
+    const firstSaleIdByOrder = new Map<string, string>();
+    sales.forEach(s => {
+      if (!firstSaleIdByOrder.has(s.order_number)) firstSaleIdByOrder.set(s.order_number, s.id);
+    });
+    function saleNet(s: any) {
+      const head = firstSaleIdByOrder.get(s.order_number) === s.id;
+      return resolvedSaleCosts({
+        ...s,
+        order_shipping_cost: head ? s.order_shipping_cost : 0,
+        shipping_cost: s.shipping_cost != null ? s.shipping_cost : (head ? null : 0),
+      }, settings).net;
+    }
+
     const skuTotalSalesMap = new Map<string, number>();
     const skuQuantitySoldMap = new Map<string, number>();
     sales.forEach(s => {
       if (s.sku && !s.exclude_from_stats) {
-        skuTotalSalesMap.set(s.sku, (skuTotalSalesMap.get(s.sku) ?? 0) + s.sold_for);
+        skuTotalSalesMap.set(s.sku, (skuTotalSalesMap.get(s.sku) ?? 0) + saleNet(s));
         skuQuantitySoldMap.set(s.sku, (skuQuantitySoldMap.get(s.sku) ?? 0) + (s.quantity_sold ?? 1));
       }
     });
@@ -853,14 +1216,22 @@ function PurchasesPageContent() {
       if (!map.has(key)) map.set(key, []);
       map.get(key)!.push(p);
     });
-    return Array.from(map.entries()).map(([, ps]) => ({
-      sku: ps[0].sku,
-      purchases: ps,
-      totalCost: ps.reduce((s, p) => s + p.cost, 0),
-      totalSales: ps[0].sku ? (skuTotalSalesMap.get(ps[0].sku) ?? 0) : 0,
-      totalQuantity: ps.reduce((s, p) => s + (p.quantity ?? 1), 0),
-      quantitySold: ps[0].sku ? (skuQuantitySoldMap.get(ps[0].sku) ?? 0) : 0,
-    }));
+    return Array.from(map.entries()).map(([, ps]) => {
+      const quantitySold = ps[0].sku ? (skuQuantitySoldMap.get(ps[0].sku) ?? 0) : 0;
+      const totalSales = ps[0].sku ? (skuTotalSalesMap.get(ps[0].sku) ?? 0) : 0;
+      const totalCost = ps.reduce((s, p) => s + Number(p.cost || 0), 0);
+      const totalQuantity = ps.reduce((s, p) => s + (p.quantity ?? 1), 0);
+      const metrics = computePoolMetrics(poolInputFromPurchases(ps, quantitySold, totalSales));
+      return {
+        sku: ps[0].sku,
+        purchases: ps,
+        totalCost,
+        totalSales,
+        totalQuantity,
+        quantitySold,
+        metrics,
+      };
+    });
   })();
 
   // Stats
@@ -906,7 +1277,16 @@ function PurchasesPageContent() {
         <div className="flex items-center justify-between mb-4">
           <div>
             <h1 className="text-xl font-bold text-white">Card Purchases</h1>
-            <p className="text-xs text-gray-500 mt-0.5">Track every lot, box, and card you buy · click a purchase to see its sales</p>
+            <p className="text-xs text-gray-500 mt-0.5">
+              Track every lot, box, and card you buy · click a purchase to see its sales
+            </p>
+            <p className="text-[11px] text-gray-600 mt-1">
+              <span className="text-gray-400">Realized</span> — {ROI_HELP.realized}
+              <span className="mx-2 text-gray-700">·</span>
+              <span className="text-gray-400">Lot-to-date</span> — {ROI_HELP.lotToDate}
+              <span className="mx-2 text-gray-700">·</span>
+              Sellable is cards you will sell, not pack count.
+            </p>
           </div>
           <div className="flex items-center gap-2">
             <button
@@ -972,9 +1352,14 @@ function PurchasesPageContent() {
                 <th className="px-3 py-3">Sport</th>
                 <th className="px-3 py-3">Box Size</th>
                 <th className="px-3 py-3">Cost</th>
-                <th className="px-3 py-3"># Cards</th>
+                <th className="px-3 py-3" title={ROI_HELP.sellableQty}>Sellable</th>
                 <th className="px-3 py-3">Sold</th>
-                <th className="px-3 py-3">Total Sales (ROI)</th>
+                <th className="px-3 py-3">Sales (net)</th>
+                <th className="px-3 py-3" title={ROI_HELP.realized}>Realized</th>
+                <th className="px-3 py-3" title={ROI_HELP.lotToDate}>Lot-to-date</th>
+                <th className="px-3 py-3" title="Sales / purchase cost">Recov.</th>
+                <th className="px-3 py-3" title="Allocated cost of cards sold">Sold cost</th>
+                <th className="px-3 py-3" title="Purchase cost still sitting in unsold cards">Left</th>
                 <th className="px-3 py-3">SKU</th>
                 <th className="px-3 py-3">Source</th>
                 <th className="px-3 py-3">Actions</th>
@@ -1016,6 +1401,9 @@ function PurchasesPageContent() {
             bought_from: 'eBay',
             notes: null,
             created_at: '',
+            allocation_mode: 'equal',
+            expected_bulk_recovery: 0,
+            items: [],
           } as Purchase) : null)}
           onClose={() => { setShowModal(false); setEditPurchase(null); setPreFillSku(null); }}
           onSaved={() => load(search)}

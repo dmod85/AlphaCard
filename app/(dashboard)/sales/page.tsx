@@ -6,16 +6,24 @@ import { useSalesRealtimeSync } from '../hooks/useRealtime';
 import {
   DEFAULT_PNL_SETTINGS,
   EXPENSE_CATEGORIES,
-  lotSoldRoi,
-  lotUnitCost,
-  remainingLotValue,
   resolvedSaleCosts,
   roiPct,
   roundMoney,
-  saleUnitCogs,
   type ExpenseCategory,
   type PnlSettings,
 } from '@/app/lib/pnl';
+import {
+  POOL_ITEM_STATUS_LABELS,
+  ROI_HELP,
+  computePoolMetrics,
+  formatRoiPct,
+  poolInputFromPurchases,
+  roiToneClass,
+  saleShareOfPoolCogs,
+  type AllocationMode,
+  type PoolItemStatus,
+  type PoolMetrics,
+} from '@/app/lib/pool-roi';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -53,7 +61,18 @@ interface Expense {
   notes: string | null;
 }
 
+interface PoolItem {
+  id: string;
+  label: string | null;
+  estimated_value: number;
+  allocated_cost: number | null;
+  status: PoolItemStatus;
+  qty: number;
+  sale_id: string | null;
+}
+
 interface Purchase {
+  id?: string;
   sku: string | null;
   brand: string | null;
   series: string | null;
@@ -61,6 +80,9 @@ interface Purchase {
   cost: number;
   quantity: number;
   purchase_date: string | null;
+  allocation_mode?: AllocationMode | null;
+  expected_bulk_recovery?: number | null;
+  items?: PoolItem[] | null;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -630,6 +652,7 @@ function SalesPageContent() {
   const skuTotalCostMap = new Map<string, number>();
   const skuQtyPurchasedMap = new Map<string, number>();
   const skuMap = new Map<string, Purchase>();
+  const purchasesBySku = new Map<string, Purchase[]>();
   purchases.forEach(p => {
     if (p.sku) {
       skuTotalCostMap.set(p.sku, (skuTotalCostMap.get(p.sku) ?? 0) + Number(p.cost || 0));
@@ -637,7 +660,15 @@ function SalesPageContent() {
       if (!skuMap.has(p.sku)) {
         skuMap.set(p.sku, p);
       }
+      if (!purchasesBySku.has(p.sku)) purchasesBySku.set(p.sku, []);
+      purchasesBySku.get(p.sku)!.push(p);
     }
+  });
+  const saleToPoolItem = new Map<string, string>();
+  purchases.forEach(p => {
+    (p.items ?? []).forEach(it => {
+      if (it.sale_id) saleToPoolItem.set(it.sale_id, it.id);
+    });
   });
 
   const firstSaleIdByOrder = new Map<string, string>();
@@ -670,22 +701,25 @@ function SalesPageContent() {
     }
   });
 
+  const poolBySku = new Map<string, PoolMetrics>();
+  purchasesBySku.forEach((ps, sku) => {
+    poolBySku.set(
+      sku,
+      computePoolMetrics(
+        poolInputFromPurchases(ps, skuQtySoldAllMap.get(sku) ?? 0, skuTotalNetMap.get(sku) ?? 0)
+      )
+    );
+  });
+
   function unitCostForSku(sku: string): number | null {
-    const lot = skuTotalCostMap.get(sku);
-    if (lot == null) return null;
-    return lotUnitCost(lot, skuQtyPurchasedMap.get(sku) ?? 0, skuQtySoldAllMap.get(sku) ?? 0);
+    const metrics = poolBySku.get(sku);
+    if (!metrics) return null;
+    if (metrics.soldQty > 0 && metrics.costOfSold > 0) return metrics.costOfSold / metrics.soldQty;
+    return metrics.unitCost;
   }
 
-  function lotRoiForSku(sku: string) {
-    const lot = skuTotalCostMap.get(sku);
-    if (lot == null) return null;
-    return lotSoldRoi(
-      skuTotalNetMap.get(sku) ?? 0,
-      skuTotalRevenueMap.get(sku) ?? 0,
-      lot,
-      skuQtyPurchasedMap.get(sku) ?? 0,
-      skuQtySoldAllMap.get(sku) ?? 0,
-    );
+  function poolForSku(sku: string) {
+    return poolBySku.get(sku) ?? null;
   }
 
   // Load purchases for match column
@@ -977,11 +1011,11 @@ function SalesPageContent() {
     periodQtySoldMatched += qty;
     if (!seenSoldSkus.has(s.sku)) {
       seenSoldSkus.add(s.sku);
-      const lot = skuTotalCostMap.get(s.sku) ?? 0;
-      const purchased = skuQtyPurchasedMap.get(s.sku) ?? 0;
-      const soldAll = skuQtySoldAllMap.get(s.sku) ?? 0;
-      remainingInSoldLots += remainingLotValue(lot, purchased, soldAll);
-      remainingQtyInSoldLots += Math.max(purchased - soldAll, 0);
+      const pool = poolBySku.get(s.sku);
+      if (pool) {
+        remainingInSoldLots += pool.remainingCost;
+        remainingQtyInSoldLots += Math.max(pool.sellableQty - pool.soldQty, 0);
+      }
     }
   });
   // Unsold remainder of lots bought this period with no sales yet — still
@@ -989,18 +1023,20 @@ function SalesPageContent() {
   periodPurchases.forEach(p => {
     if (!p.sku || seenSoldSkus.has(p.sku) || !skuTotalCostMap.has(p.sku)) return;
     seenSoldSkus.add(p.sku);
-    const lot = skuTotalCostMap.get(p.sku) ?? 0;
-    const purchased = skuQtyPurchasedMap.get(p.sku) ?? 0;
-    const soldAll = skuQtySoldAllMap.get(p.sku) ?? 0;
-    remainingInSoldLots += remainingLotValue(lot, purchased, soldAll);
-    remainingQtyInSoldLots += Math.max(purchased - soldAll, 0);
+    const pool = poolBySku.get(p.sku);
+    if (pool) {
+      remainingInSoldLots += pool.remainingCost;
+      remainingQtyInSoldLots += Math.max(pool.sellableQty - pool.soldQty, 0);
+    }
   });
   soldCogs = roundMoney(soldCogs);
   remainingInSoldLots = roundMoney(remainingInSoldLots);
   const avgUnitCost = periodQtySoldMatched > 0 ? soldCogs / periodQtySoldMatched : 0;
-  const qtyUndercounted = Array.from(seenSoldSkus).some(sku =>
-    (skuQtySoldAllMap.get(sku) ?? 0) > (skuQtyPurchasedMap.get(sku) ?? 0)
-  );
+  const qtyUndercounted = Array.from(seenSoldSkus).some(sku => {
+    const pool = poolBySku.get(sku);
+    if (pool) return pool.soldQty > pool.sellableQty;
+    return (skuQtySoldAllMap.get(sku) ?? 0) > (skuQtyPurchasedMap.get(sku) ?? 0);
+  });
 
   const sellingCosts = ebayFees + advertising + shipping + supplies + otherExpenses;
   const totalCosts = soldCogs + sellingCosts;
@@ -1103,6 +1139,23 @@ function SalesPageContent() {
                 {[skuMap.get(skuFilter)!.brand, skuMap.get(skuFilter)!.series].filter(Boolean).join(' ')}
               </span>
             )}
+            {poolBySku.get(skuFilter) && (() => {
+              const pool = poolBySku.get(skuFilter)!;
+              return (
+                <span className="text-xs text-gray-400 shrink-0 hidden md:inline">
+                  Sales ${pool.totalNetSales.toFixed(2)}
+                  <span className={`ml-2 ${roiToneClass(pool.realizedRoi)}`} title={ROI_HELP.realized}>
+                    Realized {formatRoiPct(pool.realizedRoi)}
+                  </span>
+                  <span className={`ml-2 ${roiToneClass(pool.lotToDateRoi)}`} title={ROI_HELP.lotToDate}>
+                    Lot-to-date {formatRoiPct(pool.lotToDateRoi)}
+                  </span>
+                  <span className="ml-2 text-gray-500">
+                    {pool.soldQty} sold / {pool.sellableQty} sellable
+                  </span>
+                </span>
+              );
+            })()}
             <span className="text-xs text-gray-500 shrink-0">
               {filtered.length} sale{filtered.length === 1 ? '' : 's'}
             </span>
@@ -1187,7 +1240,7 @@ function SalesPageContent() {
             {
               label: 'Actual ROI',
               value: actualRoiPct === null ? '—' : `${actualRoiPct > 0 ? '+' : ''}${actualRoiPct.toFixed(1)}%`,
-              sub: soldCogs > 0 ? 'net vs cost of cards sold' : 'no matched lots in period',
+              sub: soldCogs > 0 ? 'realized: net vs cost of cards sold' : 'no matched lots in period',
               color:
                 actualRoiPct === null
                   ? 'text-gray-400'
@@ -1225,7 +1278,7 @@ function SalesPageContent() {
             {
               label: 'Cost of goods sold',
               value: fmt$(soldCogs),
-              title: 'Lot cost ÷ cards in the lot × cards sold. Unsold cards are not an expense.',
+              title: 'Allocated cost of cards sold this period. Unsold cards are not an expense.',
               sub: soldCogs > 0
                 ? `${periodQtySoldMatched} card${periodQtySoldMatched === 1 ? '' : 's'} × avg ${fmt$(avgUnitCost)}${qtyUndercounted ? ' · check lot qty' : ''}`
                 : matched < periodStatsSales.length
@@ -1235,7 +1288,7 @@ function SalesPageContent() {
             {
               label: 'Still on hand',
               value: fmt$(remainingInSoldLots),
-              title: 'Unsold remainder of lots you sold from or bought this period, at average unit cost.',
+              title: 'Unsold remainder of lots you sold from or bought this period, at remaining allocated cost.',
               sub: remainingQtyInSoldLots > 0
                 ? `${remainingQtyInSoldLots} unsold card${remainingQtyInSoldLots === 1 ? '' : 's'} in those lots`
                 : qtyUndercounted
@@ -1416,21 +1469,21 @@ function SalesPageContent() {
                 </th>
                 <th
                   className="px-3 py-3"
-                  title="Your cost for the cards on this row: lot cost ÷ cards in the lot, times quantity. Not profit."
+                  title="This sale’s share of the pool basis (allocated cost of the card sold)."
                 >
                   Card cost
                 </th>
                 <th
                   className="px-3 py-3"
-                  title="All-in for this purchase: (net after selling costs − cost of cards sold) / cost of cards sold. Shown once per SKU. Unsold cards are not included."
+                  title={ROI_HELP.realized}
                 >
-                  Lot ROI
+                  Realized
                 </th>
                 <th
                   className="px-3 py-3"
-                  title="Lot revenue (sold-for + buyer shipping) vs cost of cards sold. Ignores fees, ads, postage, supplies. Shown once per SKU."
+                  title={ROI_HELP.lotToDate}
                 >
-                  Lot ROI ex-costs
+                  Lot-to-date
                 </th>
                 <th className="px-3 py-3">Shipped</th>
                 <th className="px-3 py-3 w-16">Stats</th>
@@ -1547,82 +1600,99 @@ function SalesPageContent() {
                       {fmt$(costs.net)}
                     </td>
 
-                    {/* Card cost of this sale (lot ÷ cards × qty), not the whole lot */}
+                    {/* Card cost of this sale (this card’s share of pool basis) */}
                     <td className="px-3 py-3 text-sm text-gray-300 tabular-nums">
                       {(() => {
                         if (!sale.sku) return <span className="text-gray-600 italic text-xs">no match</span>;
-                        const unit = unitCostForSku(sale.sku);
-                        if (unit == null) return <span className="text-gray-600 italic text-xs">no match</span>;
+                        const pool = poolForSku(sale.sku);
+                        if (!pool) return <span className="text-gray-600 italic text-xs">no match</span>;
                         const qty = sale.quantity_sold || 1;
-                        const cogs = saleUnitCogs(unit, qty);
-                        const lot = skuTotalCostMap.get(sale.sku) ?? 0;
-                        const purchased = skuQtyPurchasedMap.get(sale.sku) ?? 0;
-                        const soldAll = skuQtySoldAllMap.get(sale.sku) ?? 0;
-                        const basis = Math.max(purchased, soldAll, 1);
+                        const linkedId = saleToPoolItem.get(sale.id);
+                        const linked = pool.allocatedLines.find(l => l.id === linkedId);
+                        const cogs = linked
+                          ? roundMoney(linked.allocatedCost)
+                          : saleShareOfPoolCogs(pool, qty);
+                        const items = (purchasesBySku.get(sale.sku) ?? []).flatMap(p => p.items ?? []);
                         return (
-                          <span
-                            title={`lot ${fmt$(lot)} ÷ ${basis} cards = ${fmt$(unit)} each${qty > 1 ? ` · this row ${fmt$(unit)} × ${qty} = ${fmt$(cogs)}` : ''}${soldAll > purchased ? ' · sold more than recorded on the purchase' : ''}`}
-                          >
-                            {fmt$(cogs)}
-                            {qty > 1 && (
-                              <span className="block text-[10px] font-normal text-gray-500">
-                                {fmt$(unit)} × {qty}
-                              </span>
+                          <div className="flex flex-col gap-0.5">
+                            <span
+                              title={
+                                linked
+                                  ? `${linked.label || 'pool card'} basis ${fmt$(cogs)}`
+                                  : `sold cost ${fmt$(pool.costOfSold)} ÷ ${pool.soldQty} sold = ${fmt$(cogs)} each`
+                              }
+                            >
+                              {fmt$(cogs)}
+                            </span>
+                            {items.length > 0 && (
+                              <select
+                                className="bg-gray-800 border border-gray-700 rounded px-1 py-0.5 text-[10px] text-gray-400 max-w-[140px]"
+                                value={linkedId ?? ''}
+                                onChange={async e => {
+                                  const poolItemId = e.target.value || null;
+                                  await fetch('/api/ebay/sold-orders', {
+                                    method: 'PATCH',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ id: sale.id, pool_item_id: poolItemId }),
+                                  });
+                                  loadPurchases();
+                                }}
+                                title="Match this sale to a specific pool card"
+                              >
+                                <option value="">avg basis</option>
+                                {items.map(it => (
+                                  <option key={it.id} value={it.id}>
+                                    {it.label || POOL_ITEM_STATUS_LABELS[it.status] || it.id.slice(0, 6)}
+                                  </option>
+                                ))}
+                              </select>
                             )}
-                          </span>
+                          </div>
                         );
                       })()}
                     </td>
 
-                    {/* Lot ROI — once per SKU, all-in vs cost of cards sold */}
+                    {/* Realized ROI — once per SKU */}
                     <td
                       className="px-3 py-3 text-sm tabular-nums"
-                      title={!showLotRoi && sale.sku ? 'Lot ROI is shown on the first sale of this SKU' : undefined}
+                      title={!showLotRoi && sale.sku ? 'Pool ROI is shown on the first sale of this SKU' : ROI_HELP.realized}
                     >
                       {(() => {
                         if (!showLotRoi) {
                           return <span className="sr-only">same lot as first {sale.sku} row</span>;
                         }
-                        const metrics = lotRoiForSku(sale.sku!);
-                        const roi = metrics?.actual ?? null;
+                        const pool = poolForSku(sale.sku!);
+                        const roi = pool?.realizedRoi ?? null;
                         if (roi == null) return <span className="text-gray-600">—</span>;
-                        const color = roi > 0 ? 'text-green-400' : roi < 0 ? 'text-red-400' : 'text-gray-400';
-                        const sign = roi > 0 ? '+' : '';
-                        const net = skuTotalNetMap.get(sale.sku!) ?? 0;
-                        const soldAll = skuQtySoldAllMap.get(sale.sku!) ?? 0;
                         return (
                           <span
-                            className={`font-medium ${color}`}
-                            title={`${sale.sku}: ${soldAll} sold · net ${fmt$(net)} − card cost ${fmt$(metrics!.soldCogs)} = ${fmt$(net - metrics!.soldCogs)}`}
+                            className={`font-medium ${roiToneClass(roi)}`}
+                            title={`${sale.sku}: ${pool!.soldQty} sold · net ${fmt$(pool!.totalNetSales)} − sold cost ${fmt$(pool!.costOfSold)} = ${fmt$(pool!.realizedProfit)}`}
                           >
-                            {sign}{roi.toFixed(1)}%
+                            {formatRoiPct(roi, 1)}
                           </span>
                         );
                       })()}
                     </td>
 
-                    {/* Lot ROI excluding selling costs — once per SKU */}
+                    {/* Lot-to-date ROI — once per SKU */}
                     <td
                       className="px-3 py-3 text-sm tabular-nums"
-                      title={!showLotRoi && sale.sku ? 'Lot ROI is shown on the first sale of this SKU' : undefined}
+                      title={!showLotRoi && sale.sku ? 'Pool ROI is shown on the first sale of this SKU' : ROI_HELP.lotToDate}
                     >
                       {(() => {
                         if (!showLotRoi) {
                           return <span className="sr-only">same lot as first {sale.sku} row</span>;
                         }
-                        const metrics = lotRoiForSku(sale.sku!);
-                        const roi = metrics?.exCosts ?? null;
+                        const pool = poolForSku(sale.sku!);
+                        const roi = pool?.lotToDateRoi ?? null;
                         if (roi == null) return <span className="text-gray-600">—</span>;
-                        const color = roi > 0 ? 'text-green-400' : roi < 0 ? 'text-red-400' : 'text-gray-400';
-                        const sign = roi > 0 ? '+' : '';
-                        const revenue = skuTotalRevenueMap.get(sale.sku!) ?? 0;
-                        const soldAll = skuQtySoldAllMap.get(sale.sku!) ?? 0;
                         return (
                           <span
-                            className={`font-medium ${color}`}
-                            title={`${sale.sku}: ${soldAll} sold · revenue ${fmt$(revenue)} vs card cost ${fmt$(metrics!.soldCogs)}`}
+                            className={`font-medium ${roiToneClass(roi)}`}
+                            title={`${sale.sku}: net ${fmt$(pool!.totalNetSales)} vs full buy ${fmt$(pool!.purchaseCost)} · recovered ${pool!.recoveredPct == null ? '—' : `${Math.round(pool!.recoveredPct)}%`}`}
                           >
-                            {sign}{roi.toFixed(1)}%
+                            {formatRoiPct(roi, 1)}
                           </span>
                         );
                       })()}

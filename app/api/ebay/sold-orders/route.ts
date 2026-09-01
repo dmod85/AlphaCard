@@ -272,9 +272,33 @@ export async function PATCH(request: NextRequest) {
     if (body.exclude_from_stats !== undefined) {
       await setSalesExcluded(targetIds, !!body.exclude_from_stats);
     }
+    if (body.pool_item_id !== undefined) {
+      try {
+        for (const saleId of targetIds) {
+          await supabaseAdmin
+            .from('purchase_pool_items')
+            .update({ sale_id: null, status: 'listed' })
+            .eq('sale_id', saleId);
+          if (body.pool_item_id) {
+            const { error: itemErr } = await supabaseAdmin
+              .from('purchase_pool_items')
+              .update({ sale_id: saleId, status: 'sold' })
+              .eq('id', body.pool_item_id);
+            if (itemErr) throw itemErr;
+          }
+        }
+      } catch (itemErr: any) {
+        if (!/purchase_pool_items/i.test(itemErr?.message || '')) throw itemErr;
+      }
+    }
     if (Object.keys(updates).length === 0) {
-      if (body.exclude_from_stats !== undefined) {
-        return NextResponse.json({ ok: true, ids: targetIds, exclude_from_stats: !!body.exclude_from_stats });
+      if (body.exclude_from_stats !== undefined || body.pool_item_id !== undefined) {
+        return NextResponse.json({
+          ok: true,
+          ids: targetIds,
+          exclude_from_stats: body.exclude_from_stats,
+          pool_item_id: body.pool_item_id ?? null,
+        });
       }
       return NextResponse.json({ error: 'no fields to update' }, { status: 400 });
     }
