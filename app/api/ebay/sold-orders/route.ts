@@ -17,6 +17,7 @@ import {
 } from '@/app/lib/ebay-orders';
 import { applyCostDefaultsToRow } from '@/app/lib/pnl';
 import { applySellerLabelCosts } from '@/app/lib/ebay-label-costs';
+import { clearEstimatedAdFees } from '@/app/lib/clear-estimated-ads';
 import { setSalesExcluded, withExclusionFlags } from '@/app/lib/sale-exclusions';
 
 // -----------------------------------------------------------------------
@@ -28,9 +29,9 @@ import { setSalesExcluded, withExclusionFlags } from '@/app/lib/sale-exclusions'
 //   ?page=1    — single eBay page (omit to walk every page in the lookback)
 //   ?sync=false — skip eBay call, just return DB rows
 //
-// Existing sales keep SKU/ads/supplies. eBay fee is backfilled from
-// GetOrders FinalValueFee when present. Seller-paid postage is matched from
-// Finances SHIPPING_LABEL txs (postpaid eSE) after each sync.
+// Existing sales keep SKU/supplies. eBay fee is backfilled from GetOrders
+// FinalValueFee when present. Promoted-listing ads and seller-paid postage
+// stay null until Finances posts them (eSE labels often land hours later).
 //
 // PATCH /api/ebay/sold-orders         — update a single sale's SKU
 //   body: { id, sku }
@@ -45,6 +46,13 @@ export async function GET(request: NextRequest) {
     const startPage = parseInt(pageParam || '1', 10);
     const fetchAllPages = pageParam == null;
     const shouldSync = searchParams.get('sync') !== 'false';
+
+    // Drop leftover 16% ad estimates so ROI only counts Finances-reported ads.
+    try {
+      await clearEstimatedAdFees();
+    } catch (err: any) {
+      console.error('[sold-orders] clear ads:', err?.message || err);
+    }
 
     // If not syncing, just return DB rows
     if (!shouldSync) {

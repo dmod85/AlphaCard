@@ -24,6 +24,7 @@ import {
   type PoolItemStatus,
   type PoolMetrics,
 } from '@/app/lib/pool-roi';
+import { orderHeadIds, ordersWithDuplicatedBuyerShipping } from '@/app/lib/order-costs';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -255,12 +256,16 @@ function CostCell({
   fallback,
   field,
   onSaved,
+  pendingLabel,
+  pendingTitle,
 }: {
   saleId: string;
   value: number | null;
   fallback: number;
   field: 'ebay_fee' | 'advertising_fee' | 'shipping_cost' | 'supplies_cost';
   onSaved: (id: string, field: string, amount: number) => void;
+  pendingLabel?: string;
+  pendingTitle?: string;
 }) {
   const [editing, setEditing] = useState(false);
   const stored = value != null ? Number(value) : null;
@@ -281,6 +286,12 @@ function CostCell({
     if (saving) return;
     const parsed = parseFloat(text);
     const amount = Number.isFinite(parsed) ? Math.round(parsed * 100) / 100 : fallback;
+    // Clicking a pending cell and blurring must not write $0, or Finances
+    // will skip the row when the real label/ad posts later.
+    if (stored == null && text === fallback.toFixed(2)) {
+      setEditing(false);
+      return;
+    }
     setSaving(true);
     try {
       const res = await fetch('/api/ebay/sold-orders', {
@@ -319,9 +330,9 @@ function CostCell({
       type="button"
       onClick={() => setEditing(true)}
       className={`tabular-nums text-xs hover:text-white transition ${isEstimate ? 'text-gray-500 italic' : 'text-gray-300'}`}
-      title={isEstimate ? 'Estimated — click to set actual' : 'Click to edit'}
+      title={isEstimate ? (pendingTitle || 'Not posted by eBay yet — click to set') : 'Click to edit'}
     >
-      {fmt$(stored != null ? stored : fallback)}
+      {isEstimate && pendingLabel ? pendingLabel : fmt$(stored != null ? stored : fallback)}
       {saving && <span className="text-gray-600"> …</span>}
     </button>
   );
@@ -508,7 +519,6 @@ function DefaultsPanel({
     default_supplies_cost: settings.default_supplies_cost.toString(),
     default_fee_rate: (settings.default_fee_rate * 100).toString(),
     default_processing_fee: settings.default_processing_fee.toString(),
-    default_ad_rate: (settings.default_ad_rate * 100).toString(),
   });
   const [applyBlank, setApplyBlank] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -530,7 +540,7 @@ function DefaultsPanel({
           default_supplies_cost: parseFloat(form.default_supplies_cost) || 0,
           default_fee_rate: (parseFloat(form.default_fee_rate) || 0) / 100,
           default_processing_fee: parseFloat(form.default_processing_fee) || 0,
-          default_ad_rate: (parseFloat(form.default_ad_rate) || 0) / 100,
+          default_ad_rate: 0,
           apply_to_blank: applyBlank,
         }),
       });
@@ -552,7 +562,7 @@ function DefaultsPanel({
           <div>
             <h2 className="text-white font-semibold text-lg">Cost defaults</h2>
             <p className="text-gray-500 text-xs mt-0.5">
-              Applied to new synced sales and used as estimates when a sale has no actual cost yet
+              Fee rate and supplies apply to new sales. Promoted-listing ads and seller-paid labels stay blank until eBay Finances posts them (often hours later).
             </p>
           </div>
           <button onClick={onClose} className="text-gray-500 hover:text-white text-xl transition">✕</button>
@@ -568,12 +578,9 @@ function DefaultsPanel({
               <input type="number" step="0.01" className="mt-1 w-full bg-gray-800 border border-gray-700 rounded-lg px-2 py-1.5 text-sm text-white focus:outline-none focus:border-blue-500" value={form.default_processing_fee} onChange={e => set('default_processing_fee', e.target.value)} />
             </label>
             <label className="text-xs text-gray-400">
-              Promoted listings rate (%)
-              <input type="number" step="0.01" className="mt-1 w-full bg-gray-800 border border-gray-700 rounded-lg px-2 py-1.5 text-sm text-white focus:outline-none focus:border-blue-500" value={form.default_ad_rate} onChange={e => set('default_ad_rate', e.target.value)} />
-            </label>
-            <label className="text-xs text-gray-400">
-              Shipping per sale ($)
+              Typical label ($)
               <input type="number" step="0.01" className="mt-1 w-full bg-gray-800 border border-gray-700 rounded-lg px-2 py-1.5 text-sm text-white focus:outline-none focus:border-blue-500" value={form.default_shipping_cost} onChange={e => set('default_shipping_cost', e.target.value)} />
+              <span className="block text-[10px] text-gray-600 mt-1">Editor hint only — not written onto sales. Labels fill from eBay.</span>
             </label>
             <label className="text-xs text-gray-400 col-span-2">
               Supplies per sale ($)
@@ -582,7 +589,7 @@ function DefaultsPanel({
           </div>
           <label className="flex items-center gap-2 text-sm text-gray-300">
             <input type="checkbox" checked={applyBlank} onChange={e => setApplyBlank(e.target.checked)} className="rounded border-gray-700 bg-gray-800 text-blue-500" />
-            Fill blank costs on existing sales with these defaults
+            Fill blank eBay fees and supplies on existing sales (never ads or shipping)
           </label>
           {error && <p className="text-xs text-red-400">{error}</p>}
           <div className="flex justify-end gap-2">
@@ -671,18 +678,16 @@ function SalesPageContent() {
     });
   });
 
-  const firstSaleIdByOrder = new Map<string, string>();
-  sales.forEach(s => {
-    if (!firstSaleIdByOrder.has(s.order_number)) firstSaleIdByOrder.set(s.order_number, s.id);
-  });
+  const firstSaleIdByOrder = orderHeadIds(sales);
+  const duplicatedBuyerShip = ordersWithDuplicatedBuyerShipping(sales);
 
   function saleCosts(sale: Sale) {
     const head = firstSaleIdByOrder.get(sale.order_number) === sale.id;
+    const dupBuyer = duplicatedBuyerShip.has(sale.order_number);
     return resolvedSaleCosts({
       ...sale,
-      order_shipping_cost: head ? sale.order_shipping_cost : 0,
-      // Extra lines of a combined invoice shouldn't inherit the $0.78 default.
-      shipping_cost: sale.shipping_cost != null ? sale.shipping_cost : (head ? null : 0),
+      order_shipping_cost: dupBuyer && !head ? 0 : sale.order_shipping_cost,
+      shipping_cost: sale.shipping_cost,
     }, settings);
   }
 
@@ -765,8 +770,7 @@ function SalesPageContent() {
         }
         if (!ac.signal.aborted) setLoading(false);
 
-        // Postpaid eSE label fees land after the sale. Pull them so $0.78
-        // stops showing as an italic estimate when eBay already charged it.
+        // Postpaid eSE labels and promoted-listing ads land after the sale.
         try {
           const labelRes = await fetch('/api/ebay/seller-costs', {
             method: 'POST',
@@ -845,7 +849,7 @@ function SalesPageContent() {
         const max = Number(data.maxLabelCost);
         msg += ` Typical label ${fmt$(typical)}`;
         if (min !== max) msg += ` (range ${fmt$(min)}–${fmt$(max)})`;
-        msg += '. Italic amounts are estimates; solid amounts are from eBay order earnings (fees, ads, seller-paid labels). Buyer-paid shipping is added into Net.';
+        msg += '. Solid amounts are from eBay (fees, ads, seller-paid labels). Ads and labels stay pending until Finances posts them. Buyer-paid shipping is added into Net.';
       }
       if (found > 0 && matched === 0) {
         const fromEbay = (data.sampleLabelOrderIds || []).join(', ') || 'none';
@@ -1309,12 +1313,16 @@ function SalesPageContent() {
             {
               label: 'Advertising',
               value: fmt$(advertising),
-              sub: expenseSum('advertising') > 0 ? `incl. ${fmt$(expenseSum('advertising'))} logged` : 'promoted listings',
+              sub: expenseSum('advertising') > 0 ? `incl. ${fmt$(expenseSum('advertising'))} logged` : 'from eBay Finances only',
             },
             {
               label: 'Shipping',
               value: fmt$(shipping),
-              sub: expenseSum('shipping') > 0 ? `incl. ${fmt$(expenseSum('shipping'))} logged` : 'seller-paid eBay labels',
+              sub: expenseSum('shipping') > 0
+                ? `incl. ${fmt$(expenseSum('shipping'))} logged`
+                : periodStatsSales.some(s => s.shipping_cost == null && firstSaleIdByOrder.get(s.order_number) === s.id)
+                  ? 'pending labels not in ROI yet'
+                  : 'seller-paid eBay labels',
             },
             {
               label: 'Supplies',
@@ -1576,7 +1584,15 @@ function SalesPageContent() {
 
                     {/* Ads */}
                     <td className="px-3 py-3">
-                      <CostCell saleId={sale.id} field="advertising_fee" value={sale.advertising_fee ?? null} fallback={costs.advertising} onSaved={handleCostSaved} />
+                      <CostCell
+                        saleId={sale.id}
+                        field="advertising_fee"
+                        value={sale.advertising_fee ?? null}
+                        fallback={0}
+                        pendingLabel="—"
+                        pendingTitle="Only filled when eBay Finances reports a promoted-listing fee. Click to set."
+                        onSaved={handleCostSaved}
+                      />
                     </td>
 
                     {/* Ship */}
@@ -1584,8 +1600,14 @@ function SalesPageContent() {
                       <CostCell
                         saleId={sale.id}
                         field="shipping_cost"
-                        value={isOrderHead ? (sale.shipping_cost ?? null) : (sale.shipping_cost ?? 0)}
-                        fallback={isOrderHead ? costs.shipping : 0}
+                        value={sale.shipping_cost ?? null}
+                        fallback={0}
+                        pendingLabel={isOrderHead ? 'pending' : '—'}
+                        pendingTitle={
+                          isOrderHead
+                            ? 'Seller-paid label not posted yet. eBay often charges eSE hours later. Click to set.'
+                            : 'Share of the order label fills from eBay. Click to set.'
+                        }
                         onSaved={handleCostSaved}
                       />
                     </td>

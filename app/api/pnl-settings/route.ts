@@ -2,10 +2,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/app/lib/supabase-admin';
 import {
     DEFAULT_PNL_SETTINGS,
-    estimateAdFee,
     estimateEbayFee,
     type PnlSettings,
 } from '@/app/lib/pnl';
+import { clearEstimatedAdFees } from '@/app/lib/clear-estimated-ads';
 
 async function loadSettings(): Promise<PnlSettings> {
     const { data, error } = await supabaseAdmin
@@ -49,6 +49,10 @@ export async function PATCH(request: NextRequest) {
             if (body[k] !== undefined) updates[k] = parseFloat(body[k]) || 0;
         }
 
+        // Ads are Finances-only. Never persist a default rate that would get
+        // baked back into advertising_fee.
+        updates.default_ad_rate = 0;
+
         if (Object.keys(updates).length > 0) {
             const { error } = await supabaseAdmin
                 .from('pnl_settings')
@@ -56,6 +60,7 @@ export async function PATCH(request: NextRequest) {
             if (error) throw error;
         }
 
+        const ads = await clearEstimatedAdFees();
         const settings = await loadSettings();
 
         let filled = 0;
@@ -68,8 +73,7 @@ export async function PATCH(request: NextRequest) {
             for (const s of sales ?? []) {
                 const patch: Record<string, number> = {};
                 if (s.ebay_fee == null) patch.ebay_fee = estimateEbayFee(Number(s.sold_for || 0), settings);
-                if (s.advertising_fee == null) patch.advertising_fee = estimateAdFee(Number(s.sold_for || 0), settings);
-                if (s.shipping_cost == null) patch.shipping_cost = settings.default_shipping_cost;
+                // Do not write ads or shipping — those land from eBay Finances later.
                 if (s.supplies_cost == null) patch.supplies_cost = settings.default_supplies_cost;
                 if (Object.keys(patch).length === 0) continue;
                 const { error: upErr } = await supabaseAdmin.from('ebay_sales').update(patch).eq('id', s.id);
@@ -77,7 +81,7 @@ export async function PATCH(request: NextRequest) {
             }
         }
 
-        return NextResponse.json({ settings, filled });
+        return NextResponse.json({ settings, filled, adsCleared: ads.cleared });
     } catch (err: any) {
         return NextResponse.json({ error: err.message }, { status: 500 });
     }

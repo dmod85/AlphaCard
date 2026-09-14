@@ -7,6 +7,7 @@ import {
   resolvedSaleCosts,
   type PnlSettings,
 } from '@/app/lib/pnl';
+import { orderHeadIds, ordersWithDuplicatedBuyerShipping } from '@/app/lib/order-costs';
 import {
   ALLOCATION_MODE_LABELS,
   ALLOCATION_MODES,
@@ -1188,16 +1189,15 @@ function PurchasesPageContent() {
 
   // Group by sku
   const groups: SkuGroup[] = (() => {
-    const firstSaleIdByOrder = new Map<string, string>();
-    sales.forEach(s => {
-      if (!firstSaleIdByOrder.has(s.order_number)) firstSaleIdByOrder.set(s.order_number, s.id);
-    });
+    const firstSaleIdByOrder = orderHeadIds(sales);
+    const duplicatedBuyerShip = ordersWithDuplicatedBuyerShipping(sales);
     function saleNet(s: any) {
       const head = firstSaleIdByOrder.get(s.order_number) === s.id;
+      const dupBuyer = duplicatedBuyerShip.has(s.order_number);
       return resolvedSaleCosts({
         ...s,
-        order_shipping_cost: head ? s.order_shipping_cost : 0,
-        shipping_cost: s.shipping_cost != null ? s.shipping_cost : (head ? null : 0),
+        order_shipping_cost: dupBuyer && !head ? 0 : s.order_shipping_cost,
+        shipping_cost: s.shipping_cost,
       }, settings).net;
     }
 

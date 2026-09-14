@@ -9,9 +9,10 @@ import { applySellerLabelCosts } from '@/app/lib/ebay-label-costs';
 
 // POST /api/ebay/seller-costs
 //   { days?: number, orderId?: string, quick?: boolean, onlyBlank?: boolean }
-// Italic $0.78 on the sales page is the default estimate (null shipping_cost).
-// Postpaid eSE label fees often land hours after the sale — quick mode scans
-// Finances SHIPPING_LABEL txs (those now carry orderId) and writes shipping_cost.
+// Null shipping_cost / advertising_fee stay pending on the sales page until
+// Finances posts them. Postpaid eSE labels often land hours after the sale —
+// quick mode scans SHIPPING_LABEL txs and writes shipping_cost. Combined
+// invoices split the label across line items instead of dumping it on row 1.
 
 export async function POST(request: NextRequest) {
     try {

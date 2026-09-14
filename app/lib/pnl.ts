@@ -93,6 +93,38 @@ export function estimateAdFee(soldFor: number, settings: PnlSettings): number {
     return roundMoney(Number(soldFor || 0) * settings.default_ad_rate);
 }
 
+/** Rate that used to be baked into advertising_fee on insert. */
+const HISTORICAL_AD_RATES = [0.16];
+
+/**
+ * True when `advertisingFee` is the old 16% (or current default_ad_rate) estimate,
+ * not a Finances-reported promoted-listing charge.
+ */
+export function looksLikeEstimatedAdFee(
+    soldFor: number,
+    advertisingFee: number | null | undefined,
+    buyerShipping = 0,
+    extraRates: number[] = []
+): boolean {
+    if (advertisingFee == null) return false;
+    const amount = roundMoney(Number(advertisingFee));
+    if (!(amount > 0)) return false;
+    const item = Number(soldFor) || 0;
+    const bases = [item];
+    const ship = Number(buyerShipping) || 0;
+    if (ship > 0) bases.push(roundMoney(item + ship));
+    const rates = [
+        ...HISTORICAL_AD_RATES,
+        ...extraRates.filter((r) => Number(r) > 0),
+    ];
+    for (const rate of rates) {
+        for (const base of bases) {
+            if (roundMoney(base * rate) === amount) return true;
+        }
+    }
+    return false;
+}
+
 export interface SaleCostInput {
     sold_for: number;
     order_shipping_cost?: number | null;
@@ -107,13 +139,26 @@ export function resolvedSaleCosts(sale: SaleCostInput, settings: PnlSettings) {
     const buyerShipping = Number(sale.order_shipping_cost || 0);
     const feeBasis = soldFor + buyerShipping;
     const ebayFee = sale.ebay_fee != null ? Number(sale.ebay_fee) : estimateEbayFee(feeBasis, settings);
-    const advertising = sale.advertising_fee != null ? Number(sale.advertising_fee) : estimateAdFee(feeBasis, settings);
-    const shipping = sale.shipping_cost != null ? Number(sale.shipping_cost) : Number(settings.default_shipping_cost);
+    // Ads and seller labels come from eBay Finances, often hours after the sale.
+    // Do not invent them — null means "not posted yet" and does not hit ROI.
+    const advertising = sale.advertising_fee != null ? Number(sale.advertising_fee) : 0;
+    const shipping = sale.shipping_cost != null ? Number(sale.shipping_cost) : 0;
     const supplies = sale.supplies_cost != null ? Number(sale.supplies_cost) : Number(settings.default_supplies_cost);
     const saleCosts = roundMoney(ebayFee + advertising + shipping + supplies);
     // Buyer-paid shipping is revenue; seller-paid label is a cost (shipping).
     const net = roundMoney(soldFor + buyerShipping - saleCosts);
-    return { ebayFee, advertising, shipping, supplies, saleCosts, net, soldFor, buyerShipping };
+    return {
+        ebayFee,
+        advertising,
+        shipping,
+        supplies,
+        saleCosts,
+        net,
+        soldFor,
+        buyerShipping,
+        advertisingPending: sale.advertising_fee == null,
+        shippingPending: sale.shipping_cost == null,
+    };
 }
 
 export function applyCostDefaultsToRow<T extends {
@@ -127,14 +172,15 @@ export function applyCostDefaultsToRow<T extends {
     settings: PnlSettings
 ): T & {
     ebay_fee: number;
-    advertising_fee: number;
+    advertising_fee: number | null;
     shipping_cost: number | null;
     supplies_cost: number;
 } {
     return {
         ...row,
         ebay_fee: row.ebay_fee != null ? Number(row.ebay_fee) : estimateEbayFee(row.sold_for, settings),
-        advertising_fee: row.advertising_fee != null ? Number(row.advertising_fee) : estimateAdFee(row.sold_for, settings),
+        // Promoted-listing fees only when eBay Finances reports them.
+        advertising_fee: row.advertising_fee != null ? Number(row.advertising_fee) : null,
         // Leave null when GetOrders has no postage yet so a later sync can backfill
         // the actual label cost after the seller buys a label.
         shipping_cost: row.shipping_cost != null ? Number(row.shipping_cost) : null,

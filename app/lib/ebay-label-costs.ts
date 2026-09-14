@@ -6,6 +6,7 @@ import {
     fetchSellerLabelCosts,
     matchLabelAmount,
 } from '@/app/lib/ebay-finances';
+import { patchesForOrderCosts } from '@/app/lib/order-costs';
 
 export type ApplyLabelCostsOpts = {
     days?: number;
@@ -44,6 +45,11 @@ type SaleLine = {
     buyer: string | null;
     shipping_service?: string | null;
     shipped_at?: string | null;
+    quantity_sold?: number | null;
+    sold_for?: number | null;
+    ebay_fee?: number | null;
+    advertising_fee?: number | null;
+    order_shipping_cost?: number | null;
 };
 
 export async function applySellerLabelCosts(
@@ -63,7 +69,7 @@ export async function applySellerLabelCosts(
     const { data: sales, error: salesErr } = await supabaseAdmin
         .from('ebay_sales')
         .select(
-            'id, order_number, sales_record_number, sale_date, tracking_number, shipping_cost, buyer, shipping_service, shipped_at'
+            'id, order_number, sales_record_number, sale_date, tracking_number, shipping_cost, buyer, shipping_service, shipped_at, quantity_sold, sold_for, ebay_fee, advertising_fee, order_shipping_cost'
         )
         .order('sale_date', { ascending: true });
     if (salesErr) throw salesErr;
@@ -96,25 +102,17 @@ export async function applySellerLabelCosts(
             buyer?: string | null;
         }
     ) => {
+        const patches = patchesForOrderCosts(lines, detail, { onlyBlankShipping: onlyBlank });
         for (let i = 0; i < lines.length; i++) {
-            const first = i === 0;
             const line = lines[i];
-            const patch: Record<string, number | string | null> = {};
-            if (detail.amount != null) {
-                const blank = line.shipping_cost == null;
-                if (!onlyBlank || blank) patch.shipping_cost = first ? detail.amount : 0;
-            }
-            if (detail.ebayFee != null) patch.ebay_fee = first ? detail.ebayFee : 0;
-            if (detail.adFee != null) patch.advertising_fee = first ? detail.adFee : 0;
-            if (detail.buyerShipping != null) {
-                patch.order_shipping_cost = first ? detail.buyerShipping : 0;
-            }
-            if (first && detail.buyer && !line.buyer) patch.buyer = detail.buyer;
+            const patch: Record<string, number | string | null> = { ...(patches.get(line.id) ?? {}) };
+            if (i === 0 && detail.buyer && !line.buyer) patch.buyer = detail.buyer;
             if (Object.keys(patch).length === 0) continue;
             const { error } = await supabaseAdmin.from('ebay_sales').update(patch).eq('id', line.id);
             if (!error) {
                 updatedRows += 1;
                 if (patch.shipping_cost != null) line.shipping_cost = Number(patch.shipping_cost);
+                if (patch.advertising_fee != null) line.advertising_fee = Number(patch.advertising_fee);
                 if (typeof patch.buyer === 'string') line.buyer = patch.buyer;
             }
         }
@@ -192,7 +190,7 @@ export async function applySellerLabelCosts(
 
         if (onlyBlank) {
             for (const [orderNumber, lines] of Array.from(byOrder.entries())) {
-                if (lines[0]?.shipping_cost != null) matchedOrderNumbers.add(orderNumber);
+                if (lines.some((l) => l.shipping_cost != null)) matchedOrderNumbers.add(orderNumber);
             }
         }
 
@@ -248,10 +246,12 @@ export async function applySellerLabelCosts(
                     return { orderNumber, lines, latest };
                 })
                 .filter((x) => {
-                    if (matchedOrderNumbers.has(x.orderNumber)) return false;
                     const inRange = x.latest >= cutoff;
-                    const blank = x.lines.some((l) => l.shipping_cost == null);
-                    return inRange && blank;
+                    if (!inRange) return false;
+                    const needsShip = x.lines.some((l) => l.shipping_cost == null);
+                    const needsAd = x.lines.some((l) => l.advertising_fee == null);
+                    const needsBuyer = x.lines.some((l) => l.order_shipping_cost == null);
+                    return needsShip || needsAd || needsBuyer;
                 })
                 .sort((a, b) => (a.latest < b.latest ? 1 : -1))
                 .slice(0, 80);
@@ -274,6 +274,11 @@ export async function applySellerLabelCosts(
                             );
                             if (fallback != null) detail.amount = fallback;
                         }
+                        const lookedUp = (detail.txTypes || []).some((t) => /^http:2/.test(t));
+                        // A successful Finances read with no promoted-listing line
+                        // is $0 ads, not "still pending" — otherwise the 80-order
+                        // lookup queue never moves past recent unpromoted sales.
+                        if (lookedUp && detail.adFee == null) detail.adFee = 0;
                         if (
                             detail.amount == null &&
                             detail.ebayFee == null &&
