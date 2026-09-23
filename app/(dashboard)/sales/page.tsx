@@ -1140,7 +1140,9 @@ function SalesPageContent() {
             </span>
             {skuMap.get(skuFilter) && (
               <span className="text-xs text-gray-400 truncate">
-                {[skuMap.get(skuFilter)!.brand, skuMap.get(skuFilter)!.series].filter(Boolean).join(' ')}
+                {(purchasesBySku.get(skuFilter)?.length ?? 0) > 1
+                  ? `${purchasesBySku.get(skuFilter)!.length} lots pooled`
+                  : [skuMap.get(skuFilter)!.brand, skuMap.get(skuFilter)!.series].filter(Boolean).join(' ')}
               </span>
             )}
             {poolBySku.get(skuFilter) && (() => {
@@ -1555,7 +1557,11 @@ function SalesPageContent() {
                           className="inline-flex items-center gap-1 bg-green-500/15 text-green-400 border border-green-500/30 text-[11px] font-medium px-2 py-0.5 rounded-full hover:bg-green-500/25 transition"
                         >
                           <span>✓</span>
-                          <span>{[match.brand, match.series].filter(Boolean).join(' ') || sale.sku}</span>
+                          <span>
+                            {(purchasesBySku.get(sale.sku!)?.length ?? 0) > 1
+                              ? `${sale.sku} · ${purchasesBySku.get(sale.sku!)!.length} lots`
+                              : [match.brand, match.series].filter(Boolean).join(' ') || sale.sku}
+                          </span>
                         </a>
                       ) : (
                         <span className="text-gray-700 text-xs">—</span>

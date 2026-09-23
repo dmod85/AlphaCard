@@ -938,7 +938,7 @@ function SkuGroupRow({
       <tr
         className={`border-b border-gray-800/60 hover:bg-gray-800/30 transition select-none ${expanded ? 'bg-gray-800/20' : ''} ${group.sku ? 'cursor-pointer' : ''}`}
         onClick={e => handleRowClick(e, group.sku)}
-        title={group.sku ? 'View all sales from this purchase' : undefined}
+        title={group.sku ? (hasSubs ? `View all sales for SKU ${group.sku} (${group.purchases.length} lots pooled)` : 'View all sales from this purchase') : undefined}
       >
         <td className="px-4 py-3 text-gray-400 text-xs w-6">
           {hasSubs && (
@@ -969,7 +969,15 @@ function SkuGroupRow({
         </td>
         <td className="px-3 py-3 text-sm text-gray-300"><EditableCell purchase={first} field="year" type="number" onSaved={onRefresh} /></td>
         <td className="px-3 py-3 text-sm text-gray-200"><EditableCell purchase={first} field="brand" type="select" options={BRANDS} onSaved={onRefresh} /></td>
-        <td className="px-3 py-3 text-sm text-blue-300"><EditableCell purchase={first} field="series" onSaved={onRefresh} /></td>
+        <td className="px-3 py-3 text-sm text-blue-300">
+          {hasSubs ? (
+            <span title={`${group.purchases.length} separate buys share SKU ${group.sku}. Expand to see each lot.`}>
+              Pooled · {group.purchases.length} lots
+            </span>
+          ) : (
+            <EditableCell purchase={first} field="series" onSaved={onRefresh} />
+          )}
+        </td>
         <td className="px-3 py-3 text-sm text-gray-300"><EditableCell purchase={first} field="sport" type="select" options={SPORTS} onSaved={onRefresh} /></td>
         <td className="px-3 py-3 text-sm text-gray-400">
           <div className="flex items-center gap-1.5">
@@ -1004,7 +1012,7 @@ function SkuGroupRow({
         <td className="px-3 py-3" title={`${group.metrics.soldQty} sold / ${group.metrics.sellableQty} sellable`}>
           <SoldBadge sold={group.metrics.soldQty} total={group.metrics.sellableQty} />
         </td>
-        <td className="px-3 py-3 text-sm tabular-nums" title={group.sku ? 'View all sales from this purchase' : undefined}>
+        <td className="px-3 py-3 text-sm tabular-nums" title={group.sku ? (hasSubs ? `View all sales for SKU ${group.sku}` : 'View all sales from this purchase') : undefined}>
           {group.metrics.totalNetSales > 0 ? (
             <span className="text-green-400 font-medium">${group.metrics.totalNetSales.toFixed(2)}</span>
           ) : (
