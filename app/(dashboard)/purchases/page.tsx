@@ -27,6 +27,12 @@ import {
   type PoolLine,
   type PoolMetrics,
 } from '@/app/lib/pool-roi';
+import {
+  PRICE_BAND_TONE,
+  computePriceBandPool,
+  usesPriceBands,
+  type PriceBandPool,
+} from '@/app/lib/price-bands';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -69,6 +75,7 @@ interface SkuGroup {
   totalQuantity: number;
   quantitySold: number;
   metrics: PoolMetrics;
+  bandPool: PriceBandPool | null;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -1065,6 +1072,31 @@ function SkuGroupRow({
         </td>
       </tr>
 
+      {group.bandPool && (
+        <tr className="bg-gray-900/50 border-b border-gray-800/40">
+          <td />
+          <td colSpan={16} className="px-3 py-2">
+            <div className="flex flex-wrap items-center gap-2 pl-6">
+              <span className="text-[10px] uppercase tracking-wide text-gray-500">Price bands</span>
+              {group.bandPool.bands.filter(b => b.qty > 0).map(b => (
+                <span
+                  key={b.id}
+                  className={`text-[11px] px-2 py-0.5 rounded ${PRICE_BAND_TONE[b.id]}`}
+                  title={`${b.label} ${b.hint}: ${b.qty} sold · net $${b.net.toFixed(2)} vs cost $${b.cost.toFixed(2)} (${b.unitCost.toFixed(2)}/card)`}
+                >
+                  {b.label} · {b.qty} · ${b.unitCost.toFixed(2)}/card · {formatRoiPct(b.realizedRoi, 0)}
+                </span>
+              ))}
+              {group.bandPool.remainingCost > 0 && (
+                <span className="text-[11px] text-gray-500">
+                  ${group.bandPool.remainingCost.toFixed(2)} not in a sold band (unsold / no hits yet)
+                </span>
+              )}
+            </div>
+          </td>
+        </tr>
+      )}
+
       {/* Sub-purchase rows */}
       {expanded && group.purchases.length > 1 && group.purchases.map((p) => (
         <tr
@@ -1199,22 +1231,29 @@ function PurchasesPageContent() {
   const groups: SkuGroup[] = (() => {
     const firstSaleIdByOrder = orderHeadIds(sales);
     const duplicatedBuyerShip = ordersWithDuplicatedBuyerShipping(sales);
-    function saleNet(s: any) {
+    function saleCostsRow(s: any) {
       const head = firstSaleIdByOrder.get(s.order_number) === s.id;
       const dupBuyer = duplicatedBuyerShip.has(s.order_number);
       return resolvedSaleCosts({
         ...s,
         order_shipping_cost: dupBuyer && !head ? 0 : s.order_shipping_cost,
         shipping_cost: s.shipping_cost,
-      }, settings).net;
+      }, settings);
     }
 
     const skuTotalSalesMap = new Map<string, number>();
     const skuQuantitySoldMap = new Map<string, number>();
+    const skuBandSales = new Map<string, { quantitySold: number; soldFor: number; net: number }[]>();
     sales.forEach(s => {
       if (s.sku && !s.exclude_from_stats) {
-        skuTotalSalesMap.set(s.sku, (skuTotalSalesMap.get(s.sku) ?? 0) + saleNet(s));
+        const c = saleCostsRow(s);
+        skuTotalSalesMap.set(s.sku, (skuTotalSalesMap.get(s.sku) ?? 0) + c.net);
         skuQuantitySoldMap.set(s.sku, (skuQuantitySoldMap.get(s.sku) ?? 0) + (s.quantity_sold ?? 1));
+        if (usesPriceBands(s.sku)) {
+          const list = skuBandSales.get(s.sku) ?? [];
+          list.push({ quantitySold: s.quantity_sold ?? 1, soldFor: c.soldFor, net: c.net });
+          skuBandSales.set(s.sku, list);
+        }
       }
     });
 
@@ -1230,14 +1269,19 @@ function PurchasesPageContent() {
       const totalCost = ps.reduce((s, p) => s + Number(p.cost || 0), 0);
       const totalQuantity = ps.reduce((s, p) => s + (p.quantity ?? 1), 0);
       const metrics = computePoolMetrics(poolInputFromPurchases(ps, quantitySold, totalSales));
+      const sku = ps[0].sku;
+      const bandPool = sku && usesPriceBands(sku)
+        ? computePriceBandPool(totalCost, skuBandSales.get(sku) ?? [])
+        : null;
       return {
-        sku: ps[0].sku,
+        sku,
         purchases: ps,
         totalCost,
         totalSales,
         totalQuantity,
         quantitySold,
         metrics,
+        bandPool,
       };
     });
   })();

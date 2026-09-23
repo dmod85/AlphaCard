@@ -25,6 +25,14 @@ import {
   type PoolMetrics,
 } from '@/app/lib/pool-roi';
 import { orderHeadIds, ordersWithDuplicatedBuyerShipping } from '@/app/lib/order-costs';
+import {
+  PRICE_BAND_TONE,
+  classifyPriceBand,
+  computePriceBandPool,
+  saleShareOfBandCogs,
+  usesPriceBands,
+  type BandSale,
+} from '@/app/lib/price-bands';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -716,6 +724,21 @@ function SalesPageContent() {
     );
   });
 
+  const skuBandSales = new Map<string, BandSale[]>();
+  statsSales.forEach(s => {
+    if (!s.sku || !usesPriceBands(s.sku)) return;
+    const c = saleCosts(s);
+    const list = skuBandSales.get(s.sku) ?? [];
+    list.push({ quantitySold: s.quantity_sold || 1, soldFor: c.soldFor, net: c.net });
+    skuBandSales.set(s.sku, list);
+  });
+  const bandPoolBySku = new Map<string, ReturnType<typeof computePriceBandPool>>();
+  purchasesBySku.forEach((ps, sku) => {
+    if (!usesPriceBands(sku)) return;
+    const cost = ps.reduce((s, p) => s + Number(p.cost || 0), 0);
+    bandPoolBySku.set(sku, computePriceBandPool(cost, skuBandSales.get(sku) ?? []));
+  });
+
   function unitCostForSku(sku: string): number | null {
     const metrics = poolBySku.get(sku);
     if (!metrics) return null;
@@ -1008,15 +1031,26 @@ function SalesPageContent() {
   const seenSoldSkus = new Set<string>();
   periodStatsSales.forEach(s => {
     if (!s.sku) return;
-    const unit = unitCostForSku(s.sku);
-    if (unit == null) return;
     const qty = s.quantity_sold || 1;
-    soldCogs += unit * qty;
-    periodQtySoldMatched += qty;
+    const bandPool = bandPoolBySku.get(s.sku);
+    if (bandPool) {
+      const c = saleCosts(s);
+      soldCogs += saleShareOfBandCogs(bandPool, { quantitySold: qty, soldFor: c.soldFor, net: c.net });
+      periodQtySoldMatched += qty;
+    } else {
+      const unit = unitCostForSku(s.sku);
+      if (unit == null) return;
+      soldCogs += unit * qty;
+      periodQtySoldMatched += qty;
+    }
     if (!seenSoldSkus.has(s.sku)) {
       seenSoldSkus.add(s.sku);
+      const band = bandPoolBySku.get(s.sku);
       const pool = poolBySku.get(s.sku);
-      if (pool) {
+      if (band) {
+        remainingInSoldLots += band.remainingCost;
+        remainingQtyInSoldLots += Math.max((pool?.sellableQty ?? 0) - band.soldQty, 0);
+      } else if (pool) {
         remainingInSoldLots += pool.remainingCost;
         remainingQtyInSoldLots += Math.max(pool.sellableQty - pool.soldQty, 0);
       }
@@ -1143,6 +1177,19 @@ function SalesPageContent() {
                 {(purchasesBySku.get(skuFilter)?.length ?? 0) > 1
                   ? `${purchasesBySku.get(skuFilter)!.length} lots pooled`
                   : [skuMap.get(skuFilter)!.brand, skuMap.get(skuFilter)!.series].filter(Boolean).join(' ')}
+              </span>
+            )}
+            {bandPoolBySku.get(skuFilter) && (
+              <span className="flex items-center gap-1.5 shrink-0 hidden lg:flex">
+                {bandPoolBySku.get(skuFilter)!.bands.filter(b => b.qty > 0).map(b => (
+                  <span
+                    key={b.id}
+                    className={`text-[10px] px-1.5 py-0.5 rounded ${PRICE_BAND_TONE[b.id]}`}
+                    title={`${b.label} ${b.hint}: ${b.qty} sold · net $${b.net.toFixed(2)} · cost $${b.cost.toFixed(2)} · ${b.unitCost.toFixed(2)}/card`}
+                  >
+                    {b.label} {b.qty} {formatRoiPct(b.realizedRoi, 0)}
+                  </span>
+                ))}
               </span>
             )}
             {poolBySku.get(skuFilter) && (() => {
@@ -1637,9 +1684,15 @@ function SalesPageContent() {
                         const qty = sale.quantity_sold || 1;
                         const linkedId = saleToPoolItem.get(sale.id);
                         const linked = pool.allocatedLines.find(l => l.id === linkedId);
+                        const bandPool = sale.sku ? bandPoolBySku.get(sale.sku) : undefined;
+                        const band = bandPool
+                          ? classifyPriceBand(costs.soldFor / Math.max(qty, 1))
+                          : null;
                         const cogs = linked
                           ? roundMoney(linked.allocatedCost)
-                          : saleShareOfPoolCogs(pool, qty);
+                          : bandPool
+                            ? saleShareOfBandCogs(bandPool, { quantitySold: qty, soldFor: costs.soldFor, net: costs.net })
+                            : saleShareOfPoolCogs(pool, qty);
                         const items = (purchasesBySku.get(sale.sku) ?? []).flatMap(p => p.items ?? []);
                         return (
                           <div className="flex flex-col gap-0.5">
@@ -1647,11 +1700,18 @@ function SalesPageContent() {
                               title={
                                 linked
                                   ? `${linked.label || 'pool card'} basis ${fmt$(cogs)}`
-                                  : `sold cost ${fmt$(pool.costOfSold)} ÷ ${pool.soldQty} sold = ${fmt$(cogs)} each`
+                                  : band
+                                    ? `${band.label} ${band.hint}: ${fmt$(cogs)} basis`
+                                    : `sold cost ${fmt$(pool.costOfSold)} ÷ ${pool.soldQty} sold = ${fmt$(cogs)} each`
                               }
                             >
                               {fmt$(cogs)}
                             </span>
+                            {band && (
+                              <span className={`self-start text-[9px] px-1 py-px rounded ${PRICE_BAND_TONE[band.id]}`}>
+                                {band.label}
+                              </span>
+                            )}
                             {items.length > 0 && (
                               <select
                                 className="bg-gray-800 border border-gray-700 rounded px-1 py-0.5 text-[10px] text-gray-400 max-w-[140px]"
