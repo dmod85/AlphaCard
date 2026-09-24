@@ -172,12 +172,14 @@ function subscribe() {
 function printSlipFromSite(orderNumber) {
   const script = fileURLToPath(new URL('./print-one-order.mjs', import.meta.url));
   return new Promise((resolve, reject) => {
+    const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
     const child = spawn(process.execPath, [script, orderNumber, 'print', 'slip'], {
-      cwd: process.cwd(),
+      cwd: repoRoot,
       env: process.env,
     });
     let err = '';
     child.stderr.on('data', (chunk) => { err += chunk; });
+    child.stdout.on('data', (chunk) => { err += chunk; });
     child.on('error', reject);
     child.on('exit', (code) => {
       if (code === 0) resolve();
@@ -213,6 +215,9 @@ const slipSite = http.createServer(async (req, res) => {
     res.writeHead(500, { 'Content-Type': 'text/plain; charset=utf-8' });
     res.end(err.message || String(err));
   }
+});
+slipSite.on('error', (err) => {
+  console.error('[print-agent] slip link:', err.message);
 });
 slipSite.listen(47622, '127.0.0.1', () => {
   console.log('[print-agent] website print-slip link → http://127.0.0.1:47622/print-slip');
@@ -261,6 +266,7 @@ async function printQueuedSlips() {
   }
 }
 
+await printQueuedSlips();
 setInterval(() => {
   scanNewLabels().catch((err) => console.error('[label]', err.message || err));
   printQueuedSlips().catch((err) => console.error('[print-agent] slip queue:', err.message || err));

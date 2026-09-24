@@ -11,10 +11,11 @@ import {
   rgb,
 } from 'pdf-lib';
 
-// Portrait US Letter, printed at actual size (100%). Content is drawn upright
-// in that page box so the print dialog stays on Portrait and does not scale.
+// Portrait US Letter, printed at actual size (100%). The slip itself is the
+// left half of that page (4.25" wide). The right half stays blank.
 const LETTER_W = 8.5 * 72; // 612pt
 const LETTER_H = 11 * 72; // 792pt
+const SLIP_W = LETTER_W / 2; // 306pt — half the portrait width
 
 // Drop a logo at one of these paths (relative to the repo's public/ dir) to
 // have it appear centered in the header. Falls back to store-name text only
@@ -123,7 +124,7 @@ function wrapText(text: string, font: PDFFont, size: number, maxWidth: number): 
   return lines;
 }
 
-/** Draws one order upright on a portrait letter page. */
+/** Draws one order upright in the left half of a portrait letter page. */
 async function drawSlip(
   page: PDFPage,
   pdfDoc: PDFDocument,
@@ -137,20 +138,19 @@ async function drawSlip(
   const boxFill = rgb(0.95, 0.96, 0.97);
   const accent = rgb(0.13, 0.29, 0.72);
 
-  // 0.5" keeps content inside the area a letter printer can actually mark,
-  // at 100% scale, without the driver shrinking the page to fit.
-  const M = 36;
-  const pageW = LETTER_W;
+  // Small inset so type stays off the paper edge and the center cut.
+  const M = 14;
+  const pageW = SLIP_W;
   const centerLineX = pageW / 2;
   let y = LETTER_H - M;
 
   // ---- Header: logo + store name centered, QR top-right --------------------
   const qrImage = order.storeUrl ? await embedQrCode(pdfDoc, order.storeUrl) : null;
-  const qrSize = 58;
+  const qrSize = 40;
   const headerTop = y;
 
   const logoImage = await embedLogo(pdfDoc);
-  const logoSize = 52;
+  const logoSize = 36;
   if (logoImage) {
     const scaled = logoImage.scaleToFit(logoSize, logoSize);
     page.drawImage(logoImage, {
@@ -160,7 +160,7 @@ async function drawSlip(
       height: scaled.height,
     });
   }
-  const storeNameSize = logoImage ? 13 : 18;
+  const storeNameSize = logoImage ? 10 : 13;
   const storeNameY = logoImage ? headerTop - logoSize - 14 : headerTop - 16;
   page.drawText(order.storeName, {
     x: centerX(fontBold, order.storeName, storeNameSize, centerLineX),
@@ -188,7 +188,7 @@ async function drawSlip(
   y -= 18;
 
   // ---- Order meta (left) + Ship To box (right) ------------------------------
-  const rightColW = 230;
+  const rightColW = 148;
   const rightColX = pageW - M - rightColW;
   const metaTop = y;
 
@@ -206,10 +206,10 @@ async function drawSlip(
   let leftY = metaTop;
   for (const [label, value] of metaRows) {
     if (!value) continue;
-    page.drawText(label, { x: M, y: leftY, size: 8, font, color: gray });
+    page.drawText(label, { x: M, y: leftY, size: 7, font, color: gray });
+    leftY -= 11;
+    page.drawText(value, { x: M, y: leftY, size: 9, font: fontBold, color: black });
     leftY -= 13;
-    page.drawText(value, { x: M, y: leftY, size: 12, font: fontBold, color: black });
-    leftY -= 16;
   }
 
   // Ship-to box
@@ -224,7 +224,7 @@ async function drawSlip(
   const boxPad = 8;
   const boxLineHeight = 13;
   const innerW = rightColW - boxPad * 2;
-  const wrappedShip = shipToLines.flatMap((line) => wrapText(line, fontBold, 11, innerW).slice(0, 2));
+  const wrappedShip = shipToLines.flatMap((line) => wrapText(line, fontBold, 8, innerW).slice(0, 2));
   const boxHeight = boxPad * 2 + 14 + wrappedShip.length * boxLineHeight;
   const boxTop = metaTop;
   const boxBottom = boxTop - boxHeight;
@@ -241,7 +241,7 @@ async function drawSlip(
   page.drawText('SHIP TO', { x: rightColX + boxPad, y: boxY, size: 8, font: fontBold, color: accent });
   boxY -= 15;
   for (const line of wrappedShip) {
-    page.drawText(line, { x: rightColX + boxPad, y: boxY, size: 11, font: fontBold, color: black });
+    page.drawText(line, { x: rightColX + boxPad, y: boxY, size: 8, font: fontBold, color: black });
     boxY -= boxLineHeight;
   }
 
@@ -251,10 +251,10 @@ async function drawSlip(
   y -= 16;
 
   // ---- Items ----------------------------------------------------------------
-  const imgSize = 48;
+  const imgSize = 32;
   const totalColRight = pageW - M;
-  const priceColRight = totalColRight - 72;
-  const qtyColRight = priceColRight - 52;
+  const priceColRight = totalColRight - 46;
+  const qtyColRight = priceColRight - 28;
   const textX = M + imgSize + 8;
   const textWidth = qtyColRight - 16 - textX;
 
@@ -335,7 +335,7 @@ async function drawSlip(
 }
 
 /**
- * Portrait letter packing slip, drawn upright at actual size.
+ * Portrait letter packing slip at actual size. Content is the left half of the page.
  * A second order is placed on its own page.
  */
 export async function generatePackingSlipPdf(
