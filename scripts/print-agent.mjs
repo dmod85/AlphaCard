@@ -1,8 +1,10 @@
 import fs from 'fs';
 import os from 'os';
+import net from 'net';
 import path from 'path';
 import { execFile } from 'child_process';
 import { createClient } from '@supabase/supabase-js';
+import { scanNewLabels } from './label-print.mjs';
 
 // -----------------------------------------------------------------------
 // Local packing-slip print agent.
@@ -53,6 +55,18 @@ for (const [name, val] of Object.entries({ SUPABASE_URL, SUPABASE_KEY, PRINTER_N
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
+const lock = net.createServer();
+await new Promise((resolve, reject) => {
+  lock.once('error', (err) => {
+    if (err.code === 'EADDRINUSE') {
+      console.error('[print-agent] another print agent is already running');
+      process.exit(0);
+    }
+    reject(err);
+  });
+  lock.listen(47621, '127.0.0.1', resolve);
+});
+
 // In-flight guard so a burst of realtime events for the same order (one per
 // line item) doesn't try to print it twice concurrently before the DB claim
 // (printed_at) round-trips.
@@ -78,7 +92,7 @@ function printPdf(filePath) {
   return new Promise((resolve, reject) => {
     execFile(
       SUMATRA_PATH,
-      ['-print-to', PRINTER_NAME, '-print-settings', 'noscale', '-silent', filePath],
+      ['-print-to', PRINTER_NAME, '-print-settings', 'noscale,portrait', '-silent', '-exit-when-done', filePath],
       (err, stdout, stderr) => {
         if (err) reject(new Error(stderr || err.message));
         else resolve();
@@ -153,7 +167,11 @@ function subscribe() {
   return channel;
 }
 
-console.log(`[print-agent] starting — printer "${PRINTER_NAME}"`);
+console.log(`[print-agent] starting — packing slips on "${PRINTER_NAME}", shipping labels on "${process.env.LABEL_PRINTER_NAME || 'Y41BT Label'}"`);
 await catchUpPending();
 subscribe();
-console.log('[print-agent] listening for new packing slips (Ctrl+C to stop)...');
+await scanNewLabels();
+setInterval(() => {
+  scanNewLabels().catch((err) => console.error('[label]', err.message || err));
+}, 5000);
+console.log('[print-agent] listening for new packing slips and shipping labels (Ctrl+C to stop)...');

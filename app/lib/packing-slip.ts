@@ -6,37 +6,15 @@ import {
   PDFPage,
   PDFFont,
   PDFImage,
+  PDFName,
   StandardFonts,
   rgb,
-  pushGraphicsState,
-  popGraphicsState,
-  concatTransformationMatrix,
 } from 'pdf-lib';
 
-// The physical PDF page is a full, plain portrait Letter sheet (8.5"x11").
-// It's deliberately NOT shaped like the 8.5"x5.5" half-slip itself — a
-// landscape-shaped page makes browsers/print drivers auto-switch physical
-// print orientation to Landscape, which stacks a second, unwanted rotation
-// on top of the one already baked into the content below and clips content
-// off the edge. A plain portrait Letter page needs no orientation guessing:
-// it's the standard shape every printer expects by default.
+// Portrait US Letter, printed at actual size (100%). Content is drawn upright
+// in that page box so the print dialog stays on Portrait and does not scale.
 const LETTER_W = 8.5 * 72; // 612pt
 const LETTER_H = 11 * 72; // 792pt
-const HALF_H = 5.5 * 72; // 396pt — height of each half-sheet slip
-
-// Print this at 100% ("Actual size", not "Fit to page") on a standard
-// portrait Letter sheet, then cut once across the middle — no quartering.
-// The top half is the slip; the bottom half is intentionally left blank
-// (a spot for a second slip if this is ever extended to 2-up printing).
-//
-// Each half's content is authored on a portrait "logical" canvas — the
-// half's dimensions swapped — and baked into the content stream
-// pre-rotated via a transform matrix, so it reads correctly once you
-// physically turn the cut half-sheet 90° in hand. Flip ROTATE_CW to
-// reverse direction if it comes out backwards on your printer.
-const ROTATE_CW = true;
-const LOGICAL_W = HALF_H; // 396pt (5.5") — logical canvas width
-const LOGICAL_H = LETTER_W; // 612pt (8.5") — logical canvas height
 
 // Drop a logo at one of these paths (relative to the repo's public/ dir) to
 // have it appear centered in the header. Falls back to store-name text only
@@ -145,42 +123,34 @@ function wrapText(text: string, font: PDFFont, size: number, maxWidth: number): 
   return lines;
 }
 
-/** Draws one order's slip content into a half-sheet region, rotated 90°, with its physical bottom edge at y=offsetY. */
+/** Draws one order upright on a portrait letter page. */
 async function drawSlip(
   page: PDFPage,
   pdfDoc: PDFDocument,
   order: PackingSlipOrder,
   font: PDFFont,
-  fontBold: PDFFont,
-  offsetY: number
+  fontBold: PDFFont
 ) {
-  const matrix: [number, number, number, number, number, number] = ROTATE_CW
-    ? [0, 1, -1, 0, LOGICAL_H, offsetY]
-    : [0, -1, 1, 0, offsetY, LOGICAL_W];
-  page.pushOperators(pushGraphicsState(), concatTransformationMatrix(...matrix));
-
   const gray = rgb(0.45, 0.45, 0.45);
   const black = rgb(0.1, 0.1, 0.1);
   const lightGray = rgb(0.82, 0.82, 0.82);
   const boxFill = rgb(0.95, 0.96, 0.97);
-  const accent = rgb(0.13, 0.29, 0.72); // brand-blue accent for section labels
+  const accent = rgb(0.13, 0.29, 0.72);
 
-  // Margin around the slip's logical edges. This maps to the PHYSICAL page's
-  // left/right/top edges once rotated (only the logical-left edge lands on
-  // the cut line, not a real page edge) — most printers can't physically
-  // print within ~0.2"-0.25" of a sheet edge regardless of what the PDF
-  // says, so this needs real breathing room, not just visual tightness.
-  const M = 18; // 0.25"
-  const centerLineX = LOGICAL_W / 2;
-  let y = LOGICAL_H - M;
+  // 0.5" keeps content inside the area a letter printer can actually mark,
+  // at 100% scale, without the driver shrinking the page to fit.
+  const M = 36;
+  const pageW = LETTER_W;
+  const centerLineX = pageW / 2;
+  let y = LETTER_H - M;
 
   // ---- Header: logo + store name centered, QR top-right --------------------
   const qrImage = order.storeUrl ? await embedQrCode(pdfDoc, order.storeUrl) : null;
-  const qrSize = 34;
+  const qrSize = 58;
   const headerTop = y;
 
   const logoImage = await embedLogo(pdfDoc);
-  const logoSize = 40;
+  const logoSize = 52;
   if (logoImage) {
     const scaled = logoImage.scaleToFit(logoSize, logoSize);
     page.drawImage(logoImage, {
@@ -190,8 +160,8 @@ async function drawSlip(
       height: scaled.height,
     });
   }
-  const storeNameSize = logoImage ? 10 : 14;
-  const storeNameY = logoImage ? headerTop - logoSize - 11 : headerTop - 12;
+  const storeNameSize = logoImage ? 13 : 18;
+  const storeNameY = logoImage ? headerTop - logoSize - 14 : headerTop - 16;
   page.drawText(order.storeName, {
     x: centerX(fontBold, order.storeName, storeNameSize, centerLineX),
     y: storeNameY,
@@ -201,26 +171,25 @@ async function drawSlip(
   });
 
   if (qrImage) {
-    page.drawImage(qrImage, { x: LOGICAL_W - M - qrSize, y: headerTop - qrSize, width: qrSize, height: qrSize });
+    page.drawImage(qrImage, { x: pageW - M - qrSize, y: headerTop - qrSize, width: qrSize, height: qrSize });
     const caption = 'Visit Our Store';
     page.drawText(caption, {
-      x: rightX(font, caption, 5.5, LOGICAL_W - M),
-      y: headerTop - qrSize - 8,
-      size: 5.5,
+      x: rightX(font, caption, 8, pageW - M),
+      y: headerTop - qrSize - 12,
+      size: 8,
       font,
       color: gray,
     });
   }
 
-  y = Math.min(storeNameY, headerTop - qrSize - 8) - 8;
+  y = Math.min(storeNameY, headerTop - qrSize - 12) - 12;
 
-  page.drawLine({ start: { x: M, y }, end: { x: LOGICAL_W - M, y }, thickness: 1, color: accent });
-  y -= 12;
+  page.drawLine({ start: { x: M, y }, end: { x: pageW - M, y }, thickness: 1.25, color: accent });
+  y -= 18;
 
   // ---- Order meta (left) + Ship To box (right) ------------------------------
-  const colGutter = 8;
-  const rightColW = 138;
-  const rightColX = LOGICAL_W - M - rightColW;
+  const rightColW = 230;
+  const rightColX = pageW - M - rightColW;
   const metaTop = y;
 
   const dateStr = order.saleDate
@@ -237,10 +206,10 @@ async function drawSlip(
   let leftY = metaTop;
   for (const [label, value] of metaRows) {
     if (!value) continue;
-    page.drawText(label, { x: M, y: leftY, size: 6, font, color: gray });
-    leftY -= 9.5;
-    page.drawText(value, { x: M, y: leftY, size: 9, font: fontBold, color: black });
-    leftY -= 12.5;
+    page.drawText(label, { x: M, y: leftY, size: 8, font, color: gray });
+    leftY -= 13;
+    page.drawText(value, { x: M, y: leftY, size: 12, font: fontBold, color: black });
+    leftY -= 16;
   }
 
   // Ship-to box
@@ -252,9 +221,11 @@ async function drawSlip(
     order.shipTo.country,
   ].filter((l): l is string => !!l && l.trim().length > 0);
 
-  const boxPad = 6;
-  const boxLineHeight = 10.5;
-  const boxHeight = boxPad * 2 + 9 + shipToLines.length * boxLineHeight;
+  const boxPad = 8;
+  const boxLineHeight = 13;
+  const innerW = rightColW - boxPad * 2;
+  const wrappedShip = shipToLines.flatMap((line) => wrapText(line, fontBold, 11, innerW).slice(0, 2));
+  const boxHeight = boxPad * 2 + 14 + wrappedShip.length * boxLineHeight;
   const boxTop = metaTop;
   const boxBottom = boxTop - boxHeight;
 
@@ -267,33 +238,33 @@ async function drawSlip(
   });
 
   let boxY = boxTop - boxPad - 6;
-  page.drawText('SHIP TO', { x: rightColX + boxPad, y: boxY, size: 6.5, font: fontBold, color: accent });
-  boxY -= 12;
-  for (const line of shipToLines) {
-    page.drawText(line, { x: rightColX + boxPad, y: boxY, size: 8.5, font: fontBold, color: black });
+  page.drawText('SHIP TO', { x: rightColX + boxPad, y: boxY, size: 8, font: fontBold, color: accent });
+  boxY -= 15;
+  for (const line of wrappedShip) {
+    page.drawText(line, { x: rightColX + boxPad, y: boxY, size: 11, font: fontBold, color: black });
     boxY -= boxLineHeight;
   }
 
-  y = Math.min(leftY, boxBottom) - 6;
+  y = Math.min(leftY, boxBottom) - 10;
 
-  page.drawLine({ start: { x: M, y }, end: { x: LOGICAL_W - M, y }, thickness: 0.75, color: lightGray });
-  y -= 12;
+  page.drawLine({ start: { x: M, y }, end: { x: pageW - M, y }, thickness: 0.75, color: lightGray });
+  y -= 16;
 
   // ---- Items ----------------------------------------------------------------
-  const imgSize = 32;
-  const totalColRight = LOGICAL_W - M;
-  const priceColRight = totalColRight - 40;
-  const qtyColRight = priceColRight - 32;
-  const textX = M + imgSize + 6;
-  const textWidth = qtyColRight - 24 - textX;
+  const imgSize = 48;
+  const totalColRight = pageW - M;
+  const priceColRight = totalColRight - 72;
+  const qtyColRight = priceColRight - 52;
+  const textX = M + imgSize + 8;
+  const textWidth = qtyColRight - 16 - textX;
 
-  page.drawText('ITEM', { x: M, y, size: 7, font: fontBold, color: accent });
-  page.drawText('Qty', { x: rightX(font, 'Qty', 6, qtyColRight), y, size: 6, font, color: gray });
-  page.drawText('Price', { x: rightX(font, 'Price', 6, priceColRight), y, size: 6, font, color: gray });
-  page.drawText('Total', { x: rightX(font, 'Total', 6, totalColRight), y, size: 6, font, color: gray });
-  y -= 9;
-  page.drawLine({ start: { x: M, y }, end: { x: LOGICAL_W - M, y }, thickness: 0.75, color: lightGray });
-  y -= 9;
+  page.drawText('ITEM', { x: M, y, size: 9, font: fontBold, color: accent });
+  page.drawText('Qty', { x: rightX(font, 'Qty', 8, qtyColRight), y, size: 8, font, color: gray });
+  page.drawText('Price', { x: rightX(font, 'Price', 8, priceColRight), y, size: 8, font, color: gray });
+  page.drawText('Total', { x: rightX(font, 'Total', 8, totalColRight), y, size: 8, font, color: gray });
+  y -= 12;
+  page.drawLine({ start: { x: M, y }, end: { x: pageW - M, y }, thickness: 0.75, color: lightGray });
+  y -= 12;
 
   for (const item of order.items) {
     const rowTop = y;
@@ -308,39 +279,39 @@ async function drawSlip(
       });
     }
 
-    const titleLines = wrapText(item.title, font, 7.5, textWidth).slice(0, 2);
-    let ty = rowTop - 8;
+    const titleLines = wrapText(item.title, font, 10, textWidth).slice(0, 2);
+    let ty = rowTop - 11;
     for (const line of titleLines) {
-      page.drawText(line, { x: textX, y: ty, size: 7.5, font, color: black });
-      ty -= 9;
+      page.drawText(line, { x: textX, y: ty, size: 10, font, color: black });
+      ty -= 13;
     }
     const skuLabel = item.sku ? `SKU: ${item.sku}` : item.ebayItemId ? `Item: ${item.ebayItemId}` : '';
     if (skuLabel) {
-      page.drawText(skuLabel, { x: textX, y: rowTop - imgSize + 3, size: 6, font, color: gray });
+      page.drawText(skuLabel, { x: textX, y: rowTop - imgSize + 4, size: 8, font, color: gray });
     }
 
     const unitPrice = item.quantity > 0 ? item.soldFor / item.quantity : item.soldFor;
     const qtyStr = String(item.quantity);
     const priceStr = fmt$(unitPrice);
     const totalStr = fmt$(item.soldFor);
-    page.drawText(qtyStr, { x: rightX(font, qtyStr, 7.5, qtyColRight), y: rowTop - 8, size: 7.5, font, color: black });
-    page.drawText(priceStr, { x: rightX(font, priceStr, 7.5, priceColRight), y: rowTop - 8, size: 7.5, font, color: black });
-    page.drawText(totalStr, { x: rightX(fontBold, totalStr, 7.5, totalColRight), y: rowTop - 8, size: 7.5, font: fontBold, color: black });
+    page.drawText(qtyStr, { x: rightX(font, qtyStr, 10, qtyColRight), y: rowTop - 11, size: 10, font, color: black });
+    page.drawText(priceStr, { x: rightX(font, priceStr, 10, priceColRight), y: rowTop - 11, size: 10, font, color: black });
+    page.drawText(totalStr, { x: rightX(fontBold, totalStr, 10, totalColRight), y: rowTop - 11, size: 10, font: fontBold, color: black });
 
-    y = rowTop - imgSize - 5;
+    y = rowTop - imgSize - 8;
   }
 
-  page.drawLine({ start: { x: M, y }, end: { x: LOGICAL_W - M, y }, thickness: 0.75, color: lightGray });
-  y -= 10;
+  page.drawLine({ start: { x: M, y }, end: { x: pageW - M, y }, thickness: 0.75, color: lightGray });
+  y -= 16;
 
   // ---- Shipping service -------------------------------------------------------
   if (order.shippingService) {
-    page.drawText(`Ship via: ${order.shippingService}`, { x: M, y, size: 7, font, color: gray });
-    y -= 11;
+    page.drawText(`Ship via: ${order.shippingService}`, { x: M, y, size: 10, font, color: gray });
+    y -= 16;
   }
 
   // ---- Totals -----------------------------------------------------------------
-  const totalsLabelRight = totalColRight - 46;
+  const totalsLabelRight = totalColRight - 64;
   const totalsRows: [string, number | null][] = [
     ['Subtotal', order.subtotal],
     ['Shipping', order.shippingCost],
@@ -348,44 +319,43 @@ async function drawSlip(
   ];
   for (const [label, val] of totalsRows) {
     if (val === null) continue;
-    page.drawText(label, { x: rightX(font, label, 7, totalsLabelRight), y, size: 7, font, color: gray });
+    page.drawText(label, { x: rightX(font, label, 10, totalsLabelRight), y, size: 10, font, color: gray });
     const valStr = fmt$(val);
-    page.drawText(valStr, { x: rightX(font, valStr, 7, totalColRight), y, size: 7, font, color: black });
-    y -= 9.5;
+    page.drawText(valStr, { x: rightX(font, valStr, 10, totalColRight), y, size: 10, font, color: black });
+    y -= 14;
   }
   if (order.total !== null) {
     y -= 2;
-    page.drawLine({ start: { x: totalsLabelRight - 40, y: y + 8 }, end: { x: totalColRight, y: y + 8 }, thickness: 0.75, color: lightGray });
+    page.drawLine({ start: { x: totalsLabelRight - 48, y: y + 12 }, end: { x: totalColRight, y: y + 12 }, thickness: 0.75, color: lightGray });
     const label = 'Total';
-    page.drawText(label, { x: rightX(fontBold, label, 9, totalsLabelRight), y, size: 9, font: fontBold, color: black });
+    page.drawText(label, { x: rightX(fontBold, label, 13, totalsLabelRight), y, size: 13, font: fontBold, color: black });
     const valStr = fmt$(order.total);
-    page.drawText(valStr, { x: rightX(fontBold, valStr, 9, totalColRight), y, size: 9, font: fontBold, color: black });
-    y -= 11;
+    page.drawText(valStr, { x: rightX(fontBold, valStr, 13, totalColRight), y, size: 13, font: fontBold, color: black });
   }
-
-  page.pushOperators(popGraphicsState());
 }
 
 /**
- * Generates a plain portrait Letter (8.5"x11") PDF with one order's packing
- * slip rotated 90° into the top half. Print at 100% ("Actual size") and cut
- * once across the middle to get an 8.5"x5.5" slip. Pass a second order to
- * fill the bottom half too (e.g. for batch printing two orders per sheet);
- * otherwise it's left blank.
+ * Portrait letter packing slip, drawn upright at actual size.
+ * A second order is placed on its own page.
  */
 export async function generatePackingSlipPdf(
   order: PackingSlipOrder,
   secondOrder?: PackingSlipOrder | null
 ): Promise<Uint8Array> {
   const pdfDoc = await PDFDocument.create();
-  const page = pdfDoc.addPage([LETTER_W, LETTER_H]);
+  pdfDoc.catalog.set(
+    PDFName.of('ViewerPreferences'),
+    pdfDoc.context.obj({ PrintScaling: PDFName.of('None') })
+  );
 
   const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
   const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
 
-  await drawSlip(page, pdfDoc, order, font, fontBold, HALF_H);
+  const page = pdfDoc.addPage([LETTER_W, LETTER_H]);
+  await drawSlip(page, pdfDoc, order, font, fontBold);
   if (secondOrder) {
-    await drawSlip(page, pdfDoc, secondOrder, font, fontBold, 0);
+    const next = pdfDoc.addPage([LETTER_W, LETTER_H]);
+    await drawSlip(next, pdfDoc, secondOrder, font, fontBold);
   }
 
   return pdfDoc.save();
