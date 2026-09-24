@@ -277,14 +277,42 @@ export function parseOrders(xml: string): SaleRow[] {
 }
 
 // -----------------------------------------------------------------------
-// Fetch images via the Browse API (get_item_by_legacy_id).
-// The Trading API's GetOrders/GetOrder responses don't include item photos,
-// and the old Shopping API (GetMultipleItems) that used to backfill them
-// was decommissioned by eBay in Feb 2025 — this replaces it. Browse API has
-// no batch-by-legacy-id lookup, so items are fetched individually with
+// Listing photos. GetOrders / GetOrder never include PictureURL, so every
+// import has to look the photo up. Browse API get_item_by_legacy_id is the
+// usual source. GetItem is the fallback for listings Browse will not return.
+// The old Shopping API (GetMultipleItems) was decommissioned in Feb 2025.
+// Neither API has a batch-by-legacy-id call, so items are fetched with
 // bounded concurrency.
+//
+// Upserts use ignoreDuplicates, which keeps a curated SKU but also keeps a
+// null picture_url. Callers must backfill picture_url on rows that are
+// still blank, or a label import that lands first never gains a photo.
 // -----------------------------------------------------------------------
 const IMAGE_FETCH_CONCURRENCY = 5;
+
+function firstXmlValue(xml: string, tag: string): string | null {
+  const raw = xml.match(new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\\/${tag}>`))?.[1];
+  if (!raw) return null;
+  const cdata = raw.match(/<!\[CDATA\[([\s\S]*?)\]\]>/);
+  const value = decodeXml((cdata ? cdata[1] : raw).trim());
+  return value || null;
+}
+
+function realItemIds(ids: Array<string | null | undefined>): string[] {
+  return Array.from(new Set(
+    ids.filter((id): id is string => !!id && !id.startsWith('synthetic-'))
+  ));
+}
+
+async function mapInChunks(
+  itemIds: string[],
+  fetchOne: (itemId: string) => Promise<void>
+): Promise<void> {
+  for (let i = 0; i < itemIds.length; i += IMAGE_FETCH_CONCURRENCY) {
+    const chunk = itemIds.slice(i, i + IMAGE_FETCH_CONCURRENCY);
+    await Promise.all(chunk.map(fetchOne));
+  }
+}
 
 export async function fetchImagesForItems(itemIds: string[]): Promise<Record<string, string>> {
   if (itemIds.length === 0) return {};
@@ -308,16 +336,121 @@ export async function fetchImagesForItems(itemIds: string[]): Promise<Record<str
       const url = data?.image?.imageUrl;
       if (url) map[itemId] = url;
     } catch {
-      // ignore errors for image fetching — packing slip just renders without a photo
+      // A missing photo leaves the thumbnail blank; the sale itself still imports.
     }
   }
 
-  for (let i = 0; i < itemIds.length; i += IMAGE_FETCH_CONCURRENCY) {
-    const chunk = itemIds.slice(i, i + IMAGE_FETCH_CONCURRENCY);
-    await Promise.all(chunk.map(fetchOne));
+  await mapInChunks(itemIds, fetchOne);
+  return map;
+}
+
+/** Seller's own Trading-API GetItem. Works for sold listings Browse no longer serves. */
+export async function fetchImagesViaGetItem(itemIds: string[]): Promise<Record<string, string>> {
+  if (itemIds.length === 0) return {};
+
+  const token = await getValidToken();
+  const credentials = isOAuthToken(token)
+    ? ''
+    : `<RequesterCredentials><eBayAuthToken>${token}</eBayAuthToken></RequesterCredentials>`;
+  const map: Record<string, string> = {};
+
+  async function fetchOne(itemId: string) {
+    try {
+      const xml = `<?xml version="1.0" encoding="utf-8"?>
+<GetItemRequest xmlns="urn:ebay:apis:eBLBaseComponents">
+  ${credentials}
+  <ItemID>${itemId}</ItemID>
+  <ErrorLanguage>en_US</ErrorLanguage>
+  <WarningLevel>High</WarningLevel>
+</GetItemRequest>`;
+      const res = await fetch(getEbayApiUrl(), {
+        method: 'POST',
+        headers: getEbayApiHeaders('GetItem', token),
+        body: xml,
+      });
+      const text = await res.text();
+      const url = firstXmlValue(text, 'PictureURL') || firstXmlValue(text, 'GalleryURL');
+      if (url) map[itemId] = url;
+    } catch {
+      // Same as Browse: skip the photo rather than fail the import.
+    }
   }
 
+  await mapInChunks(itemIds, fetchOne);
   return map;
+}
+
+/** Fills picture_url on rows that do not already have one. */
+export async function attachListingPictures(rows: SaleRow[]): Promise<void> {
+  const needIds = realItemIds(rows.filter((row) => !row.picture_url).map((row) => row.ebay_item_id));
+  if (needIds.length === 0) return;
+
+  let imageMap: Record<string, string> = {};
+  try {
+    imageMap = await fetchImagesForItems(needIds);
+  } catch (err) {
+    console.error('[ebay-orders] browse photos:', err instanceof Error ? err.message : err);
+  }
+
+  const stillMissing = needIds.filter((id) => !imageMap[id]);
+  if (stillMissing.length > 0) {
+    try {
+      Object.assign(imageMap, await fetchImagesViaGetItem(stillMissing));
+    } catch (err) {
+      console.error('[ebay-orders] GetItem photos:', err instanceof Error ? err.message : err);
+    }
+  }
+
+  for (const row of rows) {
+    if (!row.picture_url && row.ebay_item_id && imageMap[row.ebay_item_id]) {
+      row.picture_url = imageMap[row.ebay_item_id];
+    }
+  }
+}
+
+/**
+ * Writes picture_url onto existing ebay_sales rows that are still blank.
+ * ignoreDuplicates inserts will not do this themselves.
+ */
+export async function backfillMissingPictures(rows: SaleRow[]): Promise<number> {
+  const byKey = new Map<string, string>();
+  for (const row of rows) {
+    if (!row.picture_url || !row.order_number || !row.ebay_item_id) continue;
+    byKey.set(`${row.order_number}||${row.ebay_item_id}`, row.picture_url);
+  }
+  if (byKey.size === 0) return 0;
+
+  const orderNumbers = Array.from(new Set(rows.map((row) => row.order_number).filter(Boolean)));
+  let updated = 0;
+  const CHUNK = 40;
+  for (let i = 0; i < orderNumbers.length; i += CHUNK) {
+    const chunk = orderNumbers.slice(i, i + CHUNK);
+    const { data, error } = await supabaseAdmin
+      .from('ebay_sales')
+      .select('order_number, ebay_item_id')
+      .in('order_number', chunk)
+      .is('picture_url', null);
+    if (error) {
+      console.error('[ebay-orders] picture backfill lookup:', error.message);
+      continue;
+    }
+    for (const existing of data ?? []) {
+      const url = byKey.get(`${existing.order_number}||${existing.ebay_item_id}`);
+      if (!url) continue;
+      const { error: updateError } = await supabaseAdmin
+        .from('ebay_sales')
+        .update({ picture_url: url })
+        .eq('order_number', existing.order_number)
+        .eq('ebay_item_id', existing.ebay_item_id)
+        .is('picture_url', null);
+      if (updateError) {
+        console.error('[ebay-orders] picture backfill:', updateError.message);
+        continue;
+      }
+      updated += 1;
+    }
+  }
+  return updated;
 }
 
 /**
@@ -352,19 +485,7 @@ export async function fetchAndUpsertOrder(orderId: string): Promise<SaleRow[]> {
 
   const settings = await loadPnlSettings();
 
-  const realItemIds = Array.from(new Set(
-    rows
-      .map((r) => r.ebay_item_id)
-      .filter((id): id is string => id !== null && !id.startsWith('synthetic-'))
-  ));
-  if (realItemIds.length > 0) {
-    const imageMap = await fetchImagesForItems(realItemIds);
-    for (const row of rows) {
-      if (row.ebay_item_id && imageMap[row.ebay_item_id]) {
-        row.picture_url = imageMap[row.ebay_item_id];
-      }
-    }
-  }
+  await attachListingPictures(rows);
 
   const { error } = await supabaseAdmin
     .from('ebay_sales')
@@ -376,6 +497,7 @@ export async function fetchAndUpsertOrder(orderId: string): Promise<SaleRow[]> {
       { onConflict: 'order_number,ebay_item_id', ignoreDuplicates: true }
     );
   if (error) throw error;
+  await backfillMissingPictures(rows);
 
   return rows;
 }
@@ -446,6 +568,8 @@ export async function syncRecentSales(days = 2): Promise<number> {
   });
   if (uniqueRows.length === 0) return 0;
 
+  await attachListingPictures(uniqueRows);
+
   const settings = await loadPnlSettings();
   const { error } = await supabaseAdmin.from('ebay_sales').upsert(
     uniqueRows.map((r) => ({
@@ -481,5 +605,6 @@ export async function syncRecentSales(days = 2): Promise<number> {
     await q;
   }
 
+  await backfillMissingPictures(uniqueRows);
   return uniqueRows.length;
 }

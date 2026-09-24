@@ -11,7 +11,8 @@ import {
   decodeXml,
   buildGetOrdersRequest,
   parseOrders,
-  fetchImagesForItems,
+  attachListingPictures,
+  backfillMissingPictures,
   loadPnlSettings,
   type SaleRow,
 } from '@/app/lib/ebay-orders';
@@ -132,21 +133,7 @@ export async function GET(request: NextRequest) {
       return true;
     });
 
-    // Fetch images for valid ItemIDs via Shopping API
-    const realItemIds = Array.from(new Set(
-      uniqueRows
-        .map(r => r.ebay_item_id)
-        .filter((id): id is string => id !== null && !id.startsWith('synthetic-'))
-    ));
-
-    if (realItemIds.length > 0) {
-      const imageMap = await fetchImagesForItems(realItemIds);
-      for (const row of uniqueRows) {
-        if (row.ebay_item_id && imageMap[row.ebay_item_id]) {
-          row.picture_url = imageMap[row.ebay_item_id];
-        }
-      }
-    }
+    await attachListingPictures(uniqueRows);
 
     const settings = await loadPnlSettings();
     const rowsWithCosts = uniqueRows.map((r) => applyCostDefaultsToRow(r, settings));
@@ -202,6 +189,8 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    const picturesFilled = await backfillMissingPictures(uniqueRows);
+
     // Postpaid shipping-label fees often land after GetOrders. Scan Finances
     // for at least 14 days so yesterday's eSE charges match today's payouts.
     let labelsMatched = 0;
@@ -216,6 +205,7 @@ export async function GET(request: NextRequest) {
         sales: await withExclusionFlags(labelResult.sales as Array<{ id: string }>),
         synced,
         feesUpdated,
+        picturesFilled,
         labelsMatched,
         totalPages,
         currentPage: fetchAllPages ? totalPages : startPage,
@@ -234,6 +224,7 @@ export async function GET(request: NextRequest) {
       sales: await withExclusionFlags(allSales ?? []),
       synced,
       feesUpdated,
+      picturesFilled,
       labelsMatched,
       totalPages,
       currentPage: fetchAllPages ? totalPages : startPage,
