@@ -1,7 +1,7 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { execFile } from 'child_process';
+import { execFile, spawn } from 'child_process';
 import { fileURLToPath } from 'url';
 import { createClient } from '@supabase/supabase-js';
 
@@ -156,8 +156,8 @@ export async function scanNewLabels() {
     const previous = readState();
     const firstRun = !previous;
     const state = previous || {};
-    const files = listPdfs(inboxDir());
-    let printed = 0;
+    const files = [...listPdfs(inboxDir()), ...listPdfs(downloadsDir())];
+    const printedFiles = [];
     for (const filePath of files) {
         let mtime = 0;
         try { mtime = fs.statSync(filePath).mtimeMs; } catch { continue; }
@@ -168,18 +168,89 @@ export async function scanNewLabels() {
         }
         const result = await printShippingLabel({ file: filePath, force: false });
         if (result.printed) {
-            printed += 1;
+            printedFiles.push(filePath);
+            state[filePath] = mtime;
             console.log(`[label] printed ${path.basename(filePath)} on "${result.printer}"`);
-        } else if (result.reason && !/not a carrier/.test(result.reason)) {
+        } else if (result.reason && /not a carrier/.test(result.reason)) {
+            state[filePath] = mtime;
+        } else if (result.reason) {
             console.error(`[label] ${path.basename(filePath)}: ${result.reason}`);
         }
-        state[filePath] = mtime;
     }
     writeState(state);
     if (firstRun) {
-        console.log(`[label] watching ${inboxDir()} for shipping labels → "${labelPrinterName()}" (${files.length} already there, left alone)`);
+        console.log(`[label] watching ${downloadsDir()} and ${inboxDir()} for shipping labels → "${labelPrinterName()}" (${files.length} already there, left alone)`);
     }
-    return printed;
+    return printedFiles;
+}
+
+function salesClient() {
+    loadEnvLocal();
+    return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY, {
+        auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+    });
+}
+
+async function matchLabelToOrder(filePath) {
+    const compact = `${path.basename(filePath)}\n${await pdfText(filePath)}`.replace(/\s+/g, '').toUpperCase();
+    const { data, error } = await salesClient()
+        .from('ebay_sales')
+        .select('order_number, tracking_number, printed_at, sale_date, ship_to_name, buyer')
+        .order('sale_date', { ascending: false })
+        .limit(80);
+    if (error) throw new Error(error.message);
+    const hits = [];
+    for (const row of data ?? []) {
+        const tracking = String(row.tracking_number || '').replace(/\s+/g, '').toUpperCase();
+        const orderNumber = String(row.order_number || '').replace(/\s+/g, '').toUpperCase();
+        const name = String(row.ship_to_name || row.buyer || '').toUpperCase().replace(/[^A-Z]/g, '');
+        let score = 0;
+        if (orderNumber && compact.includes(orderNumber)) score = 3;
+        else if (tracking.length >= 8 && compact.includes(tracking)) score = 3;
+        else if (name.length >= 8 && compact.includes(name)) score = 2;
+        if (!score) continue;
+        if (row.printed_at && Date.now() - new Date(row.printed_at).getTime() < 10 * 60 * 1000) continue;
+        hits.push({ orderNumber: row.order_number, score, sale: row.sale_date || '' });
+    }
+    hits.sort((a, b) => b.score - a.score || (a.sale < b.sale ? 1 : -1));
+    return hits[0]?.orderNumber ?? null;
+}
+
+function syncRecentOrders() {
+    return new Promise((resolve, reject) => {
+        const child = spawn(process.execPath, [
+            '--conditions=react-server',
+            '--import',
+            'tsx',
+            path.join(repoRoot, 'scripts', 'sync-recent-sales.mjs'),
+        ], { cwd: repoRoot, env: process.env });
+        let out = '';
+        const timer = setTimeout(() => {
+            child.kill();
+            reject(new Error('eBay sync timed out'));
+        }, 90000);
+        child.stdout.on('data', (chunk) => { out += chunk; });
+        child.stderr.on('data', (chunk) => { out += chunk; });
+        child.on('error', (err) => { clearTimeout(timer); reject(err); });
+        child.on('exit', (code) => {
+            clearTimeout(timer);
+            if (code === 0) resolve(out.trim());
+            else reject(new Error(out.trim() || `eBay sync exited ${code}`));
+        });
+    });
+}
+
+export async function orderNumberForLabel(filePath) {
+    const existing = await matchLabelToOrder(filePath);
+    if (existing) return existing;
+    try {
+        const synced = await syncRecentOrders();
+        console.log(`[label] ${synced}`);
+    } catch (err) {
+        console.error('[label] could not refresh eBay sales:', err.message || err);
+        return null;
+    }
+    return matchLabelToOrder(filePath);
 }
 
 async function trackingForOrder(orderNumber) {

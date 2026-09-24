@@ -6,7 +6,7 @@ import path from 'path';
 import { execFile, spawn } from 'child_process';
 import { fileURLToPath } from 'url';
 import { createClient } from '@supabase/supabase-js';
-import { scanNewLabels } from './label-print.mjs';
+import { orderNumberForLabel, scanNewLabels } from './label-print.mjs';
 
 // -----------------------------------------------------------------------
 // Local packing-slip print agent.
@@ -226,7 +226,30 @@ slipSite.listen(47622, '127.0.0.1', () => {
 console.log(`[print-agent] starting — packing slips on "${PRINTER_NAME}", shipping labels on "${process.env.LABEL_PRINTER_NAME || 'Y41BT Label'}"`);
 await catchUpPending();
 subscribe();
-await scanNewLabels();
+async function printSlipsForNewLabels() {
+  const files = await scanNewLabels();
+  for (const filePath of files) {
+    let orderNumber = null;
+    try {
+      orderNumber = await orderNumberForLabel(filePath);
+    } catch (err) {
+      console.error('[label] order lookup:', err.message || err);
+      continue;
+    }
+    if (!orderNumber) {
+      console.log(`[label] ${path.basename(filePath)} printed; no matching sale, packing slip not sent`);
+      continue;
+    }
+    try {
+      await printSlipFromSite(orderNumber);
+      console.log(`[print-agent] packing slip for ${orderNumber} sent with the shipping label`);
+    } catch (err) {
+      console.error(`[print-agent] packing slip for ${orderNumber}: ${err.message || err}`);
+    }
+  }
+}
+
+await printSlipsForNewLabels();
 let slipQueueBusy = false;
 async function printQueuedSlips() {
   if (slipQueueBusy) return;
@@ -268,7 +291,7 @@ async function printQueuedSlips() {
 
 await printQueuedSlips();
 setInterval(() => {
-  scanNewLabels().catch((err) => console.error('[label]', err.message || err));
+  printSlipsForNewLabels().catch((err) => console.error('[label]', err.message || err));
   printQueuedSlips().catch((err) => console.error('[print-agent] slip queue:', err.message || err));
 }, 5000);
 console.log('[print-agent] listening for new packing slips and shipping labels (Ctrl+C to stop)...');

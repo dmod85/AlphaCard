@@ -98,7 +98,8 @@ export function buildGetOrdersRequest(
   fromDate: string,
   toDate: string,
   page: number,
-  token: string
+  token: string,
+  orderStatus = 'Completed'
 ): string {
   const credentials = isOAuthToken(token)
     ? ''
@@ -109,7 +110,7 @@ export function buildGetOrdersRequest(
   ${credentials}
   <CreateTimeFrom>${fromDate}</CreateTimeFrom>
   <CreateTimeTo>${toDate}</CreateTimeTo>
-  <OrderStatus>Completed</OrderStatus>
+  <OrderStatus>${orderStatus}</OrderStatus>
   <IncludeFinalValueFee>true</IncludeFinalValueFee>
   <DetailLevel>ReturnAll</DetailLevel>
   <Pagination>
@@ -398,4 +399,87 @@ export async function loadPnlSettings(): Promise<PnlSettings> {
   } catch {
     return DEFAULT_PNL_SETTINGS;
   }
+}
+
+/** Pull the last few days of eBay orders so a just-purchased label can be matched to a sale. */
+export async function syncRecentSales(days = 2): Promise<number> {
+  const toDate = new Date();
+  const fromDate = new Date();
+  fromDate.setDate(fromDate.getDate() - days);
+  const token = await getValidToken();
+  const fromIso = fromDate.toISOString();
+  const toIso = toDate.toISOString();
+
+  const rows: SaleRow[] = [];
+  let page = 1;
+  let totalPages = 1;
+  do {
+    const xml = buildGetOrdersRequest(fromIso, toIso, page, token, 'All');
+    const res = await fetch(getEbayApiUrl(), {
+      method: 'POST',
+      headers: getEbayApiHeaders('GetOrders', token),
+      body: xml,
+    });
+    const responseXml = await res.text();
+    const ack = responseXml.match(/<Ack>(.*?)<\/Ack>/)?.[1];
+    if (ack === 'Failure') {
+      const errMsg =
+        responseXml.match(/<LongMessage>(.*?)<\/LongMessage>/)?.[1] ||
+        responseXml.match(/<ShortMessage>(.*?)<\/ShortMessage>/)?.[1] ||
+        'eBay API error';
+      throw new Error(decodeXml(errMsg));
+    }
+    totalPages = parseInt(
+      responseXml.match(/<TotalNumberOfPages>(.*?)<\/TotalNumberOfPages>/)?.[1] || '1',
+      10
+    );
+    rows.push(...parseOrders(responseXml));
+    page += 1;
+  } while (page <= totalPages && page <= 3);
+
+  const seen = new Set<string>();
+  const uniqueRows = rows.filter((r) => {
+    const key = `${r.order_number}||${r.ebay_item_id ?? ''}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  if (uniqueRows.length === 0) return 0;
+
+  const settings = await loadPnlSettings();
+  const { error } = await supabaseAdmin.from('ebay_sales').upsert(
+    uniqueRows.map((r) => ({
+      ...applyCostDefaultsToRow(r, settings),
+      synced_at: new Date().toISOString(),
+    })),
+    { onConflict: 'order_number,ebay_item_id', ignoreDuplicates: true }
+  );
+  if (error) throw new Error(error.message);
+
+  for (const r of uniqueRows) {
+    const patch: Record<string, unknown> = {};
+    if (r.buyer) patch.buyer = r.buyer;
+    if (r.ship_to_name) patch.ship_to_name = r.ship_to_name;
+    if (r.ship_to_street1) patch.ship_to_street1 = r.ship_to_street1;
+    if (r.ship_to_street2) patch.ship_to_street2 = r.ship_to_street2;
+    if (r.ship_to_city) patch.ship_to_city = r.ship_to_city;
+    if (r.ship_to_state) patch.ship_to_state = r.ship_to_state;
+    if (r.ship_to_zip) patch.ship_to_zip = r.ship_to_zip;
+    if (r.ship_to_country) patch.ship_to_country = r.ship_to_country;
+    if (r.shipping_service) patch.shipping_service = r.shipping_service;
+    if (r.tracking_number) patch.tracking_number = r.tracking_number;
+    if (r.carrier) patch.carrier = r.carrier;
+    if (r.shipped_at) patch.shipped_at = r.shipped_at;
+    if (r.order_subtotal != null) patch.order_subtotal = r.order_subtotal;
+    if (r.order_shipping_cost != null) patch.order_shipping_cost = r.order_shipping_cost;
+    if (r.order_tax != null) patch.order_tax = r.order_tax;
+    if (r.order_total != null) patch.order_total = r.order_total;
+    if (r.sales_record_number) patch.sales_record_number = r.sales_record_number;
+    if (Object.keys(patch).length === 0) continue;
+    let q = supabaseAdmin.from('ebay_sales').update(patch).eq('order_number', r.order_number);
+    if (r.ebay_item_id) q = q.eq('ebay_item_id', r.ebay_item_id);
+    await q;
+  }
+
+  return uniqueRows.length;
 }
