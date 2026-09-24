@@ -11,11 +11,11 @@ import {
   rgb,
 } from 'pdf-lib';
 
-// Portrait US Letter, printed at actual size (100%). The slip itself is the
-// left half of that page (4.25" wide). The right half stays blank.
+// Portrait US Letter, printed at actual size (100%). The slip is 4.75" wide
+// on the left side of the page. The rest of the sheet stays blank.
 const LETTER_W = 8.5 * 72; // 612pt
 const LETTER_H = 11 * 72; // 792pt
-const SLIP_W = LETTER_W / 2; // 306pt — half the portrait width
+const SLIP_W = 4.75 * 72; // 342pt
 
 // Drop a logo at one of these paths (relative to the repo's public/ dir) to
 // have it appear centered in the header. Falls back to store-name text only
@@ -124,7 +124,7 @@ function wrapText(text: string, font: PDFFont, size: number, maxWidth: number): 
   return lines;
 }
 
-/** Draws one order upright in the left half of a portrait letter page. */
+/** Draws one order upright, 4.75" wide, on the left of a portrait letter page. */
 async function drawSlip(
   page: PDFPage,
   pdfDoc: PDFDocument,
@@ -335,7 +335,7 @@ async function drawSlip(
 }
 
 /**
- * Portrait letter packing slip at actual size. Content is the left half of the page.
+ * Portrait letter packing slip at actual size. Content is 4.75" wide on the left.
  * A second order is placed on its own page.
  */
 export async function generatePackingSlipPdf(
