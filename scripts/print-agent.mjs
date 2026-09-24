@@ -222,7 +222,47 @@ console.log(`[print-agent] starting — packing slips on "${PRINTER_NAME}", ship
 await catchUpPending();
 subscribe();
 await scanNewLabels();
+let slipQueueBusy = false;
+async function printQueuedSlips() {
+  if (slipQueueBusy) return;
+  slipQueueBusy = true;
+  try {
+    const { data, error } = await supabase
+      .from('ebay_webhook_events')
+      .select('notification_id, order_number')
+      .eq('topic', 'PACKING_SLIP_PRINT')
+      .order('received_at', { ascending: true })
+      .limit(5);
+    if (error) {
+      console.error('[print-agent] slip queue:', error.message);
+      return;
+    }
+    const seen = new Set();
+    for (const row of data ?? []) {
+      if (!row.order_number || seen.has(row.order_number)) {
+        await supabase.from('ebay_webhook_events').delete().eq('notification_id', row.notification_id);
+        continue;
+      }
+      seen.add(row.order_number);
+      try {
+        await printSlipFromSite(row.order_number);
+        await supabase.from('ebay_webhook_events').delete().eq('notification_id', row.notification_id);
+        console.log(`[print-agent] printed queued slip ${row.order_number}`);
+      } catch (err) {
+        const message = err.message || String(err);
+        console.error(`[print-agent] queued slip ${row.order_number}: ${message}`);
+        if (/No sales found/.test(message)) {
+          await supabase.from('ebay_webhook_events').delete().eq('notification_id', row.notification_id);
+        }
+      }
+    }
+  } finally {
+    slipQueueBusy = false;
+  }
+}
+
 setInterval(() => {
   scanNewLabels().catch((err) => console.error('[label]', err.message || err));
+  printQueuedSlips().catch((err) => console.error('[print-agent] slip queue:', err.message || err));
 }, 5000);
 console.log('[print-agent] listening for new packing slips and shipping labels (Ctrl+C to stop)...');

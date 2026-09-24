@@ -636,6 +636,33 @@ function ItemImage({ url, title }: { url: string | null; title: string }) {
   );
 }
 
+function PrintSlipButton({ orderNumber, reprint }: { orderNumber: string; reprint: boolean }) {
+  const [label, setLabel] = useState(reprint ? 'reprint slip' : 'print slip');
+
+  async function onClick() {
+    setLabel('sending…');
+    try {
+      const res = await fetch(`/api/ebay/packing-slip/${encodeURIComponent(orderNumber)}/print`, { method: 'POST' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Could not send the slip');
+      setLabel('sent to printer');
+    } catch {
+      setLabel('try again');
+    }
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="text-blue-400 hover:text-blue-300 underline underline-offset-2"
+      title="Print on the Canon: portrait letter, actual size"
+    >
+      {label}
+    </button>
+  );
+}
+
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 function SalesPageContent() {
@@ -1786,8 +1813,8 @@ function SalesPageContent() {
                       })()}
                     </td>
 
-                    {/* Shipped — the slip link is served by the local print agent so the Canon
-                        gets portrait letter at actual size. The PDF route is only a preview. */}
+                    {/* Shipped — print slip queues a job on this site. The PC print agent
+                        sends it to the Canon as portrait letter at actual size. */}
                     <td className="px-3 py-3 text-xs whitespace-nowrap">
                       <div className="flex flex-col gap-0.5">
                         {sale.tracking_number ? (
@@ -1802,15 +1829,7 @@ function SalesPageContent() {
                           {sale.shipped_at && (
                             <span className="text-gray-600">{fmtDate(sale.shipped_at)}</span>
                           )}
-                          <a
-                            href={`http://127.0.0.1:47622/print-slip?order=${encodeURIComponent(sale.order_number)}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-blue-400 hover:text-blue-300 underline underline-offset-2"
-                            title="Print on the Canon: portrait letter, actual size (100%)"
-                          >
-                            {sale.packing_slip_url ? 'reprint slip' : 'print slip'}
-                          </a>
+                          <PrintSlipButton orderNumber={sale.order_number} reprint={!!sale.packing_slip_url} />
                         </div>
                       </div>
                     </td>
