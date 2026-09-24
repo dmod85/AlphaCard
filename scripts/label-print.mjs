@@ -138,7 +138,7 @@ export async function printShippingLabel({ file, tracking, orderNumber, dry = fa
         };
     }
     const dest = path.join(os.tmpdir(), `thermal-label-${path.basename(src).replace(/[^a-z0-9.]+/gi, '_')}`);
-    const fitted = await fitLabel(src, dest, force || Boolean(file));
+    const fitted = await fitLabel(src, dest, force);
     if (!fitted.ok) {
         return { printed: false, reason: fitted.skip ? `${path.basename(src)} is not a carrier shipping label.` : fitted.detail };
     }
@@ -156,7 +156,7 @@ export async function scanNewLabels() {
     const previous = readState();
     const firstRun = !previous;
     const state = previous || {};
-    const files = [...listPdfs(inboxDir()), ...listPdfs(downloadsDir())];
+    const files = listPdfs(inboxDir());
     let printed = 0;
     for (const filePath of files) {
         let mtime = 0;
@@ -177,7 +177,7 @@ export async function scanNewLabels() {
     }
     writeState(state);
     if (firstRun) {
-        console.log(`[label] watching ${inboxDir()} and Downloads for new shipping labels → "${labelPrinterName()}" (${files.length} already there, left alone)`);
+        console.log(`[label] watching ${inboxDir()} for shipping labels → "${labelPrinterName()}" (${files.length} already there, left alone)`);
     }
     return printed;
 }
