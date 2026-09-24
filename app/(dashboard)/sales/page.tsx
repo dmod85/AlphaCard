@@ -1180,14 +1180,14 @@ function SalesPageContent() {
               </span>
             )}
             {bandPoolBySku.get(skuFilter) && (
-              <span className="flex items-center gap-1.5 shrink-0 hidden lg:flex">
-                {bandPoolBySku.get(skuFilter)!.bands.filter(b => b.qty > 0).map(b => (
+              <span className="flex flex-wrap items-center gap-1.5">
+                {bandPoolBySku.get(skuFilter)!.bands.map(b => (
                   <span
                     key={b.id}
-                    className={`text-[10px] px-1.5 py-0.5 rounded ${PRICE_BAND_TONE[b.id]}`}
+                    className={`text-[11px] px-1.5 py-0.5 rounded ${PRICE_BAND_TONE[b.id]}`}
                     title={`${b.label} ${b.hint}: ${b.qty} sold · net $${b.net.toFixed(2)} · cost $${b.cost.toFixed(2)} · ${b.unitCost.toFixed(2)}/card`}
                   >
-                    {b.label} {b.qty} {formatRoiPct(b.realizedRoi, 0)}
+                    {b.label} {b.hint} · {b.qty} · {b.qty > 0 ? `$${b.unitCost.toFixed(2)}` : '—'} · {formatRoiPct(b.realizedRoi, 0)}
                   </span>
                 ))}
               </span>
@@ -1708,7 +1708,7 @@ function SalesPageContent() {
                               {fmt$(cogs)}
                             </span>
                             {band && (
-                              <span className={`self-start text-[9px] px-1 py-px rounded ${PRICE_BAND_TONE[band.id]}`}>
+                              <span className={`self-start text-[11px] px-1.5 py-0.5 rounded ${PRICE_BAND_TONE[band.id]}`}>
                                 {band.label}
                               </span>
                             )}

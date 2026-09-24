@@ -5,6 +5,8 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import {
   DEFAULT_PNL_SETTINGS,
   resolvedSaleCosts,
+  roiPct,
+  roundMoney,
   type PnlSettings,
 } from '@/app/lib/pnl';
 import { orderHeadIds, ordersWithDuplicatedBuyerShipping } from '@/app/lib/order-costs';
@@ -29,6 +31,7 @@ import {
 } from '@/app/lib/pool-roi';
 import {
   PRICE_BAND_TONE,
+  SOPHIE_PRICE_BANDS,
   computePriceBandPool,
   usesPriceBands,
   type PriceBandPool,
@@ -909,6 +912,14 @@ function SkuPill({ sku, onCopy }: { sku: string | null; onCopy: (s: string) => v
   );
 }
 
+function PriceBandLegend() {
+  return (
+    <div className="mt-1 text-[10px] font-normal text-gray-400">
+      {SOPHIE_PRICE_BANDS.map(b => `${b.label} ${b.hint}`).join(' · ')}
+    </div>
+  );
+}
+
 // ─── SKU Group Row ────────────────────────────────────────────────────────────
 
 function SkuGroupRow({
@@ -933,6 +944,13 @@ function SkuGroupRow({
   const hasSubs = group.purchases.length > 1 || hasItems;
   const first = group.purchases[0];
   const mode = group.metrics.allocationMode;
+  const bandPool = group.bandPool;
+  const realizedRoi = bandPool
+    ? roiPct(roundMoney(bandPool.totalNet - bandPool.costOfSold), bandPool.costOfSold)
+    : group.metrics.realizedRoi;
+  const soldCost = bandPool ? bandPool.costOfSold : group.metrics.costOfSold;
+  const leftCost = bandPool ? bandPool.remainingCost : group.metrics.remainingCost;
+  const netSales = bandPool ? bandPool.totalNet : group.metrics.totalNetSales;
 
   function handleRowClick(e: React.MouseEvent, sku: string | null) {
     if (!sku) return;
@@ -978,11 +996,15 @@ function SkuGroupRow({
         <td className="px-3 py-3 text-sm text-gray-200"><EditableCell purchase={first} field="brand" type="select" options={BRANDS} onSaved={onRefresh} /></td>
         <td className="px-3 py-3 text-sm text-blue-300">
           {hasSubs ? (
-            <span title={`${group.purchases.length} separate buys share SKU ${group.sku}. Expand to see each lot.`}>
-              Pooled · {group.purchases.length} lots
-            </span>
+            <div title={`${group.purchases.length} separate buys share SKU ${group.sku}. Expand to see each lot.`}>
+              <div>Pooled · {group.purchases.length} lots</div>
+              {bandPool && <PriceBandLegend />}
+            </div>
           ) : (
-            <EditableCell purchase={first} field="series" onSaved={onRefresh} />
+            <div>
+              <EditableCell purchase={first} field="series" onSaved={onRefresh} />
+              {bandPool && <PriceBandLegend />}
+            </div>
           )}
         </td>
         <td className="px-3 py-3 text-sm text-gray-300"><EditableCell purchase={first} field="sport" type="select" options={SPORTS} onSaved={onRefresh} /></td>
@@ -1020,14 +1042,19 @@ function SkuGroupRow({
           <SoldBadge sold={group.metrics.soldQty} total={group.metrics.sellableQty} />
         </td>
         <td className="px-3 py-3 text-sm tabular-nums" title={group.sku ? (hasSubs ? `View all sales for SKU ${group.sku}` : 'View all sales from this purchase') : undefined}>
-          {group.metrics.totalNetSales > 0 ? (
-            <span className="text-green-400 font-medium">${group.metrics.totalNetSales.toFixed(2)}</span>
+          {netSales > 0 ? (
+            <span className="text-green-400 font-medium">${netSales.toFixed(2)}</span>
           ) : (
             <span className="text-gray-600">—</span>
           )}
         </td>
         <td className="px-3 py-3">
-          <RoiBadge value={group.metrics.realizedRoi} title={ROI_HELP.realized} />
+          <RoiBadge
+            value={realizedRoi}
+            title={bandPool
+              ? 'Profit on cards sold, using Base / Parallel / Hit cost instead of one average.'
+              : ROI_HELP.realized}
+          />
         </td>
         <td className="px-3 py-3">
           <RoiBadge value={group.metrics.lotToDateRoi} title={ROI_HELP.lotToDate} />
@@ -1039,11 +1066,11 @@ function SkuGroupRow({
             `${Math.round(group.metrics.recoveredPct)}%`
           )}
         </td>
-        <td className="px-3 py-3 text-xs tabular-nums text-gray-300" title="Allocated cost of cards sold">
-          {group.metrics.soldQty > 0 ? `$${group.metrics.costOfSold.toFixed(2)}` : <span className="text-gray-600">—</span>}
+        <td className="px-3 py-3 text-xs tabular-nums text-gray-300" title={bandPool ? 'Basis assigned to sold Base, Parallel, and Hit cards' : 'Allocated cost of cards sold'}>
+          {group.metrics.soldQty > 0 ? `$${soldCost.toFixed(2)}` : <span className="text-gray-600">—</span>}
         </td>
-        <td className="px-3 py-3 text-xs tabular-nums text-gray-400" title="Purchase cost still sitting in unsold cards">
-          ${group.metrics.remainingCost.toFixed(2)}
+        <td className="px-3 py-3 text-xs tabular-nums text-gray-400" title={bandPool ? 'Purchase cost not assigned to a sold price band yet' : 'Purchase cost still sitting in unsold cards'}>
+          ${leftCost.toFixed(2)}
         </td>
         <td className="px-3 py-3">
           <SkuPill sku={group.sku} onCopy={onCopySkU} />
@@ -1072,27 +1099,58 @@ function SkuGroupRow({
         </td>
       </tr>
 
-      {group.bandPool && (
-        <tr className="bg-gray-900/50 border-b border-gray-800/40">
-          <td />
-          <td colSpan={16} className="px-3 py-2">
-            <div className="flex flex-wrap items-center gap-2 pl-6">
-              <span className="text-[10px] uppercase tracking-wide text-gray-500">Price bands</span>
-              {group.bandPool.bands.filter(b => b.qty > 0).map(b => (
-                <span
-                  key={b.id}
-                  className={`text-[11px] px-2 py-0.5 rounded ${PRICE_BAND_TONE[b.id]}`}
-                  title={`${b.label} ${b.hint}: ${b.qty} sold · net $${b.net.toFixed(2)} vs cost $${b.cost.toFixed(2)} (${b.unitCost.toFixed(2)}/card)`}
-                >
-                  {b.label} · {b.qty} · ${b.unitCost.toFixed(2)}/card · {formatRoiPct(b.realizedRoi, 0)}
-                </span>
-              ))}
-              {group.bandPool.remainingCost > 0 && (
-                <span className="text-[11px] text-gray-500">
-                  ${group.bandPool.remainingCost.toFixed(2)} not in a sold band (unsold / no hits yet)
-                </span>
+      {bandPool && bandPool.bands.map(b => (
+        <tr
+          key={b.id}
+          data-price-band={b.id}
+          className="bg-gray-900/80 border-b border-gray-800/50"
+          title={`${b.label} ${b.hint}: ${b.qty} sold · net $${b.net.toFixed(2)} vs cost $${b.cost.toFixed(2)}`}
+        >
+          <td className="px-4 py-2" />
+          <td className="px-3 py-2" colSpan={3} />
+          <td className="px-3 py-2">
+            <div className="flex items-center gap-2">
+              <span className={`text-[11px] font-medium px-2 py-0.5 rounded ${PRICE_BAND_TONE[b.id]}`}>{b.label}</span>
+              <span className="text-[11px] text-gray-500">{b.hint}</span>
+              {b.qty > 0 && (
+                <span className="text-[11px] text-gray-400 tabular-nums">${b.unitCost.toFixed(2)}/card</span>
               )}
             </div>
+          </td>
+          <td className="px-3 py-2" />
+          <td className="px-3 py-2" />
+          <td className="px-3 py-2" />
+          <td className="px-3 py-2" />
+          <td className="px-3 py-2 text-xs tabular-nums text-gray-200">{b.qty}</td>
+          <td className="px-3 py-2 text-xs tabular-nums">
+            {b.qty > 0 ? (
+              <span className="text-green-400">${b.net.toFixed(2)}</span>
+            ) : (
+              <span className="text-gray-600">—</span>
+            )}
+          </td>
+          <td className="px-3 py-2">
+            <RoiBadge value={b.realizedRoi} title={`${b.label} net versus this tier's cost`} />
+          </td>
+          <td className="px-3 py-2" />
+          <td className="px-3 py-2 text-xs tabular-nums text-gray-300">
+            {b.cost > 0 ? `${Math.round((b.net / b.cost) * 100)}%` : <span className="text-gray-600">—</span>}
+          </td>
+          <td className="px-3 py-2 text-xs tabular-nums text-gray-300">
+            {b.qty > 0 ? `$${b.cost.toFixed(2)}` : <span className="text-gray-600">—</span>}
+          </td>
+          <td className="px-3 py-2 text-[11px] text-gray-600">—</td>
+          <td className="px-3 py-2 text-[11px] text-gray-500 font-mono">{group.sku}</td>
+          <td className="px-3 py-2" />
+          <td className="px-3 py-2" />
+        </tr>
+      ))}
+      {bandPool && bandPool.remainingCost > 0 && (
+        <tr className="bg-gray-900/80 border-b border-gray-800/50">
+          <td className="px-4 py-1.5" />
+          <td colSpan={3} />
+          <td colSpan={15} className="px-3 py-1.5 text-[11px] text-gray-500">
+            ${bandPool.remainingCost.toFixed(2)} of this lot is still unsold, so it is not on Base, Parallel, or Hit yet
           </td>
         </tr>
       )}
