@@ -138,11 +138,14 @@ async function drawSlip(
   const boxFill = rgb(0.95, 0.96, 0.97);
   const accent = rgb(0.13, 0.29, 0.72);
 
-  // Small inset so type stays off the paper edge and the center cut.
+  // Side inset keeps type off the paper edge and the center cut.
+  // The Canon clips about 1/4" off the top of an actual-size letter page,
+  // so the header starts that much lower than the side inset.
   const M = 14;
+  const TOP = M + 0.25 * 72;
   const pageW = SLIP_W;
   const centerLineX = pageW / 2;
-  let y = LETTER_H - M;
+  let y = LETTER_H - TOP;
 
   // ---- Header: logo + store name centered, QR top-right --------------------
   const qrImage = order.storeUrl ? await embedQrCode(pdfDoc, order.storeUrl) : null;
