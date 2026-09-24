@@ -56,7 +56,7 @@ function printPdf(sumatraPath, printerName, filePath) {
     return new Promise((resolve, reject) => {
         execFile(
             sumatraPath,
-            ['-print-to', printerName, '-print-settings', 'noscale,portrait', '-silent', '-exit-when-done', filePath],
+            ['-print-to', printerName, '-print-settings', 'noscale,portrait,paper=letter', '-silent', '-exit-when-done', filePath],
             { timeout: 60000 },
             (err, _stdout, stderr) => {
                 if (err) reject(new Error(stderr || err.message));
@@ -70,7 +70,8 @@ async function main() {
     loadEnvLocal();
     const args = process.argv.slice(2);
     const shouldPrint = args.includes('print');
-    const orderNumber = args.find((arg) => arg !== 'print' && !arg.startsWith('--'));
+    const slipOnly = args.includes('slip');
+    const orderNumber = args.find((arg) => arg !== 'print' && arg !== 'slip' && !arg.startsWith('--'));
     if (!orderNumber) {
         console.error('Usage: npm run print-order -- <order-number> [print]');
         console.error('Writes the PDF. Add the word print to send that one order to the printer in .env.local.');
@@ -179,11 +180,13 @@ async function main() {
     fs.unlinkSync(pdfPath);
     console.log(`Printed packing slip for ${orderNumber} on "${printerName}"`);
 
-    const { printShippingLabel } = await import('./label-print.mjs');
-    const label = await printShippingLabel({
-        tracking: first.tracking_number,
-        orderNumber,
-    });
-    if (label.printed) console.log(`Printed shipping label on "${label.printer}"`);
-    else console.log(label.reason);
+    if (!slipOnly) {
+        const { printShippingLabel } = await import('./label-print.mjs');
+        const label = await printShippingLabel({
+            tracking: first.tracking_number,
+            orderNumber,
+        });
+        if (label.printed) console.log(`Printed shipping label on "${label.printer}"`);
+        else console.log(label.reason);
+    }
 }

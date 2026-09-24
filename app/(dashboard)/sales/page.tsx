@@ -1786,10 +1786,8 @@ function SalesPageContent() {
                       })()}
                     </td>
 
-                    {/* Shipped — tracking set by the ITEM_MARKED_SHIPPED webhook (updates live via
-                        realtime); the slip link always hits the on-demand regenerate endpoint rather
-                        than the webhook-stored packing_slip_url, so it works even if that webhook's
-                        own backfill silently failed (see /api/ebay/packing-slip/[orderNumber]) */}
+                    {/* Shipped — the slip link is served by the local print agent so the Canon
+                        gets portrait letter at actual size. The PDF route is only a preview. */}
                     <td className="px-3 py-3 text-xs whitespace-nowrap">
                       <div className="flex flex-col gap-0.5">
                         {sale.tracking_number ? (
@@ -1805,11 +1803,11 @@ function SalesPageContent() {
                             <span className="text-gray-600">{fmtDate(sale.shipped_at)}</span>
                           )}
                           <a
-                            href={`/api/ebay/packing-slip/${encodeURIComponent(sale.order_number)}`}
+                            href={`http://127.0.0.1:47622/print-slip?order=${encodeURIComponent(sale.order_number)}`}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="text-blue-400 hover:text-blue-300 underline underline-offset-2"
-                            title="Regenerate and view/print the packing slip for this order"
+                            title="Print on the Canon: portrait letter, actual size (100%)"
                           >
                             {sale.packing_slip_url ? 'reprint slip' : 'print slip'}
                           </a>

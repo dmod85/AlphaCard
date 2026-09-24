@@ -1,8 +1,10 @@
 import fs from 'fs';
 import os from 'os';
 import net from 'net';
+import http from 'http';
 import path from 'path';
-import { execFile } from 'child_process';
+import { execFile, spawn } from 'child_process';
+import { fileURLToPath } from 'url';
 import { createClient } from '@supabase/supabase-js';
 import { scanNewLabels } from './label-print.mjs';
 
@@ -92,7 +94,7 @@ function printPdf(filePath) {
   return new Promise((resolve, reject) => {
     execFile(
       SUMATRA_PATH,
-      ['-print-to', PRINTER_NAME, '-print-settings', 'noscale,portrait', '-silent', '-exit-when-done', filePath],
+      ['-print-to', PRINTER_NAME, '-print-settings', 'noscale,portrait,paper=letter', '-silent', '-exit-when-done', filePath],
       (err, stdout, stderr) => {
         if (err) reject(new Error(stderr || err.message));
         else resolve();
@@ -166,6 +168,55 @@ function subscribe() {
     });
   return channel;
 }
+
+function printSlipFromSite(orderNumber) {
+  const script = fileURLToPath(new URL('./print-one-order.mjs', import.meta.url));
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, [script, orderNumber, 'print', 'slip'], {
+      cwd: process.cwd(),
+      env: process.env,
+    });
+    let err = '';
+    child.stderr.on('data', (chunk) => { err += chunk; });
+    child.on('error', reject);
+    child.on('exit', (code) => {
+      if (code === 0) resolve();
+      else reject(new Error(err.trim() || `print exited ${code}`));
+    });
+  });
+}
+
+function escapeHtml(value) {
+  return String(value).replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+}
+
+const slipSite = http.createServer(async (req, res) => {
+  try {
+    const url = new URL(req.url || '/', 'http://127.0.0.1');
+    if (url.pathname !== '/print-slip') {
+      res.writeHead(404, { 'Content-Type': 'text/plain' });
+      res.end('Not found');
+      return;
+    }
+    const orderNumber = url.searchParams.get('order')?.trim();
+    if (!orderNumber) {
+      res.writeHead(400, { 'Content-Type': 'text/plain' });
+      res.end('Missing order');
+      return;
+    }
+    await printSlipFromSite(orderNumber);
+    const safe = escapeHtml(orderNumber);
+    const printer = escapeHtml(PRINTER_NAME);
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+    res.end(`<!doctype html><meta charset="utf-8"><title>Printed</title><p>Packing slip ${safe} was sent to ${printer}. Portrait letter, actual size.</p>`);
+  } catch (err) {
+    res.writeHead(500, { 'Content-Type': 'text/plain; charset=utf-8' });
+    res.end(err.message || String(err));
+  }
+});
+slipSite.listen(47622, '127.0.0.1', () => {
+  console.log('[print-agent] website print-slip link → http://127.0.0.1:47622/print-slip');
+});
 
 console.log(`[print-agent] starting — packing slips on "${PRINTER_NAME}", shipping labels on "${process.env.LABEL_PRINTER_NAME || 'Y41BT Label'}"`);
 await catchUpPending();
