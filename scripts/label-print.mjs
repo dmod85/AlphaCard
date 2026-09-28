@@ -154,16 +154,13 @@ export async function printShippingLabel({ file, tracking, orderNumber, dry = fa
             reason: `No shipping-label PDF found for this order. Download it from eBay into ${inboxDir()} or ${downloadsDir()}, then run the command again.`,
         };
     }
-    const dest = path.join(os.tmpdir(), `thermal-label-${path.basename(src).replace(/[^a-z0-9.]+/gi, '_')}`);
-    const fitted = await fitLabel(src, dest, force);
-    if (!fitted.ok) {
-        return { printed: false, reason: fitted.skip ? `${path.basename(src)} is not a carrier shipping label.` : fitted.detail };
-    }
+    const dest = src; // Bypass the Python cropping script entirely on Linux!
+    // The Zebra CUPS driver automatically crops and rasterizes PDFs for us!
+    
     if (dry) {
         return { printed: false, pdf: dest, source: src, reason: `PDF only. Not sent to the label printer. Written to ${dest}` };
     }
     await printPdf(dest);
-    try { fs.unlinkSync(dest); } catch { /* temp file */ }
     return { printed: true, source: src, printer: labelPrinterName() };
 }
 
