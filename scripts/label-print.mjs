@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -13,9 +14,9 @@ import { createClient } from '@supabase/supabase-js';
 //   npm run print-label -- "C:\path\to\label.pdf" pdf-only
 //
 // eBay does not hand this app the label file. Drop the PDF eBay gives you
-// into labels\inbox, or into Downloads, and the print agent sends it to the
-// label printer. A matching order number is found by the tracking number
-// in the file name or in the PDF text.
+// into labels\inbox, or into the watch folder (Downloads, or LABEL_WATCH_DIR),
+// and the print agent sends it to the label printer. A matching order number
+// is found by the tracking number in the file name or in the PDF text.
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const STATE_PATH = path.join(repoRoot, 'logs', 'printed-labels.json');
@@ -41,7 +42,7 @@ function inboxDir() {
 }
 
 function downloadsDir() {
-    return path.join(os.homedir(), 'Downloads');
+    return process.env.LABEL_WATCH_DIR?.trim() || path.join(os.homedir(), 'Downloads');
 }
 
 function run(cmd, args) {
@@ -66,19 +67,31 @@ async function fitLabel(src, dest, force) {
 function printPdf(filePath) {
     const sumatra = process.env.SUMATRA_PATH;
     const printer = labelPrinterName();
-    if (!sumatra || !fs.existsSync(sumatra)) {
+    if (process.platform === 'win32' && (!sumatra || !fs.existsSync(sumatra))) {
         throw new Error(`SumatraPDF not found at ${sumatra || '(SUMATRA_PATH unset)'}`);
     }
     return new Promise((resolve, reject) => {
-        execFile(
-            sumatra,
-            ['-print-to', printer, '-print-settings', 'fit,portrait,paper=100mm x 150mm', '-silent', '-exit-when-done', filePath],
-            { timeout: 60000 },
-            (err, _stdout, stderr) => {
-                if (err) reject(new Error(stderr || err.message));
-                else resolve();
-            }
-        );
+        if (process.platform === 'win32') {
+            execFile(
+                sumatra,
+                ['-print-to', printer, '-print-settings', 'fit,portrait,paper=100mm x 150mm', '-silent', '-exit-when-done', filePath],
+                { timeout: 60000 },
+                (err, _stdout, stderr) => {
+                    if (err) reject(new Error(stderr || err.message));
+                    else resolve();
+                }
+            );
+        } else {
+            execFile(
+                'lp',
+                ['-d', printer, '-o', 'media=Custom.100x150mm', '-o', 'fit-to-page', filePath],
+                { timeout: 60000 },
+                (err, _stdout, stderr) => {
+                    if (err) reject(new Error(stderr || err.message));
+                    else resolve();
+                }
+            );
+        }
     });
 }
 
@@ -103,6 +116,10 @@ function listPdfs(dir) {
         .map((name) => path.join(dir, name));
 }
 
+function watchedPdfs() {
+    return [...new Set([inboxDir(), downloadsDir()].flatMap(listPdfs))];
+}
+
 async function pdfText(filePath) {
     const result = await run('python', [
         '-c',
@@ -114,7 +131,7 @@ async function pdfText(filePath) {
 
 export async function findLabelPdf({ tracking, orderNumber } = {}) {
     const needles = [tracking, orderNumber].filter(Boolean).map((value) => String(value).replace(/\s+/g, ''));
-    const files = [...listPdfs(inboxDir()), ...listPdfs(downloadsDir())].sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs);
+    const files = watchedPdfs().sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs);
     for (const filePath of files.slice(0, 40)) {
         const base = path.basename(filePath).replace(/\s+/g, '');
         if (needles.some((needle) => needle && base.includes(needle))) return filePath;
@@ -134,7 +151,7 @@ export async function printShippingLabel({ file, tracking, orderNumber, dry = fa
     if (!src) {
         return {
             printed: false,
-            reason: `No shipping-label PDF found for this order. Download it from eBay into ${inboxDir()} or Downloads, then run the command again.`,
+            reason: `No shipping-label PDF found for this order. Download it from eBay into ${inboxDir()} or ${downloadsDir()}, then run the command again.`,
         };
     }
     const dest = path.join(os.tmpdir(), `thermal-label-${path.basename(src).replace(/[^a-z0-9.]+/gi, '_')}`);
@@ -150,38 +167,96 @@ export async function printShippingLabel({ file, tracking, orderNumber, dry = fa
     return { printed: true, source: src, printer: labelPrinterName() };
 }
 
+// One scan at a time. A label print takes longer than the 5s poll, and a
+// second pass used to send the same PDF again before the first pass recorded it.
+let scanBusy = false;
+const labelWaiting = new Map();
+
+export function decideLabelScan({ recordedMtime, size, mtime, pending, hash, printedHashes }) {
+    if (recordedMtime === mtime) return { type: 'seen' };
+    if (!pending || pending.size !== size || pending.mtime !== mtime) {
+        return { type: 'wait', pending: { size, mtime } };
+    }
+    if (hash && printedHashes?.[hash]) return { type: 'duplicate' };
+    return { type: 'print' };
+}
+
+function fileHash(filePath) {
+    const hash = crypto.createHash('sha256');
+    hash.update(fs.readFileSync(filePath));
+    return hash.digest('hex');
+}
+
 export async function scanNewLabels() {
-    loadEnvLocal();
-    fs.mkdirSync(inboxDir(), { recursive: true });
-    const previous = readState();
-    const firstRun = !previous;
-    const state = previous || {};
-    const files = [...listPdfs(inboxDir()), ...listPdfs(downloadsDir())];
-    const printedFiles = [];
-    for (const filePath of files) {
-        let mtime = 0;
-        try { mtime = fs.statSync(filePath).mtimeMs; } catch { continue; }
-        if (state[filePath] === mtime) continue;
+    if (scanBusy) return [];
+    scanBusy = true;
+    try {
+        loadEnvLocal();
+        fs.mkdirSync(inboxDir(), { recursive: true });
+        const previous = readState();
+        const firstRun = !previous;
+        const state = previous || {};
+        const printedHashes = state.__printedHashes && typeof state.__printedHashes === 'object'
+            ? state.__printedHashes
+            : {};
+        state.__printedHashes = printedHashes;
+        const files = watchedPdfs();
+        const printedFiles = [];
+        for (const filePath of files) {
+            let mtime = 0;
+            let size = 0;
+            try {
+                const st = fs.statSync(filePath);
+                mtime = st.mtimeMs;
+                size = st.size;
+            } catch { continue; }
+            if (firstRun) {
+                state[filePath] = mtime;
+                continue;
+            }
+            const pending = labelWaiting.get(filePath);
+            const stable = pending && pending.size === size && pending.mtime === mtime;
+            const hash = stable ? fileHash(filePath) : null;
+            const decision = decideLabelScan({
+                recordedMtime: typeof state[filePath] === 'number' ? state[filePath] : undefined,
+                size,
+                mtime,
+                pending,
+                hash,
+                printedHashes,
+            });
+            if (decision.type === 'wait') {
+                labelWaiting.set(filePath, decision.pending);
+                continue;
+            }
+            labelWaiting.delete(filePath);
+            if (decision.type === 'seen') continue;
+            if (decision.type === 'duplicate') {
+                state[filePath] = mtime;
+                continue;
+            }
+            const result = await printShippingLabel({ file: filePath, force: false });
+            if (result.printed) {
+                printedFiles.push(filePath);
+                let doneMtime = mtime;
+                try { doneMtime = fs.statSync(filePath).mtimeMs; } catch { /* keep the mtime we printed */ }
+                state[filePath] = doneMtime;
+                if (hash) printedHashes[hash] = Date.now();
+                console.log(`[label] printed ${path.basename(filePath)} on "${result.printer}"`);
+            } else if (result.reason && /not a carrier/.test(result.reason)) {
+                state[filePath] = mtime;
+            } else if (result.reason) {
+                console.error(`[label] ${path.basename(filePath)}: ${result.reason}`);
+            }
+        }
+        writeState(state);
         if (firstRun) {
-            state[filePath] = mtime;
-            continue;
+            console.log(`[label] watching ${downloadsDir()} and ${inboxDir()} for shipping labels → "${labelPrinterName()}" (${files.length} already there, left alone)`);
         }
-        const result = await printShippingLabel({ file: filePath, force: false });
-        if (result.printed) {
-            printedFiles.push(filePath);
-            state[filePath] = mtime;
-            console.log(`[label] printed ${path.basename(filePath)} on "${result.printer}"`);
-        } else if (result.reason && /not a carrier/.test(result.reason)) {
-            state[filePath] = mtime;
-        } else if (result.reason) {
-            console.error(`[label] ${path.basename(filePath)}: ${result.reason}`);
-        }
+        return printedFiles;
+    } finally {
+        scanBusy = false;
     }
-    writeState(state);
-    if (firstRun) {
-        console.log(`[label] watching ${downloadsDir()} and ${inboxDir()} for shipping labels → "${labelPrinterName()}" (${files.length} already there, left alone)`);
-    }
-    return printedFiles;
 }
 
 function salesClient() {

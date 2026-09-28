@@ -54,15 +54,27 @@ function num(value) {
 
 function printPdf(sumatraPath, printerName, filePath) {
     return new Promise((resolve, reject) => {
-        execFile(
-            sumatraPath,
-            ['-print-to', printerName, '-print-settings', 'noscale,portrait,paper=letter', '-silent', '-exit-when-done', filePath],
-            { timeout: 60000 },
-            (err, _stdout, stderr) => {
-                if (err) reject(new Error(stderr || err.message));
-                else resolve();
-            }
-        );
+        if (process.platform === 'win32') {
+            execFile(
+                sumatraPath,
+                ['-print-to', printerName, '-print-settings', 'noscale,portrait,paper=letter', '-silent', '-exit-when-done', filePath],
+                { timeout: 60000 },
+                (err, _stdout, stderr) => {
+                    if (err) reject(new Error(stderr || err.message));
+                    else resolve();
+                }
+            );
+        } else {
+            execFile(
+                'lp',
+                ['-d', printerName, '-o', 'media=Letter', '-o', 'fit-to-page', filePath],
+                { timeout: 60000 },
+                (err, _stdout, stderr) => {
+                    if (err) reject(new Error(stderr || err.message));
+                    else resolve();
+                }
+            );
+        }
     });
 }
 
@@ -82,18 +94,23 @@ async function main() {
     const supabaseKey = process.env.SUPABASE_SERVICE_KEY;
     const printerName = process.env.PRINTER_NAME;
     const sumatraPath = process.env.SUMATRA_PATH;
-    for (const [name, value] of Object.entries({
+    
+    const requiredEnvVars = {
         NEXT_PUBLIC_SUPABASE_URL: supabaseUrl,
         SUPABASE_SERVICE_KEY: supabaseKey,
         PRINTER_NAME: printerName,
-        SUMATRA_PATH: sumatraPath,
-    })) {
+    };
+    if (process.platform === 'win32') {
+        requiredEnvVars.SUMATRA_PATH = sumatraPath;
+    }
+
+    for (const [name, value] of Object.entries(requiredEnvVars)) {
         if (!value) {
             console.error(`Missing ${name} in .env.local`);
             process.exit(1);
         }
     }
-    if (shouldPrint && !fs.existsSync(sumatraPath)) {
+    if (process.platform === 'win32' && shouldPrint && !fs.existsSync(sumatraPath)) {
         console.error(`SumatraPDF not found at ${sumatraPath}`);
         process.exit(1);
     }
@@ -145,7 +162,7 @@ async function main() {
     });
 
     const safeName = orderNumber.replace(/[^a-z0-9-]/gi, '_');
-    const pdfPath = path.join(os.tmpdir(), `packing-slip-${safeName}.pdf`);
+    const pdfPath = path.join(os.tmpdir(), `packing-slip-${safeName}-${process.pid}.pdf`);
     fs.writeFileSync(pdfPath, Buffer.from(pdfBytes));
     console.log(
         `Order ${orderNumber}: ${rows.length} item(s), ship-to ${first.ship_to_name ? 'present' : 'missing'}, ${pdfBytes.length} bytes`

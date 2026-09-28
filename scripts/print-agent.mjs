@@ -48,7 +48,12 @@ const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY;
 const PRINTER_NAME = process.env.PRINTER_NAME;
 const SUMATRA_PATH = process.env.SUMATRA_PATH;
 
-for (const [name, val] of Object.entries({ SUPABASE_URL, SUPABASE_KEY, PRINTER_NAME, SUMATRA_PATH })) {
+const requiredEnvVars = { SUPABASE_URL, SUPABASE_KEY, PRINTER_NAME };
+if (process.platform === 'win32') {
+  requiredEnvVars.SUMATRA_PATH = SUMATRA_PATH;
+}
+
+for (const [name, val] of Object.entries(requiredEnvVars)) {
   if (!val) {
     console.error(`[print-agent] Missing required env var: ${name} (set it in .env.local)`);
     process.exit(1);
@@ -92,14 +97,25 @@ async function claimOrder(orderNumber) {
 
 function printPdf(filePath) {
   return new Promise((resolve, reject) => {
-    execFile(
-      SUMATRA_PATH,
-      ['-print-to', PRINTER_NAME, '-print-settings', 'noscale,portrait,paper=letter', '-silent', '-exit-when-done', filePath],
-      (err, stdout, stderr) => {
-        if (err) reject(new Error(stderr || err.message));
-        else resolve();
-      }
-    );
+    if (process.platform === 'win32') {
+      execFile(
+        SUMATRA_PATH,
+        ['-print-to', PRINTER_NAME, '-print-settings', 'noscale,portrait,paper=letter', '-silent', '-exit-when-done', filePath],
+        (err, stdout, stderr) => {
+          if (err) reject(new Error(stderr || err.message));
+          else resolve();
+        }
+      );
+    } else {
+      execFile(
+        'lp',
+        ['-d', PRINTER_NAME, '-o', 'media=Letter', '-o', 'fit-to-page', filePath],
+        (err, stdout, stderr) => {
+          if (err) reject(new Error(stderr || err.message));
+          else resolve();
+        }
+      );
+    }
   });
 }
 
@@ -226,6 +242,35 @@ slipSite.listen(47622, '127.0.0.1', () => {
 console.log(`[print-agent] starting — packing slips on "${PRINTER_NAME}", shipping labels on "${process.env.LABEL_PRINTER_NAME || 'Y41BT Label'}"`);
 await catchUpPending();
 subscribe();
+async function printedRecently(orderNumber) {
+  const { data, error } = await supabase
+    .from('ebay_sales')
+    .select('printed_at')
+    .eq('order_number', orderNumber)
+    .not('printed_at', 'is', null)
+    .limit(1);
+  if (error || !data?.length || !data[0].printed_at) return false;
+  return Date.now() - new Date(data[0].printed_at).getTime() < 10 * 60 * 1000;
+}
+
+// The ship webhook prints a slip as soon as the slip URL is saved. The label
+// watcher used to print that same slip again. One order keeps the in-flight
+// slot until the first print finishes.
+async function printSlipOnce(orderNumber) {
+  if (printing.has(orderNumber)) return;
+  printing.add(orderNumber);
+  try {
+    if (await printedRecently(orderNumber)) {
+      console.log(`[print-agent] packing slip for ${orderNumber} already sent`);
+      return;
+    }
+    await printSlipFromSite(orderNumber);
+    console.log(`[print-agent] packing slip for ${orderNumber} sent with the shipping label`);
+  } finally {
+    printing.delete(orderNumber);
+  }
+}
+
 async function printSlipsForNewLabels() {
   const files = await scanNewLabels();
   for (const filePath of files) {
@@ -241,8 +286,7 @@ async function printSlipsForNewLabels() {
       continue;
     }
     try {
-      await printSlipFromSite(orderNumber);
-      console.log(`[print-agent] packing slip for ${orderNumber} sent with the shipping label`);
+      await printSlipOnce(orderNumber);
     } catch (err) {
       console.error(`[print-agent] packing slip for ${orderNumber}: ${err.message || err}`);
     }
@@ -292,6 +336,9 @@ async function printQueuedSlips() {
 await printQueuedSlips();
 setInterval(() => {
   printSlipsForNewLabels().catch((err) => console.error('[label]', err.message || err));
-  printQueuedSlips().catch((err) => console.error('[print-agent] slip queue:', err.message || err));
 }, 5000);
+
+setInterval(() => {
+  printQueuedSlips().catch((err) => console.error('[print-agent] slip queue:', err.message || err));
+}, 60000);
 console.log('[print-agent] listening for new packing slips and shipping labels (Ctrl+C to stop)...');

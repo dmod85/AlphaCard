@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "test": "tsx --test app/lib/pool-roi.test.ts app/lib/pnl.test.ts app/lib/order-costs.test.ts app/lib/price-bands.test.ts",
+    "test": "tsx --test app/lib/pool-roi.test.ts app/lib/pnl.test.ts app/lib/order-costs.test.ts app/lib/price-bands.test.ts scripts/label-scan.test.mjs",
     "seed:cards": "tsx --env-file=.env scripts/seed-cards.ts",
     "print-agent": "node scripts/print-agent.mjs",
     "print-order": "node scripts/print-one-order.mjs",
