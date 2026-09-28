@@ -82,13 +82,35 @@ function printPdf(filePath) {
                 }
             );
         } else {
+            // Linux: Bypass CUPS driver hell. We natively convert the PDF to a 1-bit raster
+            // image using Ghostscript, wrap it in TSPL commands, and fire it to the RAW queue.
+            const tsplPath = path.join(os.tmpdir(), `thermal-${Date.now()}.bin`);
+            const pbmPath = `${tsplPath}.pbm`;
+            
             execFile(
-                'lp',
-                ['-d', printer, '-o', 'media=Custom.100x150mm', '-o', 'fit-to-page', filePath],
+                'gs',
+                ['-q', '-dQUIET', '-dSAFER', '-dBATCH', '-dNOPAUSE', '-sDEVICE=pbmraw', '-r203', '-g816x1218', `-sOutputFile=${pbmPath}`, filePath],
                 { timeout: 60000 },
                 (err, _stdout, stderr) => {
-                    if (err) reject(new Error(stderr || err.message));
-                    else resolve();
+                    if (err) return reject(new Error(stderr || err.message));
+                    try {
+                        const pbm = fs.readFileSync(pbmPath);
+                        const dimIdx = pbm.indexOf(Buffer.from('816 1218'));
+                        const bitmapData = pbm.subarray(dimIdx + 8 + 1);
+                        
+                        const header = Buffer.from('SIZE 100 mm, 150 mm\r\nGAP 0, 0\r\nCLS\r\nBITMAP 0,0,102,1218,0,');
+                        const footer = Buffer.from('\r\nPRINT 1,1\r\n');
+                        fs.writeFileSync(tsplPath, Buffer.concat([header, bitmapData, footer]));
+                        
+                        execFile('lp', ['-d', printer, tsplPath], { timeout: 30000 }, (lpErr, lpOut, lpStdErr) => {
+                            try { fs.unlinkSync(pbmPath); fs.unlinkSync(tsplPath); } catch {}
+                            if (lpErr) reject(new Error(lpStdErr || lpErr.message));
+                            else resolve();
+                        });
+                    } catch (e) {
+                        try { fs.unlinkSync(pbmPath); fs.unlinkSync(tsplPath); } catch {}
+                        reject(e);
+                    }
                 }
             );
         }
