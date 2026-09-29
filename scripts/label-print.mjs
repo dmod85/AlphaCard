@@ -148,6 +148,10 @@ function watchedPdfs() {
 }
 
 async function pdfText(filePath) {
+    if (process.platform !== 'win32') {
+        const result = await run('pdftotext', [filePath, '-']);
+        return result.stdout || '';
+    }
     const result = await run('python', [
         '-c',
         'import sys,pypdfium2 as p; d=p.PdfDocument(sys.argv[1]); print("\\n".join((pg.get_textpage().get_text_bounded() or "") for pg in d))',
