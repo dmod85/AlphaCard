@@ -89,7 +89,7 @@ function printPdf(filePath) {
             
             execFile(
                 'gs',
-                ['-q', '-dQUIET', '-dSAFER', '-dBATCH', '-dNOPAUSE', '-sDEVICE=pbmraw', '-r203', '-g816x1218', `-sOutputFile=${pbmPath}`, filePath],
+                ['-q', '-dQUIET', '-dSAFER', '-dBATCH', '-dNOPAUSE', '-sDEVICE=pbmraw', '-r203', '-g816x1218', '-dPDFFitPage', `-sOutputFile=${pbmPath}`, filePath],
                 { timeout: 60000 },
                 (err, _stdout, stderr) => {
                     if (err) return reject(new Error(stderr || err.message));
