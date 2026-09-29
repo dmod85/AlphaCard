@@ -146,7 +146,10 @@ function listPdfs(dir) {
     if (!fs.existsSync(dir)) return [];
     return fs
         .readdirSync(dir)
-        .filter((name) => name.toLowerCase().endsWith('.pdf') && !/packing[-_ ]?slip/i.test(name))
+        .filter((name) => {
+            const lower = name.toLowerCase();
+            return lower.endsWith('.pdf') && lower.includes('ebay') && !/packing[-_ ]?slip/i.test(name);
+        })
         .map((name) => path.join(dir, name));
 }
 
