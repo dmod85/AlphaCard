@@ -98,6 +98,11 @@ function printPdf(filePath) {
                         const dimIdx = pbm.indexOf(Buffer.from('816 1218'));
                         const bitmapData = pbm.subarray(dimIdx + 8 + 1);
                         
+                        // Invert the colors (PBM uses 1=black, but this printer expects 0=black)
+                        for (let i = 0; i < bitmapData.length; i++) {
+                            bitmapData[i] = ~bitmapData[i];
+                        }
+                        
                         const header = Buffer.from('SIZE 100 mm, 150 mm\r\nGAP 3 mm, 0 mm\r\nCLS\r\nBITMAP 0,0,102,1218,0,');
                         const footer = Buffer.from('\r\nPRINT 1,1\r\n');
                         fs.writeFileSync(tsplPath, Buffer.concat([header, bitmapData, footer]));
