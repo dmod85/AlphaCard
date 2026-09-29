@@ -109,7 +109,7 @@ function printPdf(filePath) {
     } else {
       execFile(
         'lp',
-        ['-d', PRINTER_NAME, '-o', 'media=Letter', '-o', 'fit-to-page', filePath],
+        ['-d', PRINTER_NAME, '-o', 'media=Letter', '-o', 'fit-to-page', '-o', 'InputSlot=Rear', filePath],
         (err, stdout, stderr) => {
           if (err) reject(new Error(stderr || err.message));
           else resolve();
