@@ -92,9 +92,9 @@ function printPdf(filePath) {
                 [
                     '-q', '-dQUIET', '-dSAFER', '-dBATCH', '-dNOPAUSE', 
                     '-sDEVICE=pbmraw', '-r203', '-g816x1218', '-dPDFFitPage', 
+                    `-sOutputFile=${pbmPath}`,
                     '-c', '<</Install {1.06 1.06 scale -24 -36 translate}>> setpagedevice', 
-                    '-f', filePath, 
-                    `-sOutputFile=${pbmPath}`
+                    '-f', filePath
                 ],
                 { timeout: 60000 },
                 (err, _stdout, stderr) => {
