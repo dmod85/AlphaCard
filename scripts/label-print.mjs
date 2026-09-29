@@ -93,6 +93,7 @@ function printPdf(filePath) {
                 { timeout: 60000 },
                 (err, _stdout, stderr) => {
                     if (err) return reject(new Error(stderr || err.message));
+                    if (!fs.existsSync(pbmPath)) return reject(new Error(`Ghostscript failed to generate PBM for ${filePath}`));
                     try {
                         const pbm = fs.readFileSync(pbmPath);
                         const dimIdx = pbm.indexOf(Buffer.from('816 1218'));
@@ -263,7 +264,15 @@ export async function scanNewLabels() {
                 state[filePath] = mtime;
                 continue;
             }
-            const result = await printShippingLabel({ file: filePath, force: false });
+            let result;
+            try {
+                result = await printShippingLabel({ file: filePath, force: false });
+            } catch (err) {
+                console.error(`[label] failed to print ${path.basename(filePath)}:`, err.message || err);
+                state[filePath] = mtime; // Mark as seen so it doesn't loop forever
+                continue;
+            }
+            
             if (result.printed) {
                 printedFiles.push(filePath);
                 let doneMtime = mtime;
