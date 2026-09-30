@@ -15,7 +15,7 @@ import {
 // define a slip width slightly smaller to provide healthy margins.
 const LETTER_W = 5 * 72; // 360pt
 const LETTER_H = 8.5 * 72; // 612pt
-const SLIP_W = 4.4 * 72; // 316pt
+const SLIP_W = LETTER_W; // 360pt
 
 // Drop a logo at one of these paths (relative to the repo's public/ dir) to
 // have it appear centered in the header. Falls back to store-name text only
@@ -139,10 +139,8 @@ async function drawSlip(
   const accent = rgb(0.13, 0.29, 0.72);
 
   // Side inset keeps type off the paper edge and the center cut.
-  // The Canon clips about 1/4" off the top of an actual-size letter page,
-  // so the header starts that much lower than the side inset.
   const M = 14;
-  const TOP = M + 0.25 * 72;
+  const TOP = M; // Reduced top margin so it's closer to the top edge
   const pageW = SLIP_W;
   const centerLineX = pageW / 2;
   let y = LETTER_H - TOP;
