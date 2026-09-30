@@ -97,9 +97,9 @@ function printPdf(filePath) {
                     '-f', filePath
                 ],
                 { timeout: 60000 },
-                (err, _stdout, stderr) => {
+                (err, stdout, stderr) => {
                     if (err) return reject(new Error(stderr || err.message));
-                    if (!fs.existsSync(pbmPath)) return reject(new Error(`Ghostscript failed to generate PBM for ${filePath}`));
+                    if (!fs.existsSync(pbmPath)) return reject(new Error(`Ghostscript failed to generate PBM for ${filePath}. STDOUT: ${stdout} STDERR: ${stderr}`));
                     try {
                         const pbm = fs.readFileSync(pbmPath);
                         const dimIdx = pbm.indexOf(Buffer.from('816 1218'));
@@ -218,6 +218,7 @@ let scanBusy = false;
 const labelWaiting = new Map();
 
 export function decideLabelScan({ recordedMtime, size, mtime, pending, hash, printedHashes }) {
+    if (size === 0) return { type: 'ignore' }; // Ignore 0-byte files (still downloading or corrupt)
     if (recordedMtime === mtime) return { type: 'seen' };
     if (!pending || pending.size !== size || pending.mtime !== mtime) {
         return { type: 'wait', pending: { size, mtime } };
@@ -275,6 +276,7 @@ export async function scanNewLabels() {
                 continue;
             }
             labelWaiting.delete(filePath);
+            if (decision.type === 'ignore') continue;
             if (decision.type === 'seen') continue;
             if (decision.type === 'duplicate') {
                 state[filePath] = mtime;
