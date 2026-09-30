@@ -9,5 +9,5 @@ for (const line of fs.readFileSync(path.join(repoRoot, '.env.local'), 'utf8').sp
 }
 
 const { syncRecentSales } = await import('../app/lib/ebay-orders.ts');
-const count = await syncRecentSales(2);
+const count = await syncRecentSales(7);
 console.log(`synced ${count} order line(s)`);
