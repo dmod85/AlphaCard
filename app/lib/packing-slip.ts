@@ -11,10 +11,11 @@ import {
   rgb,
 } from 'pdf-lib';
 
-// Portrait US Letter, printed at actual size (100%). The slip is 5.25" wide
-// on the left side of the page. The rest of the sheet stays blank.
-const LETTER_W = 5 * 72; // 360pt
-const LETTER_H = 8.5 * 72; // 612pt
+// Portrait US Letter (8.5x11). We draw a 5" wide slip directly in the center
+// of the page. This tricks the printer into perfectly hitting 5x8.5 paper
+// that is fed through the center guides of the rear tray.
+const LETTER_W = 8.5 * 72; // 612pt
+const LETTER_H = 11 * 72; // 792pt
 const SLIP_W = 5 * 72; // 360pt
 
 // Drop a logo at one of these paths (relative to the repo's public/ dir) to
@@ -137,6 +138,9 @@ async function drawSlip(
   const lightGray = rgb(0.82, 0.82, 0.82);
   const boxFill = rgb(0.95, 0.96, 0.97);
   const accent = rgb(0.13, 0.29, 0.72);
+
+  // Translate the drawing context to center the 5" slip on the 8.5" page
+  page.translate((LETTER_W - SLIP_W) / 2, 0);
 
   // Side inset keeps type off the paper edge and the center cut.
   // The Canon clips about 1/4" off the top of an actual-size letter page,

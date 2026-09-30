@@ -109,7 +109,7 @@ function printPdf(filePath) {
     } else {
       execFile(
         'lp',
-        ['-d', PRINTER_NAME, '-o', 'media=Custom.5x8.5in', '-o', 'fit-to-page', '-o', 'InputSlot=Rear', '-o', 'orientation-requested=3', filePath],
+        ['-d', PRINTER_NAME, '-o', 'media=Letter', '-o', 'fit-to-page', '-o', 'InputSlot=Rear', '-o', 'orientation-requested=3', filePath],
         (err, stdout, stderr) => {
           if (err) reject(new Error(stderr || err.message));
           else resolve();
@@ -226,7 +226,7 @@ const slipSite = http.createServer(async (req, res) => {
     const safe = escapeHtml(orderNumber);
     const printer = escapeHtml(PRINTER_NAME);
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-    res.end(`<!doctype html><meta charset="utf-8"><title>Printed</title><p>Packing slip ${safe} was sent to ${printer}. Portrait 5x8.5, actual size.</p>`);
+    res.end(`<!doctype html><meta charset="utf-8"><title>Printed</title><p>Packing slip ${safe} was sent to ${printer}. 8.5x11, centered.</p>`);
   } catch (err) {
     res.writeHead(500, { 'Content-Type': 'text/plain; charset=utf-8' });
     res.end(err.message || String(err));
