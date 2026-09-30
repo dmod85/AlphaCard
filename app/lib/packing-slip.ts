@@ -9,6 +9,7 @@ import {
   PDFName,
   StandardFonts,
   rgb,
+  degrees,
 } from 'pdf-lib';
 
 // Portrait 5x8.5 paper. We set the canvas to exactly 5x8.5 and 
