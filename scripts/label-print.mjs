@@ -90,17 +90,50 @@ function printPdf(filePath) {
             const btMac = process.env.LABEL_PRINTER_BT_MAC?.trim();
             const btChannel = process.env.LABEL_PRINTER_BT_CHANNEL?.trim() || '1';
 
-            execFile(
-                'gs',
-                [
-                    '-q', '-dQUIET', '-dSAFER', '-dBATCH', '-dNOPAUSE', 
-                    '-sDEVICE=pbmraw', '-r203', '-g816x1218', '-dPDFFitPage', 
+            // --- Pass 1: detect actual content bounding box ---
+            // gs -sDEVICE=bbox writes "%%BoundingBox: x1 y1 x2 y2" to stderr
+            const bboxResult = await run('gs', [
+                '-q', '-dBATCH', '-dNOPAUSE', '-dSAFER', '-sDEVICE=bbox', filePath
+            ]);
+            const bboxMatch = (bboxResult.stderr || '').match(/%%BoundingBox:\s+(-?\d+)\s+(-?\d+)\s+(-?\d+)\s+(-?\d+)/);
+
+            // Label canvas in PDF points (4" × 6" at 72pt/in)
+            const LABEL_W_PT = 4 * 72;   // 288
+            const LABEL_H_PT = 6 * 72;   // 432
+
+            let gsRenderArgs;
+            if (bboxMatch) {
+                const [x1, y1, x2, y2] = bboxMatch.slice(1).map(Number);
+                const bboxW = x2 - x1;
+                const bboxH = y2 - y1;
+                // Scale so the content fills the label (uniform scale, fit-to-label)
+                const scale = Math.min(LABEL_W_PT / bboxW, LABEL_H_PT / bboxH);
+                const psSetup = `<</PageSize [${LABEL_W_PT} ${LABEL_H_PT}] /ImagingBBox null>> setpagedevice ${scale} ${scale} scale ${-x1} ${-y1} translate`;
+                console.log(`[label] bbox ${bboxW.toFixed(0)}x${bboxH.toFixed(0)}pt → scale ${scale.toFixed(3)}`);
+                gsRenderArgs = [
+                    '-q', '-dQUIET', '-dSAFER', '-dBATCH', '-dNOPAUSE',
+                    '-sDEVICE=pbmraw', '-r203', '-g816x1218', '-dFIXEDMEDIA',
                     `-sOutputFile=${pbmPath}`,
-                    '-c', '<</Install {1.06 1.06 scale -24 -36 translate}>> setpagedevice', 
-                    '-f', filePath
-                ],
+                    '-c', psSetup,
+                    '-f', filePath,
+                ];
+            } else {
+                // Fallback: no bbox detected, use old fit-to-page approach
+                console.log('[label] no bbox detected, using dPDFFitPage fallback');
+                gsRenderArgs = [
+                    '-q', '-dQUIET', '-dSAFER', '-dBATCH', '-dNOPAUSE',
+                    '-sDEVICE=pbmraw', '-r203', '-g816x1218', '-dPDFFitPage',
+                    `-sOutputFile=${pbmPath}`,
+                    '-c', '<</Install {1.06 1.06 scale -24 -36 translate}>> setpagedevice',
+                    '-f', filePath,
+                ];
+            }
+
+            execFile(
+                'gs', gsRenderArgs,
                 { timeout: 60000 },
                 async (err, stdout, stderr) => {
+
                     if (err) return reject(new Error(stderr || err.message));
                     if (!fs.existsSync(pbmPath)) return reject(new Error(`Ghostscript failed to generate PBM for ${filePath}. STDOUT: ${stdout} STDERR: ${stderr}`));
                     try {
