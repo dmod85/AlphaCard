@@ -148,7 +148,7 @@ function listPdfs(dir) {
         .readdirSync(dir)
         .filter((name) => {
             const lower = name.toLowerCase();
-            return lower.endsWith('.pdf') && lower.includes('ebay') && !/packing[-_ ]?slip/i.test(name);
+            return lower.endsWith('.pdf') && (lower.includes('ebay') || lower.includes('label')) && !/packing[-_ ]?slip/i.test(name);
         })
         .map((name) => path.join(dir, name));
 }
