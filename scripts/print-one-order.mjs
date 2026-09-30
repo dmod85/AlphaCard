@@ -67,7 +67,7 @@ function printPdf(sumatraPath, printerName, filePath) {
         } else {
             execFile(
                 'lp',
-                ['-d', printerName, '-o', 'media=Custom.5x8.5in', '-o', 'fit-to-page', '-o', 'InputSlot=Rear', '-o', 'orientation-requested=3', filePath],
+                ['-d', printerName, '-o', 'media=Letter', '-o', 'fit-to-page', '-o', 'InputSlot=Rear', '-o', 'orientation-requested=3', filePath],
                 { timeout: 60000 },
                 (err, _stdout, stderr) => {
                     if (err) reject(new Error(stderr || err.message));
