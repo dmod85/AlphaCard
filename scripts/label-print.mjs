@@ -117,7 +117,7 @@ async function printPdf(filePath) {
         console.log(`[label] bbox ${bboxW.toFixed(0)}x${bboxH.toFixed(0)}pt -> scale ${scale.toFixed(3)}`);
         gsRenderArgs = [
             '-q', '-dQUIET', '-dSAFER', '-dBATCH', '-dNOPAUSE',
-            '-sDEVICE=pbmraw', '-r203', '-g816x1218', '-dFIXEDMEDIA',
+            '-sDEVICE=pbmraw', '-r203', '-g800x1200', '-dFIXEDMEDIA',
             `-sOutputFile=${pbmPath}`,
             '-c', psSetup,
             '-f', filePath,
@@ -126,9 +126,9 @@ async function printPdf(filePath) {
         console.log('[label] no bbox detected, using dPDFFitPage fallback');
         gsRenderArgs = [
             '-q', '-dQUIET', '-dSAFER', '-dBATCH', '-dNOPAUSE',
-            '-sDEVICE=pbmraw', '-r203', '-g816x1218', '-dPDFFitPage',
+            '-sDEVICE=pbmraw', '-r203', '-g800x1200', '-dPDFFitPage',
             `-sOutputFile=${pbmPath}`,
-            '-c', '<</Install {1.06 1.06 scale -24 -36 translate}>> setpagedevice',
+            '-c', '<</Install {1.0 1.0 scale}>> setpagedevice',
             '-f', filePath,
         ];
     }
@@ -144,7 +144,7 @@ async function printPdf(filePath) {
 
     // --- Build TSPL payload ---
     const pbm = fs.readFileSync(pbmPath);
-    const dimIdx = pbm.indexOf(Buffer.from('816 1218'));
+    const dimIdx = pbm.indexOf(Buffer.from('800 1200'));
     const bitmapData = pbm.subarray(dimIdx + 8 + 1);
 
     // Invert the colors (PBM uses 1=black, but this printer expects 0=black)
@@ -152,7 +152,7 @@ async function printPdf(filePath) {
         bitmapData[i] = ~bitmapData[i];
     }
 
-    const header = Buffer.from('SIZE 100 mm, 150 mm\r\nGAP 3 mm, 0 mm\r\nCLS\r\nBITMAP 0,0,102,1218,0,');
+    const header = Buffer.from('SIZE 100 mm, 150 mm\r\nGAP 3 mm, 0 mm\r\nCLS\r\nBITMAP 0,0,100,1200,0,');
     const footer = Buffer.from('\r\nPRINT 1,1\r\n');
     const tsplData = Buffer.concat([header, bitmapData, footer]);
     fs.writeFileSync(tsplPath, tsplData);
