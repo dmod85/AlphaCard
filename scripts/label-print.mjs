@@ -168,7 +168,21 @@ async function pdfText(filePath) {
     if (process.platform !== 'win32') {
         const result = await run('pdftotext', [filePath, '-']);
         if (result.stderr) console.error(`[label] pdftotext error on ${path.basename(filePath)}:`, result.stderr);
-        return result.stdout || '';
+        
+        let text = result.stdout || '';
+        
+        // If pdftotext returned nothing, it's an image. Fall back to OCR!
+        if (!text.trim()) {
+            const pngBase = path.join(os.tmpdir(), `ocr-${Date.now()}`);
+            await run('pdftoppm', ['-r', '300', '-png', '-singlefile', filePath, pngBase]);
+            const pngPath = `${pngBase}.png`;
+            if (fs.existsSync(pngPath)) {
+                const ocr = await run('tesseract', [pngPath, 'stdout']);
+                text = ocr.stdout || '';
+                try { fs.unlinkSync(pngPath); } catch {}
+            }
+        }
+        return text;
     }
     const result = await run('python', [
         '-c',
