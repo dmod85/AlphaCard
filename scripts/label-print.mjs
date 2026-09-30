@@ -83,42 +83,77 @@ function printPdf(filePath) {
             );
         } else {
             // Linux: Bypass CUPS driver hell. We natively convert the PDF to a 1-bit raster
-            // image using Ghostscript, wrap it in TSPL commands, and fire it to the RAW queue.
+            // image using Ghostscript, wrap it in TSPL commands, and fire it directly over
+            // Bluetooth rfcomm socket (bypasses CUPS which silently drops BT jobs).
             const tsplPath = path.join(os.tmpdir(), `thermal-${Date.now()}.bin`);
             const pbmPath = `${tsplPath}.pbm`;
-            
+            const btMac = process.env.LABEL_PRINTER_BT_MAC?.trim();
+            const btChannel = process.env.LABEL_PRINTER_BT_CHANNEL?.trim() || '1';
+
             execFile(
                 'gs',
                 [
                     '-q', '-dQUIET', '-dSAFER', '-dBATCH', '-dNOPAUSE', 
                     '-sDEVICE=pbmraw', '-r203', '-g816x1218', '-dPDFFitPage', 
                     `-sOutputFile=${pbmPath}`,
-                    '-c', '<</Install {1.06 1.06 scale -24 -36 translate}>> setpagedevice', 
+                    '-c', '<</ Install {1.06 1.06 scale -24 -36 translate}>> setpagedevice', 
                     '-f', filePath
                 ],
                 { timeout: 60000 },
-                (err, stdout, stderr) => {
+                async (err, stdout, stderr) => {
                     if (err) return reject(new Error(stderr || err.message));
                     if (!fs.existsSync(pbmPath)) return reject(new Error(`Ghostscript failed to generate PBM for ${filePath}. STDOUT: ${stdout} STDERR: ${stderr}`));
                     try {
                         const pbm = fs.readFileSync(pbmPath);
                         const dimIdx = pbm.indexOf(Buffer.from('816 1218'));
                         const bitmapData = pbm.subarray(dimIdx + 8 + 1);
-                        
+
                         // Invert the colors (PBM uses 1=black, but this printer expects 0=black)
                         for (let i = 0; i < bitmapData.length; i++) {
                             bitmapData[i] = ~bitmapData[i];
                         }
-                        
+
                         const header = Buffer.from('SIZE 100 mm, 150 mm\r\nGAP 3 mm, 0 mm\r\nCLS\r\nBITMAP 0,0,102,1218,0,');
                         const footer = Buffer.from('\r\nPRINT 1,1\r\n');
-                        fs.writeFileSync(tsplPath, Buffer.concat([header, bitmapData, footer]));
-                        
-                        execFile('lp', ['-d', printer, tsplPath], { timeout: 30000 }, (lpErr, lpOut, lpStdErr) => {
-                            try { fs.unlinkSync(pbmPath); fs.unlinkSync(tsplPath); } catch {}
-                            if (lpErr) reject(new Error(lpStdErr || lpErr.message));
-                            else resolve();
-                        });
+                        const tsplData = Buffer.concat([header, bitmapData, footer]);
+                        fs.writeFileSync(tsplPath, tsplData);
+
+                        if (btMac) {
+                            // --- Direct Bluetooth RFCOMM write ---
+                            // Pick a free rfcomm device slot based on PID to avoid collisions
+                            const rfcommDev = `/dev/rfcomm${process.pid % 8}`;
+                            // Release any stale binding on this slot first
+                            await new Promise((res) => { execFile('rfcomm', ['release', rfcommDev], () => res()); });
+
+                            const rfcommProc = spawn('rfcomm', ['connect', rfcommDev, btMac, btChannel], { detached: false });
+                            let rfcommErr = '';
+                            rfcommProc.stderr?.on('data', (d) => { rfcommErr += String(d); });
+
+                            // Give rfcomm time to establish the connection before writing
+                            await new Promise((res) => setTimeout(res, 2500));
+
+                            try {
+                                fs.writeFileSync(rfcommDev, tsplData);
+                                await new Promise((res) => setTimeout(res, 1500)); // Let data flush
+                                rfcommProc.kill();
+                                await new Promise((res) => { execFile('rfcomm', ['release', rfcommDev], () => res()); });
+                                try { fs.unlinkSync(pbmPath); fs.unlinkSync(tsplPath); } catch {}
+                                console.log(`[label] sent ${tsplData.length} bytes directly to BT ${btMac}`);
+                                resolve();
+                            } catch (writeErr) {
+                                rfcommProc.kill();
+                                await new Promise((res) => { execFile('rfcomm', ['release', rfcommDev], () => res()); });
+                                try { fs.unlinkSync(pbmPath); fs.unlinkSync(tsplPath); } catch {}
+                                reject(new Error(`BT write failed: ${writeErr.message}${rfcommErr ? ` (rfcomm: ${rfcommErr.trim()})` : ''}`));
+                            }
+                        } else {
+                            // Fallback: use lp/CUPS if no BT MAC is configured
+                            execFile('lp', ['-d', printer, tsplPath], { timeout: 30000 }, (lpErr, lpOut, lpStdErr) => {
+                                try { fs.unlinkSync(pbmPath); fs.unlinkSync(tsplPath); } catch {}
+                                if (lpErr) reject(new Error(lpStdErr || lpErr.message));
+                                else resolve();
+                            });
+                        }
                     } catch (e) {
                         try { fs.unlinkSync(pbmPath); fs.unlinkSync(tsplPath); } catch {}
                         reject(e);
