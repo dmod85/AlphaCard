@@ -100,7 +100,7 @@ function printPdf(filePath) {
     if (process.platform === 'win32') {
       execFile(
         SUMATRA_PATH,
-        ['-print-to', PRINTER_NAME, '-print-settings', 'noscale,portrait,paper=letter', '-silent', '-exit-when-done', filePath],
+        ['-print-to', PRINTER_NAME, '-print-settings', 'noscale,landscape,paper=letter', '-silent', '-exit-when-done', filePath],
         (err, stdout, stderr) => {
           if (err) reject(new Error(stderr || err.message));
           else resolve();

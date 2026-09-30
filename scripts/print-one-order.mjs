@@ -57,7 +57,7 @@ function printPdf(sumatraPath, printerName, filePath) {
         if (process.platform === 'win32') {
             execFile(
                 sumatraPath,
-                ['-print-to', printerName, '-print-settings', 'noscale,portrait,paper=letter', '-silent', '-exit-when-done', filePath],
+                ['-print-to', printerName, '-print-settings', 'noscale,landscape,paper=letter', '-silent', '-exit-when-done', filePath],
                 { timeout: 60000 },
                 (err, _stdout, stderr) => {
                     if (err) reject(new Error(stderr || err.message));
@@ -67,7 +67,7 @@ function printPdf(sumatraPath, printerName, filePath) {
         } else {
             execFile(
                 'lp',
-                ['-d', printerName, '-o', 'media=Letter', '-o', 'fit-to-page', filePath],
+                ['-d', printerName, '-o', 'media=Letter', '-o', 'fit-to-page', '-o', 'orientation-requested=4', filePath],
                 { timeout: 60000 },
                 (err, _stdout, stderr) => {
                     if (err) reject(new Error(stderr || err.message));
