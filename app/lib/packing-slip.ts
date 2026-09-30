@@ -287,10 +287,7 @@ async function drawSlip(
       page.drawText(line, { x: textX, y: ty, size: 10, font, color: black });
       ty -= 13;
     }
-    const skuLabel = item.sku ? `SKU: ${item.sku}` : item.ebayItemId ? `Item: ${item.ebayItemId}` : '';
-    if (skuLabel) {
-      page.drawText(skuLabel, { x: textX, y: rowTop - imgSize + 4, size: 8, font, color: gray });
-    }
+    // Removed SKU printing as per user request
 
     const unitPrice = item.quantity > 0 ? item.soldFor / item.quantity : item.soldFor;
     const qtyStr = String(item.quantity);
