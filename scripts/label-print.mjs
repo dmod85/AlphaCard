@@ -85,7 +85,6 @@ async function printPdf(filePath) {
     }
 
     // Linux path — async so we can await the bbox detection pass
-    const printer = labelPrinterName();
     const tsplPath = path.join(os.tmpdir(), `thermal-${Date.now()}.bin`);
     const pbmPath = `${tsplPath}.pbm`;
     const btMac = process.env.LABEL_PRINTER_BT_MAC?.trim();
