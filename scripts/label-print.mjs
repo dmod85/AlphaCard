@@ -106,8 +106,14 @@ async function printPdf(filePath) {
         const [x1, y1, x2, y2] = bboxMatch.slice(1).map(Number);
         const bboxW = x2 - x1;
         const bboxH = y2 - y1;
-        const scale = Math.min(LABEL_W_PT / bboxW, LABEL_H_PT / bboxH);
-        const psSetup = `<</PageSize [${LABEL_W_PT} ${LABEL_H_PT}] /ImagingBBox null>> setpagedevice ${scale} ${scale} scale ${-x1} ${-y1} translate`;
+        // Scale to fit with 2% padding on each side so nothing clips at the edges
+        const scale = Math.min(LABEL_W_PT / bboxW, LABEL_H_PT / bboxH) * 0.96;
+        // Center the scaled content on the label
+        const scaledW = bboxW * scale;
+        const scaledH = bboxH * scale;
+        const offsetX = (LABEL_W_PT - scaledW) / 2 / scale;
+        const offsetY = (LABEL_H_PT - scaledH) / 2 / scale;
+        const psSetup = `<</PageSize [${LABEL_W_PT} ${LABEL_H_PT}] /ImagingBBox null>> setpagedevice ${scale} ${scale} scale ${offsetX - x1} ${offsetY - y1} translate`;
         console.log(`[label] bbox ${bboxW.toFixed(0)}x${bboxH.toFixed(0)}pt -> scale ${scale.toFixed(3)}`);
         gsRenderArgs = [
             '-q', '-dQUIET', '-dSAFER', '-dBATCH', '-dNOPAUSE',
