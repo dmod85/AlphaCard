@@ -142,19 +142,26 @@ function writeState(state) {
     fs.writeFileSync(STATE_PATH, JSON.stringify(state, null, 2));
 }
 
-function listPdfs(dir) {
+function listPdfs(dir, requireFilter = false) {
     if (!fs.existsSync(dir)) return [];
     return fs
         .readdirSync(dir)
         .filter((name) => {
             const lower = name.toLowerCase();
-            return lower.endsWith('.pdf') && (lower.includes('ebay') || lower.includes('label')) && !/packing[-_ ]?slip/i.test(name);
+            if (!lower.endsWith('.pdf')) return false;
+            if (/packing[-_ ]?slip/i.test(name)) return false;
+            if (requireFilter) {
+                return lower.includes('ebay') || lower.includes('label');
+            }
+            return true;
         })
         .map((name) => path.join(dir, name));
 }
 
 function watchedPdfs() {
-    return [...new Set([inboxDir(), downloadsDir()].flatMap(listPdfs))];
+    const inbox = listPdfs(inboxDir(), false); // Print any PDF placed in the dedicated inbox
+    const downloads = listPdfs(downloadsDir(), true); // Strict filter for the noisy Downloads folder
+    return [...new Set([...inbox, ...downloads])];
 }
 
 async function pdfText(filePath) {
