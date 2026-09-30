@@ -140,8 +140,8 @@ async function drawSlip(
   const boxFill = rgb(0.95, 0.96, 0.97);
   const accent = rgb(0.13, 0.29, 0.72);
 
-  const M = 14;
-  const TOP = M;
+  const M = 4;
+  const TOP = 4;
   const pageW = SLIP_W;
   const centerLineX = pageW / 2;
   let y = SLIP_H - TOP;
