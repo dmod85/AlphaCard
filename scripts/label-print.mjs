@@ -308,7 +308,16 @@ export async function scanNewLabels() {
                 size = st.size;
             } catch { continue; }
             if (firstRun) {
-                state[filePath] = mtime;
+                // On startup, skip files that already existed before we launched
+                // (to avoid reprinting old labels on every restart).
+                // BUT: files that arrived in the last 2 minutes are new arrivals —
+                // stamp them as "waiting" so they get printed on the next poll.
+                const ageMs = Date.now() - mtime;
+                if (ageMs > 2 * 60 * 1000) {
+                    state[filePath] = mtime; // Old file — skip it
+                } else {
+                    labelWaiting.set(filePath, { size, mtime }); // Recent — queue it
+                }
                 continue;
             }
             const pending = labelWaiting.get(filePath);
