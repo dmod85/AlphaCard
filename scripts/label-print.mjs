@@ -64,14 +64,14 @@ async function fitLabel(src, dest, force) {
     return { ok: result.code === 0, skip: result.code === 2, detail: (result.stdout || result.stderr).trim() };
 }
 
-function printPdf(filePath) {
+async function printPdf(filePath) {
     const sumatra = process.env.SUMATRA_PATH;
     const printer = labelPrinterName();
     if (process.platform === 'win32' && (!sumatra || !fs.existsSync(sumatra))) {
         throw new Error(`SumatraPDF not found at ${sumatra || '(SUMATRA_PATH unset)'}`);
     }
-    return new Promise((resolve, reject) => {
-        if (process.platform === 'win32') {
+    if (process.platform === 'win32') {
+        return new Promise((resolve, reject) => {
             execFile(
                 sumatra,
                 ['-print-to', printer, '-print-settings', 'fit,portrait,paper=100mm x 150mm', '-silent', '-exit-when-done', filePath],
@@ -81,113 +81,112 @@ function printPdf(filePath) {
                     else resolve();
                 }
             );
-        } else {
-            // Linux: Bypass CUPS driver hell. We natively convert the PDF to a 1-bit raster
-            // image using Ghostscript, wrap it in TSPL commands, and fire it directly over
-            // Bluetooth rfcomm socket (bypasses CUPS which silently drops BT jobs).
-            const tsplPath = path.join(os.tmpdir(), `thermal-${Date.now()}.bin`);
-            const pbmPath = `${tsplPath}.pbm`;
-            const btMac = process.env.LABEL_PRINTER_BT_MAC?.trim();
-            const btChannel = process.env.LABEL_PRINTER_BT_CHANNEL?.trim() || '1';
+        });
+    }
 
-            // --- Pass 1: detect actual content bounding box ---
-            // gs -sDEVICE=bbox writes "%%BoundingBox: x1 y1 x2 y2" to stderr
-            const bboxResult = await run('gs', [
-                '-q', '-dBATCH', '-dNOPAUSE', '-dSAFER', '-sDEVICE=bbox', filePath
-            ]);
-            const bboxMatch = (bboxResult.stderr || '').match(/%%BoundingBox:\s+(-?\d+)\s+(-?\d+)\s+(-?\d+)\s+(-?\d+)/);
+    // Linux path — async so we can await the bbox detection pass
+    const printer = labelPrinterName();
+    const tsplPath = path.join(os.tmpdir(), `thermal-${Date.now()}.bin`);
+    const pbmPath = `${tsplPath}.pbm`;
+    const btMac = process.env.LABEL_PRINTER_BT_MAC?.trim();
+    const btChannel = process.env.LABEL_PRINTER_BT_CHANNEL?.trim() || '1';
 
-            // Label canvas in PDF points (4" × 6" at 72pt/in)
-            const LABEL_W_PT = 4 * 72;   // 288
-            const LABEL_H_PT = 6 * 72;   // 432
+    // --- Pass 1: detect actual content bounding box ---
+    // gs -sDEVICE=bbox writes "%%BoundingBox: x1 y1 x2 y2" to stderr
+    const bboxResult = await run('gs', [
+        '-q', '-dBATCH', '-dNOPAUSE', '-dSAFER', '-sDEVICE=bbox', filePath
+    ]);
+    const bboxMatch = (bboxResult.stderr || '').match(/%%BoundingBox:\s+(-?\d+)\s+(-?\d+)\s+(-?\d+)\s+(-?\d+)/);
 
-            let gsRenderArgs;
-            if (bboxMatch) {
-                const [x1, y1, x2, y2] = bboxMatch.slice(1).map(Number);
-                const bboxW = x2 - x1;
-                const bboxH = y2 - y1;
-                // Scale so the content fills the label (uniform scale, fit-to-label)
-                const scale = Math.min(LABEL_W_PT / bboxW, LABEL_H_PT / bboxH);
-                const psSetup = `<</PageSize [${LABEL_W_PT} ${LABEL_H_PT}] /ImagingBBox null>> setpagedevice ${scale} ${scale} scale ${-x1} ${-y1} translate`;
-                console.log(`[label] bbox ${bboxW.toFixed(0)}x${bboxH.toFixed(0)}pt → scale ${scale.toFixed(3)}`);
-                gsRenderArgs = [
-                    '-q', '-dQUIET', '-dSAFER', '-dBATCH', '-dNOPAUSE',
-                    '-sDEVICE=pbmraw', '-r203', '-g816x1218', '-dFIXEDMEDIA',
-                    `-sOutputFile=${pbmPath}`,
-                    '-c', psSetup,
-                    '-f', filePath,
-                ];
-            } else {
-                // Fallback: no bbox detected, use old fit-to-page approach
-                console.log('[label] no bbox detected, using dPDFFitPage fallback');
-                gsRenderArgs = [
-                    '-q', '-dQUIET', '-dSAFER', '-dBATCH', '-dNOPAUSE',
-                    '-sDEVICE=pbmraw', '-r203', '-g816x1218', '-dPDFFitPage',
-                    `-sOutputFile=${pbmPath}`,
-                    '-c', '<</Install {1.06 1.06 scale -24 -36 translate}>> setpagedevice',
-                    '-f', filePath,
-                ];
-            }
+    // Label canvas in PDF points (4" x 6" at 72pt/in)
+    const LABEL_W_PT = 4 * 72;   // 288
+    const LABEL_H_PT = 6 * 72;   // 432
 
-            execFile(
-                'gs', gsRenderArgs,
-                { timeout: 60000 },
-                async (err, stdout, stderr) => {
+    let gsRenderArgs;
+    if (bboxMatch) {
+        const [x1, y1, x2, y2] = bboxMatch.slice(1).map(Number);
+        const bboxW = x2 - x1;
+        const bboxH = y2 - y1;
+        const scale = Math.min(LABEL_W_PT / bboxW, LABEL_H_PT / bboxH);
+        const psSetup = `<</PageSize [${LABEL_W_PT} ${LABEL_H_PT}] /ImagingBBox null>> setpagedevice ${scale} ${scale} scale ${-x1} ${-y1} translate`;
+        console.log(`[label] bbox ${bboxW.toFixed(0)}x${bboxH.toFixed(0)}pt -> scale ${scale.toFixed(3)}`);
+        gsRenderArgs = [
+            '-q', '-dQUIET', '-dSAFER', '-dBATCH', '-dNOPAUSE',
+            '-sDEVICE=pbmraw', '-r203', '-g816x1218', '-dFIXEDMEDIA',
+            `-sOutputFile=${pbmPath}`,
+            '-c', psSetup,
+            '-f', filePath,
+        ];
+    } else {
+        console.log('[label] no bbox detected, using dPDFFitPage fallback');
+        gsRenderArgs = [
+            '-q', '-dQUIET', '-dSAFER', '-dBATCH', '-dNOPAUSE',
+            '-sDEVICE=pbmraw', '-r203', '-g816x1218', '-dPDFFitPage',
+            `-sOutputFile=${pbmPath}`,
+            '-c', '<</Install {1.06 1.06 scale -24 -36 translate}>> setpagedevice',
+            '-f', filePath,
+        ];
+    }
 
-                    if (err) return reject(new Error(stderr || err.message));
-                    if (!fs.existsSync(pbmPath)) return reject(new Error(`Ghostscript failed to generate PBM for ${filePath}. STDOUT: ${stdout} STDERR: ${stderr}`));
-                    try {
-                        const pbm = fs.readFileSync(pbmPath);
-                        const dimIdx = pbm.indexOf(Buffer.from('816 1218'));
-                        const bitmapData = pbm.subarray(dimIdx + 8 + 1);
-
-                        // Invert the colors (PBM uses 1=black, but this printer expects 0=black)
-                        for (let i = 0; i < bitmapData.length; i++) {
-                            bitmapData[i] = ~bitmapData[i];
-                        }
-
-                        const header = Buffer.from('SIZE 100 mm, 150 mm\r\nGAP 3 mm, 0 mm\r\nCLS\r\nBITMAP 0,0,102,1218,0,');
-                        const footer = Buffer.from('\r\nPRINT 1,1\r\n');
-                        const tsplData = Buffer.concat([header, bitmapData, footer]);
-                        fs.writeFileSync(tsplPath, tsplData);
-
-                        if (btMac) {
-                            // --- Direct Bluetooth socket via Python (no root/dialout needed) ---
-                            const btSendScript = path.join(repoRoot, 'scripts', 'bt-send.py');
-                            const btProc = spawn('python3', [btSendScript, btMac, btChannel], { stdio: ['pipe', 'pipe', 'pipe'] });
-                            let btErr = '';
-                            btProc.stderr?.on('data', (d) => { btErr += String(d); });
-                            btProc.stdin.write(tsplData);
-                            btProc.stdin.end();
-                            btProc.on('close', (code) => {
-                                try { fs.unlinkSync(pbmPath); fs.unlinkSync(tsplPath); } catch {}
-                                if (code === 0) {
-                                    console.log(`[label] sent ${tsplData.length} bytes via BT to ${btMac}`);
-                                    resolve();
-                                } else {
-                                    reject(new Error(`BT send failed (exit ${code}): ${btErr.trim()}`));
-                                }
-                            });
-                            btProc.on('error', (e) => {
-                                try { fs.unlinkSync(pbmPath); fs.unlinkSync(tsplPath); } catch {}
-                                reject(new Error(`bt-send.py spawn error: ${e.message}`));
-                            });
-                        } else {
-                            // Fallback: use lp/CUPS if no BT MAC is configured
-                            execFile('lp', ['-d', printer, tsplPath], { timeout: 30000 }, (lpErr, lpOut, lpStdErr) => {
-                                try { fs.unlinkSync(pbmPath); fs.unlinkSync(tsplPath); } catch {}
-                                if (lpErr) reject(new Error(lpStdErr || lpErr.message));
-                                else resolve();
-                            });
-                        }
-                    } catch (e) {
-                        try { fs.unlinkSync(pbmPath); fs.unlinkSync(tsplPath); } catch {}
-                        reject(e);
-                    }
-                }
-            );
-        }
+    // --- Pass 2: render to PBM raster ---
+    await new Promise((resolve, reject) => {
+        execFile('gs', gsRenderArgs, { timeout: 60000 }, (err, stdout, stderr) => {
+            if (err) return reject(new Error(stderr || err.message));
+            if (!fs.existsSync(pbmPath)) return reject(new Error(`Ghostscript failed to generate PBM for ${filePath}. STDOUT: ${stdout} STDERR: ${stderr}`));
+            resolve();
+        });
     });
+
+    // --- Build TSPL payload ---
+    const pbm = fs.readFileSync(pbmPath);
+    const dimIdx = pbm.indexOf(Buffer.from('816 1218'));
+    const bitmapData = pbm.subarray(dimIdx + 8 + 1);
+
+    // Invert the colors (PBM uses 1=black, but this printer expects 0=black)
+    for (let i = 0; i < bitmapData.length; i++) {
+        bitmapData[i] = ~bitmapData[i];
+    }
+
+    const header = Buffer.from('SIZE 100 mm, 150 mm\r\nGAP 3 mm, 0 mm\r\nCLS\r\nBITMAP 0,0,102,1218,0,');
+    const footer = Buffer.from('\r\nPRINT 1,1\r\n');
+    const tsplData = Buffer.concat([header, bitmapData, footer]);
+    fs.writeFileSync(tsplPath, tsplData);
+    try { fs.unlinkSync(pbmPath); } catch {}
+
+    // --- Send to printer ---
+    if (btMac) {
+        // Direct Bluetooth socket via Python (no root/dialout needed)
+        await new Promise((resolve, reject) => {
+            const btSendScript = path.join(repoRoot, 'scripts', 'bt-send.py');
+            const btProc = spawn('python3', [btSendScript, btMac, btChannel], { stdio: ['pipe', 'pipe', 'pipe'] });
+            let btErr = '';
+            btProc.stderr?.on('data', (d) => { btErr += String(d); });
+            btProc.stdin.write(tsplData);
+            btProc.stdin.end();
+            btProc.on('close', (code) => {
+                try { fs.unlinkSync(tsplPath); } catch {}
+                if (code === 0) {
+                    console.log(`[label] sent ${tsplData.length} bytes via BT to ${btMac}`);
+                    resolve();
+                } else {
+                    reject(new Error(`BT send failed (exit ${code}): ${btErr.trim()}`));
+                }
+            });
+            btProc.on('error', (e) => {
+                try { fs.unlinkSync(tsplPath); } catch {}
+                reject(new Error(`bt-send.py spawn error: ${e.message}`));
+            });
+        });
+    } else {
+        // Fallback: use lp/CUPS if no BT MAC is configured
+        await new Promise((resolve, reject) => {
+            execFile('lp', ['-d', printer, tsplPath], { timeout: 30000 }, (err, _out, stderr) => {
+                try { fs.unlinkSync(tsplPath); } catch {}
+                if (err) reject(new Error(stderr || err.message));
+                else resolve();
+            });
+        });
+    }
 }
 
 function readState() {
