@@ -119,33 +119,26 @@ function printPdf(filePath) {
                         fs.writeFileSync(tsplPath, tsplData);
 
                         if (btMac) {
-                            // --- Direct Bluetooth RFCOMM write ---
-                            // Pick a free rfcomm device slot based on PID to avoid collisions
-                            const rfcommDev = `/dev/rfcomm${process.pid % 8}`;
-                            // Release any stale binding on this slot first
-                            await new Promise((res) => { execFile('rfcomm', ['release', rfcommDev], () => res()); });
-
-                            const rfcommProc = spawn('rfcomm', ['connect', rfcommDev, btMac, btChannel], { detached: false });
-                            let rfcommErr = '';
-                            rfcommProc.stderr?.on('data', (d) => { rfcommErr += String(d); });
-
-                            // Give rfcomm time to establish the connection before writing
-                            await new Promise((res) => setTimeout(res, 2500));
-
-                            try {
-                                fs.writeFileSync(rfcommDev, tsplData);
-                                await new Promise((res) => setTimeout(res, 1500)); // Let data flush
-                                rfcommProc.kill();
-                                await new Promise((res) => { execFile('rfcomm', ['release', rfcommDev], () => res()); });
+                            // --- Direct Bluetooth socket via Python (no root/dialout needed) ---
+                            const btSendScript = path.join(repoRoot, 'scripts', 'bt-send.py');
+                            const btProc = spawn('python3', [btSendScript, btMac, btChannel], { stdio: ['pipe', 'pipe', 'pipe'] });
+                            let btErr = '';
+                            btProc.stderr?.on('data', (d) => { btErr += String(d); });
+                            btProc.stdin.write(tsplData);
+                            btProc.stdin.end();
+                            btProc.on('close', (code) => {
                                 try { fs.unlinkSync(pbmPath); fs.unlinkSync(tsplPath); } catch {}
-                                console.log(`[label] sent ${tsplData.length} bytes directly to BT ${btMac}`);
-                                resolve();
-                            } catch (writeErr) {
-                                rfcommProc.kill();
-                                await new Promise((res) => { execFile('rfcomm', ['release', rfcommDev], () => res()); });
+                                if (code === 0) {
+                                    console.log(`[label] sent ${tsplData.length} bytes via BT to ${btMac}`);
+                                    resolve();
+                                } else {
+                                    reject(new Error(`BT send failed (exit ${code}): ${btErr.trim()}`));
+                                }
+                            });
+                            btProc.on('error', (e) => {
                                 try { fs.unlinkSync(pbmPath); fs.unlinkSync(tsplPath); } catch {}
-                                reject(new Error(`BT write failed: ${writeErr.message}${rfcommErr ? ` (rfcomm: ${rfcommErr.trim()})` : ''}`));
-                            }
+                                reject(new Error(`bt-send.py spawn error: ${e.message}`));
+                            });
                         } else {
                             // Fallback: use lp/CUPS if no BT MAC is configured
                             execFile('lp', ['-d', printer, tsplPath], { timeout: 30000 }, (lpErr, lpOut, lpStdErr) => {
