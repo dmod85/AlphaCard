@@ -358,18 +358,16 @@ export async function generatePackingSlipPdf(
     // 2. Embed the 5x8.5 slip into our final 8.5x11 document
     const [embeddedSlip] = await pdfDoc.embedPdf(await tempDoc.save());
     
-    // 3. Create the final 8.5x11 Letter page
-    const LETTER_W = 8.5 * 72;
-    const LETTER_H = 11 * 72;
-    const page = pdfDoc.addPage([LETTER_W, LETTER_H]);
+    // 3. Create the final 8.5x5 page (matches the sideways fed paper exactly)
+    // This prevents the printer from expecting 11 inches of paper and feeding a blank sheet!
+    const FINAL_W = 8.5 * 72;
+    const FINAL_H = 5 * 72;
+    const page = pdfDoc.addPage([FINAL_W, FINAL_H]);
     
     // 4. Draw the embedded slip rotated 90 degrees CCW
-    // This perfectly places the 5" width along the 11" height edge, and 
-    // the 8.5" height along the 8.5" width edge, fitting neatly into the top 5" 
-    // of the 8.5x11 Letter page!
     page.drawPage(embeddedSlip, {
       x: 8.5 * 72,
-      y: 6 * 72,
+      y: 0,
       xScale: 1,
       yScale: 1,
       rotate: degrees(90),
