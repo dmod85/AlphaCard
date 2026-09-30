@@ -13,9 +13,9 @@ import {
 
 // Portrait US Letter, printed at actual size (100%). The slip is 5.25" wide
 // on the left side of the page. The rest of the sheet stays blank.
-const LETTER_W = 5.5 * 72; // 396pt
+const LETTER_W = 5 * 72; // 360pt
 const LETTER_H = 8.5 * 72; // 612pt
-const SLIP_W = 5.25 * 72; // 378pt
+const SLIP_W = 5 * 72; // 360pt
 
 // Drop a logo at one of these paths (relative to the repo's public/ dir) to
 // have it appear centered in the header. Falls back to store-name text only
