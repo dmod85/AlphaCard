@@ -167,6 +167,7 @@ function watchedPdfs() {
 async function pdfText(filePath) {
     if (process.platform !== 'win32') {
         const result = await run('pdftotext', [filePath, '-']);
+        if (result.stderr) console.error(`[label] pdftotext error on ${path.basename(filePath)}:`, result.stderr);
         return result.stdout || '';
     }
     const result = await run('python', [
@@ -174,6 +175,7 @@ async function pdfText(filePath) {
         'import sys,pypdfium2 as p; d=p.PdfDocument(sys.argv[1]); print("\\n".join((pg.get_textpage().get_text_bounded() or "") for pg in d))',
         filePath,
     ]);
+    if (result.stderr) console.error(`[label] python pdf error on ${path.basename(filePath)}:`, result.stderr);
     return result.stdout || '';
 }
 
