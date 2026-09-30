@@ -13,12 +13,10 @@ import {
 
 // Portrait 5x8.5 paper. We set the canvas to exactly 5x8.5 and 
 // define a slip width slightly smaller to provide healthy margins.
-// Portrait US Letter (8.5x11). We format the slip to spread across the full 8.5" width, 
-// so when the user feeds 5x8.5 paper SIDEWAYS (8.5" wide), the printer sees a standard 
-// Letter page and perfectly prints the top 5" without throwing any paper size warnings!
-const LETTER_W = 8.5 * 72; // 612pt
-const LETTER_H = 11 * 72; // 792pt
-const SLIP_W = 8 * 72; // 576pt
+// We draw the slip on a 5x8.5 canvas, and then embed and rotate it onto
+// an 8.5x11 page so the printer can feed it sideways without warnings.
+const SLIP_W = 5 * 72; // 360pt
+const SLIP_H = 8.5 * 72; // 612pt
 
 // Drop a logo at one of these paths (relative to the repo's public/ dir) to
 // have it appear centered in the header. Falls back to store-name text only
@@ -141,14 +139,11 @@ async function drawSlip(
   const boxFill = rgb(0.95, 0.96, 0.97);
   const accent = rgb(0.13, 0.29, 0.72);
 
-  // Translate the drawing context to center the 8" slip on the 8.5" page
-  const X_OFFSET = (LETTER_W - SLIP_W) / 2;
-  
-  const M = X_OFFSET;
-  const TOP = 18; // 0.25" top margin
-  const pageW = SLIP_W + X_OFFSET;
-  const centerLineX = X_OFFSET + SLIP_W / 2;
-  let y = LETTER_H - TOP;
+  const M = 14;
+  const TOP = M;
+  const pageW = SLIP_W;
+  const centerLineX = pageW / 2;
+  let y = SLIP_H - TOP;
 
   // ---- Header: logo + store name centered, QR top-right --------------------
   const qrImage = order.storeUrl ? await embedQrCode(pdfDoc, order.storeUrl) : null;
@@ -194,7 +189,7 @@ async function drawSlip(
   y -= 18;
 
   // ---- Order meta (left) + Ship To box (right) ------------------------------
-  const rightColW = 220; // Expanded for the wider layout
+  const rightColW = 148;
   const rightColX = pageW - M - rightColW;
   const metaTop = y;
 
@@ -354,14 +349,38 @@ export async function generatePackingSlipPdf(
     pdfDoc.context.obj({ PrintScaling: PDFName.of('None') })
   );
 
-  const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
-  const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+  const createRotatedPage = async (ord: PackingSlipOrder) => {
+    // 1. Create a 5x8.5 document
+    const tempDoc = await PDFDocument.create();
+    const tFont = await tempDoc.embedFont(StandardFonts.Helvetica);
+    const tFontBold = await tempDoc.embedFont(StandardFonts.HelveticaBold);
+    const tempPage = tempDoc.addPage([SLIP_W, SLIP_H]);
+    await drawSlip(tempPage, tempDoc, ord, tFont, tFontBold);
+    
+    // 2. Embed the 5x8.5 slip into our final 8.5x11 document
+    const [embeddedSlip] = await pdfDoc.embedPdf(await tempDoc.save());
+    
+    // 3. Create the final 8.5x11 Letter page
+    const LETTER_W = 8.5 * 72;
+    const LETTER_H = 11 * 72;
+    const page = pdfDoc.addPage([LETTER_W, LETTER_H]);
+    
+    // 4. Draw the embedded slip rotated 90 degrees CCW
+    // This perfectly places the 5" width along the 11" height edge, and 
+    // the 8.5" height along the 8.5" width edge, fitting neatly into the top 5" 
+    // of the 8.5x11 Letter page!
+    page.drawPage(embeddedSlip, {
+      x: 8.5 * 72,
+      y: 6 * 72,
+      xScale: 1,
+      yScale: 1,
+      rotate: degrees(90),
+    });
+  };
 
-  const page = pdfDoc.addPage([LETTER_W, LETTER_H]);
-  await drawSlip(page, pdfDoc, order, font, fontBold);
+  await createRotatedPage(order);
   if (secondOrder) {
-    const next = pdfDoc.addPage([LETTER_W, LETTER_H]);
-    await drawSlip(next, pdfDoc, secondOrder, font, fontBold);
+    await createRotatedPage(secondOrder);
   }
 
   return pdfDoc.save();
