@@ -106,8 +106,8 @@ async function printPdf(filePath) {
         const [x1, y1, x2, y2] = bboxMatch.slice(1).map(Number);
         const bboxW = x2 - x1;
         const bboxH = y2 - y1;
-        // Scale to fit with 2% padding on each side so nothing clips at the edges
-        const scale = Math.min(LABEL_W_PT / bboxW, LABEL_H_PT / bboxH) * 0.96;
+        // Scale to fit with 7.5% padding on each side (15% total) to test scaling
+        const scale = Math.min(LABEL_W_PT / bboxW, LABEL_H_PT / bboxH) * 0.85;
         // Center the scaled content on the label
         const scaledW = bboxW * scale;
         const scaledH = bboxH * scale;
