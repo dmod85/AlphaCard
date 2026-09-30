@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 """
 bt-send.py <mac> <channel>
 Reads binary data from stdin and sends it directly to a Bluetooth RFCOMM device.
@@ -18,7 +18,7 @@ def main():
 
     try:
         sock = socket.socket(socket.AF_BLUETOOTH, socket.SOCK_STREAM, socket.BTPROTO_RFCOMM)
-        sock.settimeout(10)
+        sock.settimeout(60)
         sock.connect((mac, channel))
         sock.sendall(data)
         sock.close()
