@@ -358,16 +358,17 @@ export async function generatePackingSlipPdf(
     // 2. Embed the 5x8.5 slip into our final 8.5x11 document
     const [embeddedSlip] = await pdfDoc.embedPdf(await tempDoc.save());
     
-    // 3. Create the final 8.5x5 page (matches the sideways fed paper exactly)
-    // This prevents the printer from expecting 11 inches of paper and feeding a blank sheet!
+    // 3. Create the final 8.5x11 page (matches standard Letter size)
+    // This prevents the Canon printer from throwing a "paper size mismatch" warning.
+    // The content is drawn rotated at the top.
     const FINAL_W = 8.5 * 72;
-    const FINAL_H = 5 * 72;
+    const FINAL_H = 11 * 72;
     const page = pdfDoc.addPage([FINAL_W, FINAL_H]);
     
-    // 4. Draw the embedded slip rotated 90 degrees CCW
+    // 4. Draw the embedded slip rotated 90 degrees CCW at the top of the page
     page.drawPage(embeddedSlip, {
       x: 8.5 * 72,
-      y: 0,
+      y: (11 - 5) * 72, // Shift it up so it prints on the top 5 inches
       xScale: 1,
       yScale: 1,
       rotate: degrees(90),
