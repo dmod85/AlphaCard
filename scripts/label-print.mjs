@@ -177,18 +177,33 @@ function writeState(state) {
     fs.writeFileSync(STATE_PATH, JSON.stringify(state, null, 2));
 }
 
+function isPdfMagic(filePath) {
+    try {
+        const buf = Buffer.alloc(4);
+        const fd = fs.openSync(filePath, 'r');
+        fs.readSync(fd, buf, 0, 4, 0);
+        fs.closeSync(fd);
+        return buf.toString('ascii') === '%PDF';
+    } catch {
+        return false;
+    }
+}
+
 function listPdfs(dir, requireFilter = false) {
     if (!fs.existsSync(dir)) return [];
     return fs
         .readdirSync(dir)
         .filter((name) => {
             const lower = name.toLowerCase();
-            if (!lower.endsWith('.pdf')) return false;
             if (/packing[-_ ]?slip/i.test(name)) return false;
             if (requireFilter) {
-                return lower.includes('ebay') || lower.includes('label');
+                // Downloads folder: must be a .pdf with ebay/label in the name
+                return lower.endsWith('.pdf') && (lower.includes('ebay') || lower.includes('label'));
             }
-            return true;
+            // Inbox folder: accept .pdf files OR any extensionless file that is actually a PDF
+            if (lower.endsWith('.pdf')) return true;
+            if (!lower.includes('.')) return isPdfMagic(path.join(dir, name));
+            return false;
         })
         .map((name) => path.join(dir, name));
 }
