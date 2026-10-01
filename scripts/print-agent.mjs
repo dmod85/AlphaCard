@@ -185,7 +185,32 @@ function subscribe() {
   return channel;
 }
 
-function printSlipFromSite(orderNumber) {
+async function printSlipFromSite(orderNumber) {
+  // Try to use the already-generated PDF from the cloud to ensure re-prints are identical
+  const { data, error } = await supabase
+    .from('ebay_sales')
+    .select('packing_slip_url')
+    .eq('order_number', orderNumber)
+    .not('packing_slip_url', 'is', null)
+    .limit(1);
+
+  if (!error && data && data.length > 0 && data[0].packing_slip_url) {
+    console.log(`[print-agent] reprinting existing slip for ${orderNumber}...`);
+    try {
+      const res = await fetch(data[0].packing_slip_url);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const bytes = Buffer.from(await res.arrayBuffer());
+      const tempFile = path.join(os.tmpdir(), `packing-slip-${orderNumber.replace(/[^a-z0-9-]/gi, '_')}.pdf`);
+      fs.writeFileSync(tempFile, bytes);
+      await printPdf(tempFile);
+      fs.unlinkSync(tempFile);
+      console.log(`[print-agent] reprinted downloaded slip for ${orderNumber}`);
+      return;
+    } catch (err) {
+      console.error(`[print-agent] failed to download existing slip for ${orderNumber}, falling back to local generation:`, err.message);
+    }
+  }
+
   const script = fileURLToPath(new URL('./print-one-order.mjs', import.meta.url));
   return new Promise((resolve, reject) => {
     const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -333,12 +358,84 @@ async function printQueuedSlips() {
   }
 }
 
+let labelQueueBusy = false;
+async function printQueuedLabels() {
+  if (labelQueueBusy) return;
+  labelQueueBusy = true;
+  try {
+    const { data, error } = await supabase
+      .from('ebay_webhook_events')
+      .select('notification_id, order_number')
+      .eq('topic', 'SHIPPING_LABEL_PRINT')
+      .order('received_at', { ascending: true })
+      .limit(5);
+    if (error) {
+      console.error('[print-agent] label queue:', error.message);
+      return;
+    }
+    const seen = new Set();
+    for (const row of data ?? []) {
+      if (!row.order_number || seen.has(row.order_number)) {
+        await supabase.from('ebay_webhook_events').delete().eq('notification_id', row.notification_id);
+        continue;
+      }
+      seen.add(row.order_number);
+      try {
+        const repoRoot = process.cwd();
+        const savedFile = path.join(repoRoot, 'labels', 'saved', `${row.order_number}.pdf`);
+        const { printShippingLabel } = await import('./label-print.mjs');
+        const fileToPrint = fs.existsSync(savedFile) ? savedFile : null;
+        const result = await printShippingLabel({ file: fileToPrint, orderNumber: row.order_number, force: true });
+        
+        await supabase.from('ebay_webhook_events').delete().eq('notification_id', row.notification_id);
+        if (result.printed) {
+          console.log(`[print-agent] reprinted queued label ${row.order_number}`);
+        } else {
+          console.log(`[print-agent] queued label ${row.order_number} failed: ${result.reason}`);
+        }
+      } catch (err) {
+        console.error(`[print-agent] queued label ${row.order_number}: ${err.message || String(err)}`);
+      }
+    }
+  } finally {
+    labelQueueBusy = false;
+  }
+}
+
 await printQueuedSlips();
+await printQueuedLabels();
 setInterval(() => {
   printSlipsForNewLabels().catch((err) => console.error('[label]', err.message || err));
 }, 5000);
 
 setInterval(() => {
   printQueuedSlips().catch((err) => console.error('[print-agent] slip queue:', err.message || err));
+  printQueuedLabels().catch((err) => console.error('[print-agent] label queue:', err.message || err));
 }, 60000);
+
+function cleanupSavedLabels() {
+  try {
+    const savedDir = path.join(process.cwd(), 'labels', 'saved');
+    if (!fs.existsSync(savedDir)) return;
+    const now = Date.now();
+    const maxAge = 7 * 24 * 60 * 60 * 1000; // 7 days
+    for (const file of fs.readdirSync(savedDir)) {
+      if (!file.endsWith('.pdf')) continue;
+      const p = path.join(savedDir, file);
+      try {
+        const stats = fs.statSync(p);
+        if (now - stats.mtimeMs > maxAge) {
+          fs.unlinkSync(p);
+          console.log(`[label] cleaned up old saved label ${file}`);
+        }
+      } catch (err) {}
+    }
+  } catch (err) {
+    console.error('[label] cleanup error:', err.message);
+  }
+}
+
+setInterval(cleanupSavedLabels, 60 * 60 * 1000);
+cleanupSavedLabels();
+
 console.log('[print-agent] listening for new packing slips and shipping labels (Ctrl+C to stop)...');

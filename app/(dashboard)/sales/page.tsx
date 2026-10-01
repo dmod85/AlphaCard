@@ -663,6 +663,45 @@ function PrintSlipButton({ orderNumber, reprint }: { orderNumber: string; reprin
   );
 }
 
+function PrintLabelButton({ orderNumber }: { orderNumber: string }) {
+  const [label, setLabel] = useState('reprint label');
+
+  async function onClick() {
+    setLabel('sending…');
+    try {
+      const res = await fetch(`/api/ebay/shipping-label/${encodeURIComponent(orderNumber)}/print`, { method: 'POST' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Could not send the label');
+      setLabel('sent to printer');
+    } catch {
+      setLabel('try again');
+    }
+  }
+
+  return (
+    <div className="flex items-center gap-2">
+      <button
+        type="button"
+        onClick={onClick}
+        className="text-blue-400 hover:text-blue-300 underline underline-offset-2"
+        title="Print on the thermal printer"
+      >
+        {label}
+      </button>
+      <span className="text-gray-600">|</span>
+      <a
+        href={`/api/ebay/shipping-label/${encodeURIComponent(orderNumber)}`}
+        target="_blank"
+        rel="noreferrer"
+        className="text-blue-400 hover:text-blue-300 underline underline-offset-2"
+        title="View PDF"
+      >
+        view PDF
+      </a>
+    </div>
+  );
+}
+
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 function SalesPageContent() {
@@ -1825,11 +1864,16 @@ function SalesPageContent() {
                         ) : (
                           <span className="text-gray-700 italic">not yet shipped</span>
                         )}
-                        <div className="flex items-center gap-2">
+                        <div className="flex flex-col gap-1 mt-1">
                           {sale.shipped_at && (
                             <span className="text-gray-600">{fmtDate(sale.shipped_at)}</span>
                           )}
-                          <PrintSlipButton orderNumber={sale.order_number} reprint={!!sale.packing_slip_url} />
+                          <div className="flex flex-col gap-1 items-start">
+                            <PrintSlipButton orderNumber={sale.order_number} reprint={!!sale.packing_slip_url} />
+                            {sale.tracking_number && (
+                              <PrintLabelButton orderNumber={sale.order_number} />
+                            )}
+                          </div>
                         </div>
                       </div>
                     </td>

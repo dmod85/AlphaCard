@@ -402,6 +402,18 @@ export async function scanNewLabels() {
                 state[filePath] = doneMtime;
                 if (hash) printedHashes[hash] = Date.now();
                 console.log(`[label] printed ${path.basename(filePath)} on "${result.printer}"`);
+
+                try {
+                    const orderNum = await orderNumberForLabel(filePath);
+                    if (orderNum) {
+                        const savedDir = path.join(repoRoot, 'labels', 'saved');
+                        fs.mkdirSync(savedDir, { recursive: true });
+                        fs.copyFileSync(filePath, path.join(savedDir, `${orderNum}.pdf`));
+                        console.log(`[label] saved label for order ${orderNum}`);
+                    }
+                } catch (e) {
+                    console.error(`[label] failed to save label for reprinting:`, e.message || e);
+                }
             } else if (result.reason && /not a carrier/.test(result.reason)) {
                 state[filePath] = mtime;
             } else if (result.reason) {
