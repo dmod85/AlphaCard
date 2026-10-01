@@ -47,6 +47,20 @@ const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY;
 const PRINTER_NAME = process.env.PRINTER_NAME;
 const SUMATRA_PATH = process.env.SUMATRA_PATH;
+const DISCORD_WEBHOOK_URL = process.env.DISCORD_WEBHOOK_URL;
+
+async function discordNotify(message) {
+  if (!DISCORD_WEBHOOK_URL) return;
+  try {
+    await fetch(DISCORD_WEBHOOK_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content: message })
+    });
+  } catch (err) {
+    console.error('[discord]', err.message);
+  }
+}
 
 const requiredEnvVars = { SUPABASE_URL, SUPABASE_KEY, PRINTER_NAME };
 if (process.platform === 'win32') {
@@ -138,6 +152,7 @@ async function printOrder(orderNumber) {
     fs.unlinkSync(tempFile);
 
     console.log(`[print-agent] printed order ${orderNumber}`);
+    await discordNotify(`🖨️ Packing slip printed for order ${orderNumber}`);
   } catch (err) {
     console.error(`[print-agent] failed to print order ${orderNumber}:`, err.message || err);
     // Roll back the claim so it gets retried (next realtime event, or next startup catch-up).
@@ -205,6 +220,7 @@ async function printSlipFromSite(orderNumber) {
       await printPdf(tempFile);
       fs.unlinkSync(tempFile);
       console.log(`[print-agent] reprinted downloaded slip for ${orderNumber}`);
+      await discordNotify(`🖨️ Packing slip reprinted for order ${orderNumber}`);
       return;
     } catch (err) {
       console.error(`[print-agent] failed to download existing slip for ${orderNumber}, falling back to local generation:`, err.message);
@@ -223,7 +239,10 @@ async function printSlipFromSite(orderNumber) {
     child.stdout.on('data', (chunk) => { err += chunk; });
     child.on('error', reject);
     child.on('exit', (code) => {
-      if (code === 0) resolve();
+      if (code === 0) {
+        discordNotify(`🖨️ Packing slip generated and printed for order ${orderNumber}`);
+        resolve();
+      }
       else reject(new Error(err.trim() || `print exited ${code}`));
     });
   });

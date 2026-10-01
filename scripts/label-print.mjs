@@ -22,6 +22,21 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'
 const STATE_PATH = path.join(repoRoot, 'logs', 'printed-labels.json');
 const FIT_SCRIPT = path.join(repoRoot, 'scripts', 'fit-shipping-label.py');
 
+async function discordNotify(message) {
+    loadEnvLocal();
+    const webhookUrl = process.env.DISCORD_WEBHOOK_URL;
+    if (!webhookUrl) return;
+    try {
+        await fetch(webhookUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ content: message })
+        });
+    } catch (err) {
+        console.error('[discord]', err.message);
+    }
+}
+
 function loadEnvLocal() {
     const envPath = path.join(repoRoot, '.env.local');
     if (!fs.existsSync(envPath)) return;
@@ -410,9 +425,13 @@ export async function scanNewLabels() {
                         fs.mkdirSync(savedDir, { recursive: true });
                         fs.copyFileSync(filePath, path.join(savedDir, `${orderNum}.pdf`));
                         console.log(`[label] saved label for order ${orderNum}`);
+                        await discordNotify(`🏷️ Shipping label printed for order ${orderNum}`);
+                    } else {
+                        await discordNotify(`🏷️ Shipping label printed: ${path.basename(filePath)} (Order unknown)`);
                     }
                 } catch (e) {
                     console.error(`[label] failed to save label for reprinting:`, e.message || e);
+                    await discordNotify(`🏷️ Shipping label printed: ${path.basename(filePath)} (Order matching failed)`);
                 }
             } else if (result.reason && /not a carrier/.test(result.reason)) {
                 state[filePath] = mtime;
