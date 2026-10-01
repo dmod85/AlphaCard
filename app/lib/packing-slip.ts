@@ -255,14 +255,12 @@ async function drawSlip(
   // ---- Items ----------------------------------------------------------------
   const imgSize = 32;
   const totalColRight = pageW - M;
-  const priceColRight = totalColRight - 46;
-  const qtyColRight = priceColRight - 28;
+  const qtyColRight = totalColRight - 46;
   const textX = M + imgSize + 8;
   const textWidth = qtyColRight - 16 - textX;
 
   page.drawText('ITEM', { x: M, y, size: 9, font: fontBold, color: accent });
   page.drawText('Qty', { x: rightX(font, 'Qty', 8, qtyColRight), y, size: 8, font, color: gray });
-  page.drawText('Price', { x: rightX(font, 'Price', 8, priceColRight), y, size: 8, font, color: gray });
   page.drawText('Total', { x: rightX(font, 'Total', 8, totalColRight), y, size: 8, font, color: gray });
   y -= 12;
   page.drawLine({ start: { x: M, y }, end: { x: pageW - M, y }, thickness: 0.75, color: lightGray });
@@ -289,12 +287,11 @@ async function drawSlip(
     }
     // Removed SKU printing as per user request
 
-    const unitPrice = item.quantity > 0 ? item.soldFor / item.quantity : item.soldFor;
     const qtyStr = String(item.quantity);
-    const priceStr = fmt$(unitPrice);
     const totalStr = fmt$(item.soldFor);
-    page.drawText(qtyStr, { x: rightX(font, qtyStr, 10, qtyColRight), y: rowTop - 11, size: 10, font, color: black });
-    page.drawText(priceStr, { x: rightX(font, priceStr, 10, priceColRight), y: rowTop - 11, size: 10, font, color: black });
+    const qtyColor = item.quantity > 1 ? rgb(0.8, 0, 0) : black;
+    
+    page.drawText(qtyStr, { x: rightX(fontBold, qtyStr, 10, qtyColRight), y: rowTop - 11, size: 10, font: fontBold, color: qtyColor });
     page.drawText(totalStr, { x: rightX(fontBold, totalStr, 10, totalColRight), y: rowTop - 11, size: 10, font: fontBold, color: black });
 
     y = rowTop - imgSize - 8;
@@ -303,11 +300,7 @@ async function drawSlip(
   page.drawLine({ start: { x: M, y }, end: { x: pageW - M, y }, thickness: 0.75, color: lightGray });
   y -= 16;
 
-  // ---- Shipping service -------------------------------------------------------
-  if (order.shippingService) {
-    page.drawText(`Ship via: ${order.shippingService}`, { x: M, y, size: 10, font, color: gray });
-    y -= 16;
-  }
+  // ---- Shipping service removed per request -------------------------------------
 
   // ---- Totals -----------------------------------------------------------------
   const totalsLabelRight = totalColRight - 64;
