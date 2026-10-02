@@ -50,13 +50,16 @@ const SUMATRA_PATH = process.env.SUMATRA_PATH;
 const DISCORD_WEBHOOK_URL = process.env.DISCORD_WEBHOOK_URL;
 
 async function discordNotify(message) {
+  console.log(`[discord] Attempting to notify: ${message}`);
+  console.log(`[discord] URL is ${DISCORD_WEBHOOK_URL ? 'set' : 'NOT SET'}`);
   if (!DISCORD_WEBHOOK_URL) return;
   try {
-    await fetch(DISCORD_WEBHOOK_URL, {
+    const res = await fetch(DISCORD_WEBHOOK_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ content: message })
     });
+    console.log(`[discord] Sent, status: ${res.status}`);
   } catch (err) {
     console.error('[discord]', err.message);
   }

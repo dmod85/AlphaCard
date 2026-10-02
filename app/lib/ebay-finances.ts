@@ -167,10 +167,10 @@ export async function fetchSellerLabelCosts(
                 }
                 const splitAmt = orderIds.size > 0 ? amt / orderIds.size : amt;
                 
-                for (const oid of orderIds) {
+                orderIds.forEach((oid) => {
                     addAmount(byOrderId, oid, splitAmt);
                     if (user) byOrderBuyer.set(oid, user);
-                }
+                });
                 addAmount(bySalesRecord, tx.salesRecordReference, splitAmt);
                 
                 const refBits: string[] = [];

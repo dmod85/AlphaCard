@@ -25,15 +25,18 @@ const FIT_SCRIPT = path.join(repoRoot, 'scripts', 'fit-shipping-label.py');
 async function discordNotify(message) {
     loadEnvLocal();
     const webhookUrl = process.env.DISCORD_WEBHOOK_URL;
+    console.log(`[discord-label] Attempting to notify: ${message}`);
+    console.log(`[discord-label] URL is ${webhookUrl ? 'set' : 'NOT SET'}`);
     if (!webhookUrl) return;
     try {
-        await fetch(webhookUrl, {
+        const res = await fetch(webhookUrl, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ content: message })
         });
+        console.log(`[discord-label] Sent, status: ${res.status}`);
     } catch (err) {
-        console.error('[discord]', err.message);
+        console.error('[discord-label]', err.message);
     }
 }
 
