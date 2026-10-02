@@ -156,15 +156,27 @@ export async function fetchSellerLabelCosts(
                 if (!amt) continue;
                 labelsFound += 1;
                 const hadOrder = !!(tx.orderId && tx.orderId !== '0');
-                addAmount(byOrderId, tx.orderId, amt);
-                addAmount(bySalesRecord, tx.salesRecordReference, amt);
                 const user = tx.buyer?.username;
-                if (hadOrder && user) byOrderBuyer.set(tx.orderId!, user);
+                
+                const orderIds = new Set<string>();
+                if (hadOrder) orderIds.add(tx.orderId!);
+                for (const ref of tx.references ?? []) {
+                    if (ref.referenceType === 'ORDER_ID' && ref.referenceId && ref.referenceId !== '0') {
+                        orderIds.add(ref.referenceId);
+                    }
+                }
+                const splitAmt = orderIds.size > 0 ? amt / orderIds.size : amt;
+                
+                for (const oid of orderIds) {
+                    addAmount(byOrderId, oid, splitAmt);
+                    if (user) byOrderBuyer.set(oid, user);
+                }
+                addAmount(bySalesRecord, tx.salesRecordReference, splitAmt);
+                
                 const refBits: string[] = [];
                 for (const ref of tx.references ?? []) {
-                    addAmount(byOrderId, ref.referenceId, amt);
-                    if (ref.referenceType === 'ORDER_ID' && user && ref.referenceId) {
-                        byOrderBuyer.set(ref.referenceId, user);
+                    if (ref.referenceType !== 'ORDER_ID') {
+                        addAmount(byOrderId, ref.referenceId, splitAmt);
                     }
                     refBits.push(`${ref.referenceType || ''}:${ref.referenceId || ''}`);
                 }
@@ -398,7 +410,15 @@ function parseTransactionCosts(txs: FinancesTransaction[]): OrderEarningsCosts {
             /shipping\s*label/i.test(memo) ||
             (type === 'NON_SALE_CHARGE' && /SHIPPING/i.test(tx.feeType || ''))
         ) {
-            shippingLabel += signedAmount(tx);
+            const orderIds = new Set<string>();
+            if (tx.orderId && tx.orderId !== '0') orderIds.add(tx.orderId);
+            for (const ref of tx.references ?? []) {
+                if (ref.referenceType === 'ORDER_ID' && ref.referenceId && ref.referenceId !== '0') {
+                    orderIds.add(ref.referenceId);
+                }
+            }
+            const divisor = Math.max(1, orderIds.size);
+            shippingLabel += signedAmount(tx) / divisor;
             hasLabel = true;
         }
         if (tx.feeType && type !== 'SHIPPING_LABEL' && type !== 'NON_SALE_CHARGE') {
