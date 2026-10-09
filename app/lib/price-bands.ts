@@ -23,8 +23,8 @@ export interface PriceBandDef {
 }
 
 export const SOPHIE_PRICE_BANDS: readonly PriceBandDef[] = [
-    { id: 'base', label: 'Base', hint: 'under $5', min: 0, max: 5, costCap: 1.75 },
-    { id: 'mid', label: 'Parallel', hint: '$5–$12', min: 5, max: 12, costCap: 4.25 },
+    { id: 'base', label: 'Base', hint: 'under $5', min: 0, max: 5, costCap: 2.50 },
+    { id: 'mid', label: 'Parallel', hint: '$5–$12', min: 5, max: 12, costCap: 6.00 },
     { id: 'hit', label: 'Hit', hint: '$12+', min: 12, max: Infinity, costCap: null, minUnitCost: 8 },
 ] as const;
 
