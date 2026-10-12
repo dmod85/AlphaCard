@@ -197,6 +197,18 @@ function subscribe() {
         }
       }
     )
+    .on(
+      'postgres_changes',
+      { event: 'INSERT', schema: 'public', table: 'ebay_webhook_events' },
+      (payload) => {
+        const row = payload.new;
+        if (row.topic === 'PACKING_SLIP_PRINT') {
+          printQueuedSlips().catch((err) => console.error('[print-agent] slip queue:', err.message || err));
+        } else if (row.topic === 'SHIPPING_LABEL_PRINT') {
+          printQueuedLabels().catch((err) => console.error('[print-agent] label queue:', err.message || err));
+        }
+      }
+    )
     .subscribe((status) => {
       console.log(`[print-agent] realtime status: ${status}`);
     });
@@ -433,7 +445,7 @@ setInterval(() => {
 setInterval(() => {
   printQueuedSlips().catch((err) => console.error('[print-agent] slip queue:', err.message || err));
   printQueuedLabels().catch((err) => console.error('[print-agent] label queue:', err.message || err));
-}, 60000);
+}, 300000);
 
 function cleanupSavedLabels() {
   try {

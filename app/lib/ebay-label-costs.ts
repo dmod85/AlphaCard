@@ -108,6 +108,18 @@ export async function applySellerLabelCosts(
             const patch: Record<string, number | string | null> = { ...(patches.get(line.id) ?? {}) };
             if (i === 0 && detail.buyer && !line.buyer) patch.buyer = detail.buyer;
             if (Object.keys(patch).length === 0) continue;
+
+            // Check if any patch field actually differs from current line state
+            let changed = false;
+            for (const [k, v] of Object.entries(patch)) {
+                if (v == null && (line as any)[k] == null) continue;
+                if (typeof v === 'number' && Number((line as any)[k]) === v) continue;
+                if ((line as any)[k] === v) continue;
+                changed = true;
+                break;
+            }
+            if (!changed) continue;
+
             const { error } = await supabaseAdmin.from('ebay_sales').update(patch).eq('id', line.id);
             if (!error) {
                 updatedRows += 1;

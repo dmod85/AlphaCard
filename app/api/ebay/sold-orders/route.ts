@@ -157,11 +157,37 @@ export async function GET(request: NextRequest) {
         synced = inserted?.length ?? 0;
       }
 
-      // Backfill fee + identity fields on existing rows. Seller postage comes
-      // from Finances (postpaid eSE labels) via applySellerLabelCosts below.
+      // Backfill fee + identity fields ONLY on existing rows where values actually differ.
+      // This prevents hundreds of redundant UPDATE transactions that burn Supabase Disk IO.
+      const orderNumbers = Array.from(new Set(uniqueRows.map((r) => r.order_number).filter(Boolean)));
+      const existingMap = new Map<string, any>();
+      const LOOKUP_CHUNK = 100;
+      for (let i = 0; i < orderNumbers.length; i += LOOKUP_CHUNK) {
+        const chunk = orderNumbers.slice(i, i + LOOKUP_CHUNK);
+        const { data: existingRows } = await supabaseAdmin
+          .from('ebay_sales')
+          .select('order_number, ebay_item_id, ebay_fee, buyer, sales_record_number, shipping_service, tracking_number, shipped_at')
+          .in('order_number', chunk);
+        for (const row of existingRows ?? []) {
+          existingMap.set(`${row.order_number}||${row.ebay_item_id ?? ''}`, row);
+        }
+      }
+
+      const rowsToUpdate = uniqueRows.filter((r) => {
+        const existing = existingMap.get(`${r.order_number}||${r.ebay_item_id ?? ''}`);
+        if (!existing) return false;
+        if (r.ebay_fee != null && (existing.ebay_fee == null || Number(existing.ebay_fee) !== Number(r.ebay_fee))) return true;
+        if (r.buyer && existing.buyer !== r.buyer) return true;
+        if (r.sales_record_number && existing.sales_record_number !== r.sales_record_number) return true;
+        if (r.shipping_service && existing.shipping_service !== r.shipping_service) return true;
+        if (r.tracking_number && existing.tracking_number !== r.tracking_number) return true;
+        if (r.shipped_at && existing.shipped_at !== r.shipped_at) return true;
+        return false;
+      });
+
       const CHUNK = 15;
-      for (let i = 0; i < uniqueRows.length; i += CHUNK) {
-        const chunk = uniqueRows.slice(i, i + CHUNK);
+      for (let i = 0; i < rowsToUpdate.length; i += CHUNK) {
+        const chunk = rowsToUpdate.slice(i, i + CHUNK);
         const counts = await Promise.all(
           chunk.map(async (r) => {
             const patch: Record<string, unknown> = {};

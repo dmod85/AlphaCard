@@ -580,25 +580,42 @@ export async function syncRecentSales(days = 2): Promise<number> {
   );
   if (error) throw new Error(error.message);
 
+  // Backfill order/shipment fields ONLY on existing rows where values actually differ.
+  // This prevents hundreds of redundant UPDATE transactions that burn Supabase Disk IO.
+  const orderNumbers = Array.from(new Set(uniqueRows.map((r) => r.order_number).filter(Boolean)));
+  const existingMap = new Map<string, any>();
+  const LOOKUP_CHUNK = 100;
+  for (let i = 0; i < orderNumbers.length; i += LOOKUP_CHUNK) {
+    const chunk = orderNumbers.slice(i, i + LOOKUP_CHUNK);
+    const { data: existingRows } = await supabaseAdmin
+      .from('ebay_sales')
+      .select('order_number, ebay_item_id, buyer, ship_to_name, ship_to_street1, ship_to_street2, ship_to_city, ship_to_state, ship_to_zip, ship_to_country, shipping_service, tracking_number, carrier, shipped_at, order_subtotal, order_shipping_cost, order_tax, order_total, sales_record_number')
+      .in('order_number', chunk);
+    for (const row of existingRows ?? []) {
+      existingMap.set(`${row.order_number}||${row.ebay_item_id ?? ''}`, row);
+    }
+  }
+
   for (const r of uniqueRows) {
+    const existing = existingMap.get(`${r.order_number}||${r.ebay_item_id ?? ''}`);
     const patch: Record<string, unknown> = {};
-    if (r.buyer) patch.buyer = r.buyer;
-    if (r.ship_to_name) patch.ship_to_name = r.ship_to_name;
-    if (r.ship_to_street1) patch.ship_to_street1 = r.ship_to_street1;
-    if (r.ship_to_street2) patch.ship_to_street2 = r.ship_to_street2;
-    if (r.ship_to_city) patch.ship_to_city = r.ship_to_city;
-    if (r.ship_to_state) patch.ship_to_state = r.ship_to_state;
-    if (r.ship_to_zip) patch.ship_to_zip = r.ship_to_zip;
-    if (r.ship_to_country) patch.ship_to_country = r.ship_to_country;
-    if (r.shipping_service) patch.shipping_service = r.shipping_service;
-    if (r.tracking_number) patch.tracking_number = r.tracking_number;
-    if (r.carrier) patch.carrier = r.carrier;
-    if (r.shipped_at) patch.shipped_at = r.shipped_at;
-    if (r.order_subtotal != null) patch.order_subtotal = r.order_subtotal;
-    if (r.order_shipping_cost != null) patch.order_shipping_cost = r.order_shipping_cost;
-    if (r.order_tax != null) patch.order_tax = r.order_tax;
-    if (r.order_total != null) patch.order_total = r.order_total;
-    if (r.sales_record_number) patch.sales_record_number = r.sales_record_number;
+    if (r.buyer && (!existing || existing.buyer !== r.buyer)) patch.buyer = r.buyer;
+    if (r.ship_to_name && (!existing || existing.ship_to_name !== r.ship_to_name)) patch.ship_to_name = r.ship_to_name;
+    if (r.ship_to_street1 && (!existing || existing.ship_to_street1 !== r.ship_to_street1)) patch.ship_to_street1 = r.ship_to_street1;
+    if (r.ship_to_street2 && (!existing || existing.ship_to_street2 !== r.ship_to_street2)) patch.ship_to_street2 = r.ship_to_street2;
+    if (r.ship_to_city && (!existing || existing.ship_to_city !== r.ship_to_city)) patch.ship_to_city = r.ship_to_city;
+    if (r.ship_to_state && (!existing || existing.ship_to_state !== r.ship_to_state)) patch.ship_to_state = r.ship_to_state;
+    if (r.ship_to_zip && (!existing || existing.ship_to_zip !== r.ship_to_zip)) patch.ship_to_zip = r.ship_to_zip;
+    if (r.ship_to_country && (!existing || existing.ship_to_country !== r.ship_to_country)) patch.ship_to_country = r.ship_to_country;
+    if (r.shipping_service && (!existing || existing.shipping_service !== r.shipping_service)) patch.shipping_service = r.shipping_service;
+    if (r.tracking_number && (!existing || existing.tracking_number !== r.tracking_number)) patch.tracking_number = r.tracking_number;
+    if (r.carrier && (!existing || existing.carrier !== r.carrier)) patch.carrier = r.carrier;
+    if (r.shipped_at && (!existing || existing.shipped_at !== r.shipped_at)) patch.shipped_at = r.shipped_at;
+    if (r.order_subtotal != null && (!existing || Number(existing.order_subtotal) !== Number(r.order_subtotal))) patch.order_subtotal = r.order_subtotal;
+    if (r.order_shipping_cost != null && (!existing || Number(existing.order_shipping_cost) !== Number(r.order_shipping_cost))) patch.order_shipping_cost = r.order_shipping_cost;
+    if (r.order_tax != null && (!existing || Number(existing.order_tax) !== Number(r.order_tax))) patch.order_tax = r.order_tax;
+    if (r.order_total != null && (!existing || Number(existing.order_total) !== Number(r.order_total))) patch.order_total = r.order_total;
+    if (r.sales_record_number && (!existing || existing.sales_record_number !== r.sales_record_number)) patch.sales_record_number = r.sales_record_number;
     if (Object.keys(patch).length === 0) continue;
     let q = supabaseAdmin.from('ebay_sales').update(patch).eq('order_number', r.order_number);
     if (r.ebay_item_id) q = q.eq('ebay_item_id', r.ebay_item_id);
