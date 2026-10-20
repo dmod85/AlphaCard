@@ -49,10 +49,14 @@ export async function GET(request: NextRequest) {
     const shouldSync = searchParams.get('sync') !== 'false';
 
     // Drop leftover 16% ad estimates so ROI only counts Finances-reported ads.
-    try {
-      await clearEstimatedAdFees();
-    } catch (err: any) {
-      console.error('[sold-orders] clear ads:', err?.message || err);
+    // Only on an explicit sync — this scans ebay_sales and may issue UPDATEs,
+    // so running it on every read-only page load (sync=false) burned Disk IO.
+    if (shouldSync) {
+      try {
+        await clearEstimatedAdFees();
+      } catch (err: any) {
+        console.error('[sold-orders] clear ads:', err?.message || err);
+      }
     }
 
     // If not syncing, just return DB rows

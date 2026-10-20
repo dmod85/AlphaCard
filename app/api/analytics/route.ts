@@ -3,61 +3,15 @@ import { supabaseAdmin } from '@/app/lib/supabase-admin';
 
 export async function GET() {
   try {
-    const [leadsRes, inventoryRes, runsRes, compsRes, hunterPerfRes] = await Promise.all([
-      // All leads with timestamps for timeline
-      supabaseAdmin
-        .from('raw_leads')
-        .select('status, estimated_profit, roi_pct, hunter_source, sport, confidence, current_price, median_comp, death_zone, grade_candidate, shipping_tier, discovered_at, reviewed_at')
-        .order('discovered_at', { ascending: false })
-        .limit(500),
+    // Inventory with P&L
+    const { data: inventoryData, error: invErr } = await supabaseAdmin
+      .from('inventory')
+      .select('status, purchase_price, total_cost, sold_price, net_profit, roi_pct, sport, grading_status, purchase_date, sold_date')
+      .order('created_at', { ascending: false });
 
-      // Inventory with P&L
-      supabaseAdmin
-        .from('inventory')
-        .select('status, purchase_price, total_cost, sold_price, net_profit, roi_pct, sport, grading_status, purchase_date, sold_date')
-        .order('created_at', { ascending: false }),
+    if (invErr) throw invErr;
 
-      // Recent runs
-      supabaseAdmin
-        .from('hunter_runs')
-        .select('*')
-        .order('started_at', { ascending: false })
-        .limit(50),
-
-      // Comp cache size
-      supabaseAdmin
-        .from('sold_comps')
-        .select('id', { count: 'exact', head: true }),
-
-      // Hunter performance view
-      supabaseAdmin
-        .from('v_hunter_performance')
-        .select('*'),
-    ]);
-
-    const leads = leadsRes.data || [];
-    const inventory = inventoryRes.data || [];
-    const runs = runsRes.data || [];
-
-    // Timeline: leads discovered per day (last 30 days)
-    const timeline: Record<string, Record<string, number>> = {};
-    leads.forEach(l => {
-      const day = (l.discovered_at || '').slice(0, 10);
-      if (!day) return;
-      if (!timeline[day]) timeline[day] = { total: 0, purchased: 0, dismissed: 0 };
-      timeline[day].total++;
-      if (l.status === 'purchased') timeline[day].purchased++;
-      if (l.status === 'dismissed') timeline[day].dismissed++;
-    });
-
-    // Conversion funnel
-    const funnel = {
-      discovered: leads.length,
-      reviewed: leads.filter(l => l.reviewed_at).length,
-      purchased: leads.filter(l => l.status === 'purchased').length,
-      listed: inventory.filter(i => i.status === 'listed' || i.status === 'sold').length,
-      sold: inventory.filter(i => i.status === 'sold').length,
-    };
+    const inventory = inventoryData || [];
 
     // P&L summary
     const soldCards = inventory.filter(i => i.status === 'sold');
@@ -83,31 +37,6 @@ export async function GET() {
       profitBySport[sport].count++;
     });
 
-    // Hunter efficiency
-    const hunterEfficiency: Record<string, { leads: number; purchased: number; conversion: number }> = {};
-    ['typo_hunter', 'holo_heuristic', 'stale_sniper'].forEach(h => {
-      const hLeads = leads.filter(l => l.hunter_source === h);
-      const hPurchased = hLeads.filter(l => l.status === 'purchased');
-      hunterEfficiency[h] = {
-        leads: hLeads.length,
-        purchased: hPurchased.length,
-        conversion: hLeads.length > 0 ? Math.round((hPurchased.length / hLeads.length) * 100) : 0,
-      };
-    });
-
-    // Shipping tier distribution
-    const shippingDist: Record<string, number> = {};
-    leads.filter(l => l.status === 'new' || l.status === 'purchased').forEach(l => {
-      shippingDist[l.shipping_tier] = (shippingDist[l.shipping_tier] || 0) + 1;
-    });
-
-    // Confidence distribution (buckets of 10)
-    const confDist: Record<string, number> = {};
-    leads.forEach(l => {
-      const bucket = `${Math.floor(l.confidence / 10) * 10}-${Math.floor(l.confidence / 10) * 10 + 9}`;
-      confDist[bucket] = (confDist[bucket] || 0) + 1;
-    });
-
     return NextResponse.json({
       pnl: {
         total_revenue: Math.round(totalRevenue * 100) / 100,
@@ -118,16 +47,7 @@ export async function GET() {
         inventory_value: Math.round(inventoryValue * 100) / 100,
         active_cards: activeInventory.length,
       },
-      funnel,
-      timeline,
       profit_by_sport: profitBySport,
-      hunter_efficiency: hunterEfficiency,
-      hunter_performance: hunterPerfRes.data || [],
-      shipping_distribution: shippingDist,
-      confidence_distribution: confDist,
-      comp_cache_size: compsRes.count || 0,
-      recent_runs: runs.slice(0, 10),
-      total_runs: runs.length,
     });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
