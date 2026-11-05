@@ -200,4 +200,7 @@ export interface BulkListStagingItem {
   price: number;
   quantity: number;
   image_urls: string[];
+  // Set when the card came from the Listing Generator.
+  description?: string;
+  item_specifics?: { name: string; value: string }[];
 }

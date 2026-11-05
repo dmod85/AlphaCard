@@ -7,13 +7,14 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "test": "tsx --test app/lib/pool-roi.test.ts app/lib/pnl.test.ts app/lib/order-costs.test.ts app/lib/price-bands.test.ts scripts/label-scan.test.mjs",
+    "test": "tsx --test app/lib/pool-roi.test.ts app/lib/pnl.test.ts app/lib/order-costs.test.ts app/lib/price-bands.test.ts app/lib/card-listing/pricing.test.ts scripts/label-scan.test.mjs",
     "seed:cards": "tsx --env-file=.env scripts/seed-cards.ts",
     "print-agent": "node scripts/print-agent.mjs",
     "print-order": "node scripts/print-one-order.mjs",
     "print-label": "node scripts/label-print.mjs"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^1.3.0",
     "@supabase/ssr": "^0.5.0",
     "@supabase/supabase-js": "^2.45.0",
     "@types/qrcode": "^1.5.6",

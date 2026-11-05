@@ -1,12 +1,13 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { BulkListStagingItem, EbayListingJob, EbayListingItem } from '@/app/types';
 import CardEntryForm from './components/CardEntryForm';
 import CsvUpload from './components/CsvUpload';
 import StagingTable from './components/StagingTable';
 import ResultsPanel from './components/ResultsPanel';
 import JobHistory from './components/JobHistory';
+import { BULK_LIST_HANDOFF_KEY } from '@/app/lib/card-listing/handoff';
 
 export default function BulkListPage() {
   const [stagingItems, setStagingItems] = useState<BulkListStagingItem[]>([]);
@@ -15,6 +16,19 @@ export default function BulkListPage() {
   const [jobItems, setJobItems] = useState<EbayListingItem[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'manual' | 'csv'>('manual');
+
+  // Cards sent over from the Listing Generator page.
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem(BULK_LIST_HANDOFF_KEY);
+      if (!raw) return;
+      sessionStorage.removeItem(BULK_LIST_HANDOFF_KEY);
+      const handed = JSON.parse(raw) as BulkListStagingItem[];
+      if (Array.isArray(handed) && handed.length) setStagingItems(prev => [...prev, ...handed]);
+    } catch {
+      // sessionStorage unavailable or bad JSON: nothing to import
+    }
+  }, []);
 
   const addItem = (item: BulkListStagingItem) => {
     setStagingItems(prev => [...prev, item]);

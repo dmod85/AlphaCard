@@ -38,14 +38,28 @@ async function callEbayApi(xmlBody: string, callName: string, token: string): Pr
   return response.text();
 }
 
-function buildGetSellerListRequest(page: number, token: string, asOf: Date): string {
+// Time window for GetSellerList. Defaults to "every listing still active as of
+// asOf" (EndTime in the next 120 days). `startTimeFrom`/`startTimeTo` instead
+// filter by listing StartTime — used by the fast "recent listings" path.
+type SellerListWindow =
+  | { kind: 'end'; asOf: Date }
+  | { kind: 'start'; from: Date; to: Date };
+
+function buildGetSellerListRequest(page: number, token: string, window: SellerListWindow): string {
   const credentials = isOAuthToken(token)
     ? ''
     : `<RequesterCredentials><eBayAuthToken>${token}</eBayAuthToken></RequesterCredentials>`;
 
-  const now = asOf;
-  const future = new Date(asOf);
-  future.setDate(future.getDate() + 120);
+  let timeFilter: string;
+  if (window.kind === 'end') {
+    const future = new Date(window.asOf);
+    future.setDate(future.getDate() + 120);
+    timeFilter = `<EndTimeFrom>${window.asOf.toISOString()}</EndTimeFrom>
+  <EndTimeTo>${future.toISOString()}</EndTimeTo>`;
+  } else {
+    timeFilter = `<StartTimeFrom>${window.from.toISOString()}</StartTimeFrom>
+  <StartTimeTo>${window.to.toISOString()}</StartTimeTo>`;
+  }
 
   return `<?xml version="1.0" encoding="utf-8"?>
 <GetSellerListRequest xmlns="urn:ebay:apis:eBLBaseComponents">
@@ -55,11 +69,108 @@ function buildGetSellerListRequest(page: number, token: string, asOf: Date): str
     <PageNumber>${page}</PageNumber>
   </Pagination>
   <DetailLevel>ItemReturnDescription</DetailLevel>
-  <EndTimeFrom>${now.toISOString()}</EndTimeFrom>
-  <EndTimeTo>${future.toISOString()}</EndTimeTo>
+  ${timeFilter}
   <ErrorLanguage>en_US</ErrorLanguage>
   <WarningLevel>High</WarningLevel>
 </GetSellerListRequest>`;
+}
+
+// GetMyeBaySelling's ActiveList is the only Trading API call that can sort
+// active listings newest-first (GetSellerList can't sort by StartTime), so it's
+// used to find the IDs + StartTimes of the N most recently listed items.
+function buildGetMyeBaySellingRecentRequest(count: number, token: string): string {
+  const credentials = isOAuthToken(token)
+    ? ''
+    : `<RequesterCredentials><eBayAuthToken>${token}</eBayAuthToken></RequesterCredentials>`;
+
+  return `<?xml version="1.0" encoding="utf-8"?>
+<GetMyeBaySellingRequest xmlns="urn:ebay:apis:eBLBaseComponents">
+  ${credentials}
+  <ActiveList>
+    <Include>true</Include>
+    <Sort>StartTimeDescending</Sort>
+    <Pagination>
+      <EntriesPerPage>${count}</EntriesPerPage>
+      <PageNumber>1</PageNumber>
+    </Pagination>
+  </ActiveList>
+  <ErrorLanguage>en_US</ErrorLanguage>
+  <WarningLevel>High</WarningLevel>
+</GetMyeBaySellingRequest>`;
+}
+
+function parseRecentActiveIds(xml: string): { ids: { itemId: string; startTime: string }[]; total: number } {
+  const activeList = xml.match(/<ActiveList>([\s\S]*?)<\/ActiveList>/)?.[1] || '';
+  const total = parseInt(activeList.match(/<TotalNumberOfEntries>(.*?)<\/TotalNumberOfEntries>/)?.[1] || '0');
+  const ids: { itemId: string; startTime: string }[] = [];
+  const itemRegex = /<Item>([\s\S]*?)<\/Item>/g;
+  let m;
+  while ((m = itemRegex.exec(activeList)) !== null) {
+    const itemId = m[1].match(/<ItemID>(.*?)<\/ItemID>/)?.[1];
+    const startTime = m[1].match(/<StartTime>(.*?)<\/StartTime>/)?.[1] || '';
+    if (itemId) ids.push({ itemId, startTime });
+  }
+  return { ids, total };
+}
+
+// Returns a NextResponse for a failed eBay call, or null if the call succeeded.
+function ebayFailureResponse(xml: string): NextResponse | null {
+  const ack = xml.match(/<Ack>(.*?)<\/Ack>/)?.[1];
+  if (ack !== 'Failure') return null;
+  const errorMsg = xml.match(/<LongMessage>(.*?)<\/LongMessage>/)?.[1]
+    || xml.match(/<ShortMessage>(.*?)<\/ShortMessage>/)?.[1]
+    || 'eBay API error';
+  console.error('[active-listings] eBay API failure:', decodeXml(errorMsg));
+  if (isEbayAuthError(xml)) {
+    clearTokenCache();
+    return NextResponse.json({ error: 'EBAY_AUTH_REQUIRED' }, { status: 401 });
+  }
+  return NextResponse.json({ error: decodeXml(errorMsg) }, { status: 500 });
+}
+
+const MAX_RECENT = 200; // GetMyeBaySelling's max page size
+const MAX_RECENT_SELLER_LIST_PAGES = 10;
+const MAX_START_WINDOW_MS = 119 * 86_400_000; // eBay caps time-range filters at 120 days
+
+// Fast path: the N most recently listed active items, in the same shape as the
+// full GetSellerList load. Two steps:
+//   1. GetMyeBaySelling (sorted StartTimeDescending) → the newest N item IDs.
+//   2. GetSellerList filtered to StartTime >= the oldest of those → full item
+//      data via the same parser as the full load, then narrowed to those IDs.
+//      (The StartTime window can also contain ended/sold items, which the ID
+//      filter drops.)
+async function getRecentListings(count: number, token: string, asOf: Date): Promise<NextResponse> {
+  const mySellingXml = await callEbayApi(buildGetMyeBaySellingRecentRequest(count, token), 'GetMyeBaySelling', token);
+  const failure = ebayFailureResponse(mySellingXml);
+  if (failure) return failure;
+
+  const { ids, total } = parseRecentActiveIds(mySellingXml);
+  if (ids.length === 0) {
+    return NextResponse.json({ listings: [], total, totalPages: 1, currentPage: 1, partial: total > 0 });
+  }
+
+  const wanted = new Set(ids.map((i) => i.itemId));
+  const startTimes = ids.map((i) => Date.parse(i.startTime)).filter((t) => !isNaN(t));
+  const oldest = startTimes.length > 0 ? Math.min(...startTimes) : asOf.getTime() - MAX_START_WINDOW_MS;
+  const to = new Date(asOf.getTime() + 60_000); // include anything listed while this request runs
+  const from = new Date(Math.max(oldest - 1000, to.getTime() - MAX_START_WINDOW_MS));
+
+  const found = new Map<string, ActiveListing>();
+  let page = 1;
+  let totalPages = 1;
+  while (page <= totalPages && page <= MAX_RECENT_SELLER_LIST_PAGES && found.size < wanted.size) {
+    const xml = await callEbayApi(buildGetSellerListRequest(page, token, { kind: 'start', from, to }), 'GetSellerList', token);
+    const pageFailure = ebayFailureResponse(xml);
+    if (pageFailure) return pageFailure;
+    totalPages = parseInt(xml.match(/<TotalNumberOfPages>(.*?)<\/TotalNumberOfPages>/)?.[1] || '1');
+    for (const listing of parseActiveListings(xml)) {
+      if (wanted.has(listing.itemId)) found.set(listing.itemId, listing);
+    }
+    page += 1;
+  }
+
+  const listings = Array.from(found.values()).sort((a, b) => Date.parse(b.startTime) - Date.parse(a.startTime));
+  return NextResponse.json({ listings, total, totalPages: 1, currentPage: 1, partial: total > ids.length });
 }
 
 interface NameValuePair {
@@ -322,6 +433,8 @@ function buildReviseItemRequest(itemId: string, seoTitle: string, description: s
 }
 
 // GET — fetch active listings (lazy loaded by page)
+//   ?page=N&asOf=ISO  → one 200-item page of every active listing
+//   ?recent=N         → just the N most recently listed items (fast first load)
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
@@ -334,21 +447,16 @@ export async function GET(request: NextRequest) {
     const asOf = asOfParam && !isNaN(Date.parse(asOfParam)) ? new Date(asOfParam) : new Date();
     const token = await getValidToken();
 
-    const firstXml = buildGetSellerListRequest(page, token, asOf);
+    const recentParam = parseInt(searchParams.get('recent') || '', 10);
+    if (recentParam > 0) {
+      return await getRecentListings(Math.min(recentParam, MAX_RECENT), token, asOf);
+    }
+
+    const firstXml = buildGetSellerListRequest(page, token, { kind: 'end', asOf });
     const firstResponse = await callEbayApi(firstXml, 'GetSellerList', token);
 
-    const ack = firstResponse.match(/<Ack>(.*?)<\/Ack>/)?.[1];
-    if (ack === 'Failure') {
-      const errorMsg = firstResponse.match(/<LongMessage>(.*?)<\/LongMessage>/)?.[1]
-        || firstResponse.match(/<ShortMessage>(.*?)<\/ShortMessage>/)?.[1]
-        || 'eBay API error';
-      console.error('[active-listings] eBay API failure:', decodeXml(errorMsg));
-      if (isEbayAuthError(firstResponse)) {
-        clearTokenCache();
-        return NextResponse.json({ error: 'EBAY_AUTH_REQUIRED' }, { status: 401 });
-      }
-      return NextResponse.json({ error: decodeXml(errorMsg) }, { status: 500 });
-    }
+    const failure = ebayFailureResponse(firstResponse);
+    if (failure) return failure;
 
     const total = parseInt(firstResponse.match(/<TotalNumberOfEntries>(.*?)<\/TotalNumberOfEntries>/)?.[1] || '0');
     const totalPages = parseInt(firstResponse.match(/<TotalNumberOfPages>(.*?)<\/TotalNumberOfPages>/)?.[1] || '1');

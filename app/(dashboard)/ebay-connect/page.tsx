@@ -25,7 +25,7 @@ export default function EbayConnectPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Exchange failed');
       setStatus('success');
-      setTimeout(() => router.push('/active-listings'), 1500);
+      setTimeout(() => router.push('/listing-details'), 1500);
     } catch (err: any) {
       setStatus('error');
       setErrorMsg(err.message);
@@ -88,7 +88,7 @@ export default function EbayConnectPage() {
                 <p className="text-red-400 text-xs mt-2">{errorMsg}</p>
               )}
               {status === 'success' && (
-                <p className="text-green-400 text-xs mt-2">Connected! Redirecting to Active Listings...</p>
+                <p className="text-green-400 text-xs mt-2">Connected! Redirecting to Listing Details...</p>
               )}
 
               <button

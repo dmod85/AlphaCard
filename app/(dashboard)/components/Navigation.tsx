@@ -9,9 +9,9 @@ const NAV_ITEMS = [
   { href: '/purchases', label: 'Purchases', icon: '🛒' },
   { href: '/inventory', label: 'Inventory', icon: '📦' },
   { href: '/watchlist', label: 'Watchlist', icon: '👁' },
+  { href: '/listing-generator', label: 'Listing Generator', icon: '✨' },
   { href: '/bulk-list', label: 'Bulk List', icon: '🚀' },
   { href: '/rotation-check', label: 'Rotation Check', icon: '📐' },
-  { href: '/active-listings', label: 'Active Listings', icon: '📋' },
   { href: '/listing-details', label: 'Listing Details', icon: '🔎' },
   { href: '/analytics', label: 'Analytics', icon: '📊' },
 ];

@@ -45,6 +45,17 @@ function buildItemXml(items: any[]): string {
   if (parent.card_year) specifics.push({ name: 'Year Manufactured', value: String(parent.card_year) });
   if (parent.card_set) specifics.push({ name: 'Set', value: parent.card_set });
 
+  // Listing Generator items bring a full set of specifics; they win over the
+  // basic ones above. Grading/condition go in ConditionDescriptors, not here.
+  if (items.length === 1 && Array.isArray(parent.item_specifics)) {
+    for (const s of parent.item_specifics as { name: string; value: string }[]) {
+      if (!s?.name?.trim() || !s?.value?.trim() || CONDITION_SPECIFICS.has(s.name)) continue;
+      const existing = specifics.findIndex(x => x.name === s.name);
+      if (existing >= 0) specifics.splice(existing, 1);
+      specifics.push({ name: s.name, value: s.value.slice(0, 65) });
+    }
+  }
+
   const itemSpecificsXml = specifics.length > 0 ? `
     <ItemSpecifics>
       ${specifics.map(s => `<NameValueList><Name>${escapeXml(s.name)}</Name><Value>${escapeXml(s.value)}</Value></NameValueList>`).join('\n      ')}
@@ -71,12 +82,16 @@ function buildItemXml(items: any[]): string {
     }
     descParts.push('Ships from the United States. Please message with any questions.');
     description = descParts.join(' | ');
+    if (item.description?.trim()) description = plainTextToHtml(item.description);
   }
 
   let variationsXml = '';
   let startPriceXml = `<StartPrice>${parent.price.toFixed(2)}</StartPrice>`;
   let quantityXml = `<Quantity>${parent.quantity || 1}</Quantity>`;
-  let pictureXml = parent.image_urls?.length ? `<PictureDetails><PictureURL>${escapeXml(parent.image_urls[0])}</PictureURL></PictureDetails>` : '';
+  // Single listings get every photo (front + back); eBay allows up to 24.
+  let pictureXml = parent.image_urls?.length
+    ? `<PictureDetails>${(parent.image_urls as string[]).slice(0, 24).map(u => `<PictureURL>${escapeXml(u)}</PictureURL>`).join('')}</PictureDetails>`
+    : '';
 
   if (isVariation) {
     // When using variations, StartPrice and Quantity are moved INSIDE the variation block
@@ -157,6 +172,18 @@ function buildItemXml(items: any[]): string {
       ${itemSpecificsXml}
       ${isVariation ? variationsXml : pictureXml}
     </Item>`;
+}
+
+const CONDITION_SPECIFICS = new Set(['Card Condition', 'Professional Grader', 'Grade', 'Certification Number']);
+
+function plainTextToHtml(text: string): string {
+  const esc = (t: string) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  return text
+    .split(/\n\s*\n/)
+    .map(p => p.trim())
+    .filter(Boolean)
+    .map(p => `<p>${esc(p).replace(/\n/g, '<br>')}</p>`)
+    .join('');
 }
 
 function escapeXml(str: string): string {
@@ -283,6 +310,13 @@ export async function POST(request: NextRequest) {
     if (insertError || !insertedItems) {
       return NextResponse.json({ error: insertError?.message || 'Failed to insert items' }, { status: 500 });
     }
+
+    // description / item_specifics aren't stored in ebay_listing_items, so
+    // carry them over from the request (rows come back in insert order).
+    insertedItems.forEach((row: any, i: number) => {
+      row.description = items[i]?.description;
+      row.item_specifics = items[i]?.item_specifics;
+    });
 
     // Process in batches of 5 (eBay AddItems limit)
     // 1. Group items by Title to detect variations

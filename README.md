@@ -215,3 +215,16 @@ alphacard/
 ## License
 
 Private. Not for distribution.
+
+## ✨ Listing Generator
+
+`/listing-generator` turns card photos into eBay-ready listings.
+
+1. Drop photos (paired front + back in file-name order; toggle off for one photo per card). Add notes like "Gold /50" or "PSA 10" if you want.
+2. **Generate** sends the photos to Claude, which identifies the card and returns an 80-char SEO title (plus 2 alternates), a description, eBay item specifics, keywords and a comp search query. Anything it couldn't read shows under "Check before listing".
+3. Comps load automatically: recent **sold** sales found by Claude's web search (130point, eBay sold, PriceCharting…), **active** eBay listings (Browse API), and **your own past sales** from `ebay_sales`. The suggested price is the median of recent exact sold comps (Quick = 25th percentile, High = 75th).
+4. **Send to Bulk List** moves the cards (title, description, specifics, all photos, price) into the Bulk List staging table to list on eBay.
+
+Setup: add `ANTHROPIC_API_KEY` to `.env.local` and to the Vercel project's env vars, then `npm install`. Optional `CARD_LISTING_MODEL` overrides the model (default `claude-opus-5-5`; `claude-haiku-5-5` is far cheaper for simple base cards).
+
+The same rules are available as a Claude skill in `.claude/skills/card-listing/SKILL.md`, so you can also drop card photos into Claude chat and get the same output.

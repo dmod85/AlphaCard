@@ -4,5 +4,5 @@ import { NextRequest, NextResponse } from 'next/server';
 // eBay auth is now handled via the EBAY_OAUTH_TOKEN env var.
 export async function GET(request: NextRequest) {
   const base = new URL(request.url).origin;
-  return NextResponse.redirect(`${base}/active-listings?ebay_error=oauth_flow_disabled`);
+  return NextResponse.redirect(`${base}/listing-details?ebay_error=oauth_flow_disabled`);
 }

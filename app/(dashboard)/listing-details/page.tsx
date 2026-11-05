@@ -47,6 +47,12 @@ const ROW_BATCH = 50;
 // through eBay's daily call limit on every page load.
 const SPEC_BATCH = 20;
 const SPEC_CONCURRENCY = 4;
+// Initial load only pulls this many of the most recently listed items (one
+// fast request + ~5 specifics batches) instead of all 2000+; the user can
+// opt into the full load with the "Load all" button.
+const RECENT_COUNT = 100;
+
+type LoadMode = 'recent' | 'all';
 
 type SpecificMap = Record<string, NameValuePair[] | 'loading' | 'error'>;
 // Watchers (WatchCount) — fetched alongside specifics but kept in its own
@@ -415,6 +421,7 @@ export default function ListingDetailsPage() {
   const [pagesLoading, setPagesLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [total, setTotal] = useState(0);
+  const [loadMode, setLoadMode] = useState<LoadMode>('recent');
   const [search, setSearch] = useState('');
   const [sortCol, setSortCol] = useState<string | null>(null);
   const [sortDir, setSortDir] = useState<SortDir>('asc');
@@ -529,6 +536,11 @@ export default function ListingDetailsPage() {
   // refs/state, double-counting listings and leaving the "loading…" indicator
   // stuck since one call's finally block can clobber the other's flags.
   const loadGenRef = useRef(0);
+  // Item IDs already in allListings, and those whose specifics have landed —
+  // lets "Load all" keep the recent rows already on screen and only fetch
+  // what's new, instead of starting over from an empty grid.
+  const loadedIdsRef = useRef<Set<string>>(new Set());
+  const specLoadedRef = useRef<Set<string>>(new Set());
 
   // ── Fetch a batch of item specifics (server caches these in Supabase) ────
   const fetchSpecifics = useCallback(async (itemIds: string[], gen: number) => {
@@ -554,6 +566,7 @@ export default function ListingDetailsPage() {
         itemId: string; specifics: NameValuePair[]; descriptionOk: boolean; titleLocked: boolean; hidden: boolean;
         watchCount: number | null;
       }[];
+      for (const r of results) specLoadedRef.current.add(r.itemId);
       setSpecificMap((prev) => {
         const next = { ...prev };
         for (const r of results) {
@@ -632,22 +645,38 @@ export default function ListingDetailsPage() {
   }, [fetchSpecifics]);
 
   // ── Load listing pages and their specifics concurrently ──────────────────
-  const loadEverything = useCallback(async () => {
+  // mode 'recent' → only the RECENT_COUNT newest listings (single request).
+  // mode 'all'    → every active listing, 200 per page.
+  // keepExisting  → used by "Load all" after a recent load: keeps the rows,
+  //                 specifics, and edits already on screen and appends the rest.
+  const loadEverything = useCallback(async (mode: LoadMode, keepExisting = false) => {
     const gen = ++loadGenRef.current;
 
-    setLoading(true);
+    setLoadMode(mode);
+    if (!keepExisting) setLoading(true);
     setPagesLoading(true);
     setError(null);
-    setAllListings([]);
-    setSpecificMap({});
-    setStatsMap({});
-    setTitleLockedMap({});
-    setHiddenMap({});
-    setDescriptionOkMap({});
-    setVisibleCount(ROW_BATCH);
     fetchingRef.current.clear();
     specQueueRef.current = [];
     pagesDoneRef.current = false;
+
+    if (keepExisting) {
+      // Specifics batches from the previous load that were still in flight
+      // got dropped by the gen bump above — re-queue anything not yet loaded.
+      specQueueRef.current.push(
+        ...Array.from(loadedIdsRef.current).filter((id) => !specLoadedRef.current.has(id))
+      );
+    } else {
+      setAllListings([]);
+      setSpecificMap({});
+      setStatsMap({});
+      setTitleLockedMap({});
+      setHiddenMap({});
+      setDescriptionOkMap({});
+      setVisibleCount(ROW_BATCH);
+      loadedIdsRef.current = new Set();
+      specLoadedRef.current = new Set();
+    }
 
     const specificsDone = runSpecificsWorkers(gen);
 
@@ -661,7 +690,10 @@ export default function ListingDetailsPage() {
       let totalPages = 1;
       while (page <= totalPages) {
         if (gen !== loadGenRef.current) return; // superseded by a newer load — stop paging
-        const res = await fetch(`/api/ebay/active-listings?page=${page}&asOf=${encodeURIComponent(asOf)}`);
+        const url = mode === 'recent'
+          ? `/api/ebay/active-listings?recent=${RECENT_COUNT}&asOf=${encodeURIComponent(asOf)}`
+          : `/api/ebay/active-listings?page=${page}&asOf=${encodeURIComponent(asOf)}`;
+        const res = await fetch(url);
         const data = await res.json();
         if (gen !== loadGenRef.current) return; // superseded while the request was in flight
         if (res.status === 401 || data.error === 'EBAY_AUTH_REQUIRED') {
@@ -669,11 +701,15 @@ export default function ListingDetailsPage() {
           return;
         }
         if (!res.ok) throw new Error(data.error || 'Failed to fetch listings');
-        setAllListings((prev) => [...prev, ...data.listings]);
+        // De-dupe: skips rows already shown (from the recent load) and any
+        // item that shows up on two pages.
+        const fresh = (data.listings as ActiveListing[]).filter((l) => !loadedIdsRef.current.has(l.itemId));
+        fresh.forEach((l) => loadedIdsRef.current.add(l.itemId));
+        setAllListings((prev) => [...prev, ...fresh]);
         // Queue this page's items for specifics immediately — the worker
         // pool above is already running and will pick them up right away,
         // in parallel with fetching the next page.
-        specQueueRef.current.push(...data.listings.map((l: ActiveListing) => l.itemId));
+        specQueueRef.current.push(...fresh.map((l) => l.itemId));
         totalPages = data.totalPages || 1;
         setTotal(data.total || 0);
         setLoading(false); // reveal rows as soon as the first page is in
@@ -691,7 +727,7 @@ export default function ListingDetailsPage() {
     }
   }, [runSpecificsWorkers]);
 
-  useEffect(() => { loadEverything(); }, [loadEverything]);
+  useEffect(() => { loadEverything('recent'); }, [loadEverything]);
 
   // ── Bottom sentinel — reveals more already-loaded rows as you scroll ─────
   useEffect(() => {
@@ -1505,6 +1541,11 @@ export default function ListingDetailsPage() {
             {loading
               ? 'Loading…'
               : `${sortedFiltered.length.toLocaleString()} of ${total.toLocaleString()} listings`}
+            {!loading && loadMode === 'recent' && total > allListings.length && (
+              <span className="ml-2 text-sky-400/80">
+                showing the {allListings.length.toLocaleString()} most recent
+              </span>
+            )}
             {sortCol && (
               <span className="ml-2 text-green-400/80">
                 sorted by {sortCol === '__title__' ? 'Title' : sortCol} {sortDir === 'asc' ? '↑' : '↓'}
@@ -1729,9 +1770,20 @@ export default function ListingDetailsPage() {
           </button>
         )}
 
-        {/* Refresh */}
+        {/* Load all — the page starts with just the most recent listings */}
+        {!loading && loadMode === 'recent' && total > allListings.length && (
+          <button
+            onClick={() => loadEverything('all', true)}
+            title="Fetch every active listing (slower — several eBay calls plus item specifics for each listing)"
+            className="px-3 py-1.5 bg-sky-700 hover:bg-sky-600 border border-sky-600 text-white text-xs rounded-lg transition"
+          >
+            Load all {total.toLocaleString()}
+          </button>
+        )}
+
+        {/* Refresh — reloads in whichever mode (recent / all) is active */}
         <button
-          onClick={() => { setEdits({}); setSubmitResults({}); setSortCol(null); loadEverything(); }}
+          onClick={() => { setEdits({}); setSubmitResults({}); setSortCol(null); loadEverything(loadMode); }}
           className="px-3 py-1.5 bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-300 text-xs rounded-lg transition"
         >
           ↺ Refresh
