@@ -360,17 +360,19 @@ export async function generatePackingSlipPdf(
     const FINAL_H = 11 * 72;
     const page = pdfDoc.addPage([FINAL_W, FINAL_H]);
     
-    // 4. Draw the embedded slip rotated 90 degrees CCW at the top of the page
+    // 4. Draw the embedded slip rotated 90 degrees CW at the top of the page
     // Keep everything inside the printer's unprintable edge. The slip used to
     // run right to the paper edge, so the right column and header got clipped.
     // Shrink it slightly and inset it SLIP_SAFE_INSET from the top and both sides.
     const s = (FINAL_W - 2 * SLIP_SAFE_INSET) / SLIP_H;
+    // Rotated 90 degrees clockwise. With a -90 rotation the slip's top-left
+    // corner is the anchor, so it sits at the page's top-left inside the inset.
     page.drawPage(embeddedSlip, {
-      x: FINAL_W - SLIP_SAFE_INSET,
-      y: FINAL_H - SLIP_SAFE_INSET - SLIP_W * s, // top band of the page
+      x: SLIP_SAFE_INSET,
+      y: FINAL_H - SLIP_SAFE_INSET, // top band of the page
       xScale: s,
       yScale: s,
-      rotate: degrees(90),
+      rotate: degrees(-90),
     });
   };
 
