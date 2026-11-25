@@ -18,6 +18,8 @@ import {
 // an 8.5x11 page so the printer can feed it sideways without warnings.
 const SLIP_W = 5 * 72; // 360pt
 const SLIP_H = 8.5 * 72; // 612pt
+// Margin kept clear on the letter page so nothing lands in the printer's dead zone.
+export const SLIP_SAFE_INSET = 0.3 * 72; // 21.6pt
 
 // Drop a logo at one of these paths (relative to the repo's public/ dir) to
 // have it appear centered in the header. Falls back to store-name text only
@@ -359,11 +361,15 @@ export async function generatePackingSlipPdf(
     const page = pdfDoc.addPage([FINAL_W, FINAL_H]);
     
     // 4. Draw the embedded slip rotated 90 degrees CCW at the top of the page
+    // Keep everything inside the printer's unprintable edge. The slip used to
+    // run right to the paper edge, so the right column and header got clipped.
+    // Shrink it slightly and inset it SLIP_SAFE_INSET from the top and both sides.
+    const s = (FINAL_W - 2 * SLIP_SAFE_INSET) / SLIP_H;
     page.drawPage(embeddedSlip, {
-      x: 8.5 * 72,
-      y: (11 - 5) * 72, // Shift it up so it prints on the top 5 inches
-      xScale: 1,
-      yScale: 1,
+      x: FINAL_W - SLIP_SAFE_INSET,
+      y: FINAL_H - SLIP_SAFE_INSET - SLIP_W * s, // top band of the page
+      xScale: s,
+      yScale: s,
       rotate: degrees(90),
     });
   };
