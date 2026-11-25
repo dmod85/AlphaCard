@@ -652,14 +652,35 @@ function PrintSlipButton({ orderNumber, reprint }: { orderNumber: string; reprin
   }
 
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="text-blue-400 hover:text-blue-300 underline underline-offset-2"
-      title="Print on the Canon: portrait letter, actual size"
-    >
-      {label}
-    </button>
+    <div className="flex items-center gap-2">
+      <button
+        type="button"
+        onClick={onClick}
+        className="text-blue-400 hover:text-blue-300 underline underline-offset-2"
+        title="Print on the Canon: portrait letter, actual size"
+      >
+        {label}
+      </button>
+      <span className="text-gray-600">|</span>
+      <a
+        href={`/api/ebay/packing-slip/${encodeURIComponent(orderNumber)}`}
+        target="_blank"
+        rel="noreferrer"
+        className="text-blue-400 hover:text-blue-300 underline underline-offset-2"
+        title="View PDF"
+      >
+        view PDF
+      </a>
+      <span className="text-gray-600">|</span>
+      <a
+        href={`/api/ebay/packing-slip/${encodeURIComponent(orderNumber)}?download=1`}
+        download
+        className="text-blue-400 hover:text-blue-300 underline underline-offset-2"
+        title="Save PDF"
+      >
+        save PDF
+      </a>
+    </div>
   );
 }
 

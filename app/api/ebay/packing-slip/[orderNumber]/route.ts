@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/app/lib/supabase-admin';
 import { generatePackingSlipPdf, PackingSlipOrder } from '@/app/lib/packing-slip';
+import { slipContentDisposition } from '@/app/lib/slip-disposition';
 
 // Manual/on-demand packing slip generation — GET /api/ebay/packing-slip/{orderNumber}
 // Reuses the same generator the ITEM_MARKED_SHIPPED webhook uses, useful for
@@ -58,10 +59,12 @@ export async function GET(
 
   const pdfBytes = await generatePackingSlipPdf(order);
 
+  const download = request.nextUrl.searchParams.get('download') === '1';
+
   return new NextResponse(Buffer.from(pdfBytes), {
     headers: {
       'Content-Type': 'application/pdf',
-      'Content-Disposition': `inline; filename="packing-slip-${orderNumber}.pdf"`,
+      'Content-Disposition': slipContentDisposition(orderNumber, download),
     },
   });
 }
