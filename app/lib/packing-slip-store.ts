@@ -26,6 +26,43 @@ export interface SlipSaleRow {
   quantity_sold: number;
   sold_for: number;
   picture_url: string | null;
+  printed_at?: string | null;
+}
+
+export type SlipPrintStateRow = { printed_at?: string | null };
+
+export type RegeneratedSlip = {
+  bytes: Uint8Array;
+  url: string;
+  alreadyPrinted: boolean;
+};
+
+export type UpdateRowsOption = boolean | ((state: { alreadyPrinted: boolean }) => boolean);
+
+export type RegenerateSlipOptions = {
+  /** Default true. Pass a function to decide after printed_at is known. */
+  updateRows?: UpdateRowsOption;
+  /** Default true (fail closed). View/save passes false so a storage hiccup still returns the PDF. */
+  throwOnStoreError?: boolean;
+};
+
+/** True if any line for the order has already been marked printed. */
+export function orderAlreadyPrinted(rows: readonly SlipPrintStateRow[]): boolean {
+  return rows.some((row) => row.printed_at != null && row.printed_at !== '');
+}
+
+/** Reprints of already-printed orders go through the queue; first prints use the auto listener. */
+export function shouldQueuePrint(alreadyPrinted: boolean): boolean {
+  return alreadyPrinted;
+}
+
+/** Viewing/saving must not UPDATE ebay_sales on an unprinted order (that would auto-print). */
+export function shouldUpdateRowsOnView(alreadyPrinted: boolean): boolean {
+  return alreadyPrinted;
+}
+
+export function resolveUpdateRows(updateRows: UpdateRowsOption, alreadyPrinted: boolean): boolean {
+  return typeof updateRows === 'function' ? updateRows({ alreadyPrinted }) : updateRows;
 }
 
 export function buildSlipOrder(
@@ -72,16 +109,26 @@ export function buildSlipOrder(
   };
 }
 
+function versionedPublicUrl(publicUrl: string): string {
+  const versioned = new URL(publicUrl);
+  versioned.searchParams.set('v', String(Date.now()));
+  return versioned.toString();
+}
+
 /**
- * Rebuild the packing slip with the current layout, overwrite the stored PDF,
- * and point every ebay_sales row for the order at a cache-busted public URL.
+ * Rebuild the packing slip with the current layout and overwrite the stored PDF.
+ * Optionally points every ebay_sales row for the order at a cache-busted public URL.
  * Does not touch printed_at.
  *
- * @returns the PDF bytes and public URL, or null when the order has no rows
+ * @returns the PDF bytes, public URL, and printed state, or null when the order has no rows
  */
 export async function regenerateAndStoreSlip(
   orderNumber: string,
-): Promise<{ bytes: Uint8Array; url: string } | null> {
+  options: RegenerateSlipOptions = {},
+): Promise<RegeneratedSlip | null> {
+  const updateRowsOption: UpdateRowsOption = options.updateRows ?? true;
+  const throwOnStoreError = options.throwOnStoreError ?? true;
+
   const { data: rows, error } = await supabaseAdmin
     .from('ebay_sales')
     .select('*')
@@ -89,9 +136,15 @@ export async function regenerateAndStoreSlip(
   if (error) throw error;
   if (!rows || rows.length === 0) return null;
 
+  const alreadyPrinted = orderAlreadyPrinted(rows);
+  const updateRows = resolveUpdateRows(updateRowsOption, alreadyPrinted);
+
   const order = buildSlipOrder(rows);
   const pdfBytes = await generatePackingSlipPdf(order);
   const path = `${orderNumber}.pdf`;
+
+  const { data: publicUrlData } = supabaseAdmin.storage.from('packing-slips').getPublicUrl(path);
+  const url = versionedPublicUrl(publicUrlData.publicUrl);
 
   const { error: uploadErr } = await supabaseAdmin.storage
     .from('packing-slips')
@@ -100,21 +153,25 @@ export async function regenerateAndStoreSlip(
       upsert: true,
       cacheControl: '0',
     });
-  if (uploadErr) throw uploadErr;
+  if (uploadErr) {
+    if (throwOnStoreError) throw uploadErr;
+    console.error(`[packing-slip] failed to upload slip for ${orderNumber}:`, uploadErr.message);
+    return { bytes: pdfBytes, url, alreadyPrinted };
+  }
 
-  const { data: publicUrlData } = supabaseAdmin.storage.from('packing-slips').getPublicUrl(path);
-  const versioned = new URL(publicUrlData.publicUrl);
-  versioned.searchParams.set('v', String(Date.now()));
-  const url = versioned.toString();
+  if (updateRows) {
+    const { error: updateErr } = await supabaseAdmin
+      .from('ebay_sales')
+      .update({
+        packing_slip_generated_at: new Date().toISOString(),
+        packing_slip_url: url,
+      })
+      .eq('order_number', orderNumber);
+    if (updateErr) {
+      if (throwOnStoreError) throw updateErr;
+      console.error(`[packing-slip] failed to update slip URL for ${orderNumber}:`, updateErr.message);
+    }
+  }
 
-  const { error: updateErr } = await supabaseAdmin
-    .from('ebay_sales')
-    .update({
-      packing_slip_generated_at: new Date().toISOString(),
-      packing_slip_url: url,
-    })
-    .eq('order_number', orderNumber);
-  if (updateErr) throw updateErr;
-
-  return { bytes: pdfBytes, url };
+  return { bytes: pdfBytes, url, alreadyPrinted };
 }
