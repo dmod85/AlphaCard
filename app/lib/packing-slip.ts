@@ -365,10 +365,14 @@ export async function generatePackingSlipPdf(
     // run right to the paper edge, so the right column and header got clipped.
     // Shrink it slightly and inset it SLIP_SAFE_INSET from the top and both sides.
     const s = (FINAL_W - 2 * SLIP_SAFE_INSET) / SLIP_H;
-    // Rotated 90 degrees clockwise. With a -90 rotation the slip's top-left
-    // corner is the anchor, so it sits at the page's top-left inside the inset.
+    // Rotated 90 degrees clockwise. The physical sheet is a 5in-wide card fed
+    // sideways, so it only covers the first PAPER_SHORT points of the page's
+    // x axis (from the left edge). With -90 the slip's top lands at
+    // x + SLIP_H * s, so anchor it so the slip's top sits SLIP_SAFE_INSET inside
+    // that strip; the slip's blank bottom runs off the left of the page.
+    const PAPER_SHORT = SLIP_W; // 5in
     page.drawPage(embeddedSlip, {
-      x: SLIP_SAFE_INSET,
+      x: PAPER_SHORT - SLIP_SAFE_INSET - SLIP_H * s,
       y: FINAL_H - SLIP_SAFE_INSET, // top band of the page
       xScale: s,
       yScale: s,
