@@ -361,22 +361,20 @@ export async function generatePackingSlipPdf(
     const page = pdfDoc.addPage([FINAL_W, FINAL_H]);
     
     // 4. Draw the embedded slip rotated 90 degrees CW at the top of the page
-    // Keep everything inside the printer's unprintable edge. The slip used to
-    // run right to the paper edge, so the right column and header got clipped.
-    // Shrink it slightly and inset it SLIP_SAFE_INSET from the top and both sides.
-    const s = (FINAL_W - 2 * SLIP_SAFE_INSET) / SLIP_H;
-    // Rotated 90 degrees clockwise. The physical sheet is a 5in-wide card fed
-    // sideways, so it only covers the first PAPER_SHORT points of the page's
-    // x axis (from the left edge). With -90 the slip's top lands at
-    // x + SLIP_H * s, so anchor it so the slip's top sits SLIP_SAFE_INSET inside
-    // that strip; the slip's blank bottom runs off the left of the page.
-    const PAPER_SHORT = SLIP_W; // 5in
+    // Placement is calibrated from test prints on Dusten's card, which feeds
+    // sideways. The part of the page that lands on the card (with margin) is about
+    // page x 25-355pt and page y 440-770pt. The slip is turned 180 degrees so it reads
+    // the way the card is handled. With 180, slip (sx, sy) maps to page (x - sx*s,
+    // y - sy*s), so the slip's top content sits at the low page-y end.
+    const s = 0.88;
+    const SLIP_RIGHT_X = 345; // page x of the slip's left edge (rotated)
+    const SLIP_TOP_Y = 450; // page y of the slip's top edge (rotated)
     page.drawPage(embeddedSlip, {
-      x: PAPER_SHORT - SLIP_SAFE_INSET - SLIP_H * s,
-      y: FINAL_H - SLIP_SAFE_INSET, // top band of the page
+      x: SLIP_RIGHT_X,
+      y: SLIP_TOP_Y + SLIP_H * s,
       xScale: s,
       yScale: s,
-      rotate: degrees(-90),
+      rotate: degrees(180),
     });
   };
 
