@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { supabaseAdmin } from '@/app/lib/supabase-admin';
 import { verifyEbayNotificationSignature } from '@/app/lib/ebay-webhook-verify';
-import { generatePackingSlipPdf, PackingSlipOrder } from '@/app/lib/packing-slip';
+import { regenerateAndStoreSlip } from '@/app/lib/packing-slip-store';
 import { fetchAndUpsertOrder } from '@/app/lib/ebay-orders';
 
 // -----------------------------------------------------------------------
@@ -144,63 +144,8 @@ async function handleItemMarkedShipped(orderId: string, data: ItemMarkedShippedD
     })
     .eq('order_number', orderId);
 
-  const { data: rows, error } = await supabaseAdmin
-    .from('ebay_sales')
-    .select('*')
-    .eq('order_number', orderId);
-  if (error) throw error;
-  if (!rows || rows.length === 0) {
+  const stored = await regenerateAndStoreSlip(orderId);
+  if (!stored) {
     console.warn(`[item-shipped webhook] no ebay_sales rows found for order ${orderId} — skipping slip`);
-    return;
   }
-
-  const first = rows[0];
-  const order: PackingSlipOrder = {
-    orderNumber: first.order_number,
-    salesRecordNumber: first.sales_record_number,
-    saleDate: first.sale_date,
-    buyer: first.buyer,
-    shipTo: {
-      name: first.ship_to_name,
-      street1: first.ship_to_street1,
-      street2: first.ship_to_street2,
-      city: first.ship_to_city,
-      state: first.ship_to_state,
-      zip: first.ship_to_zip,
-      country: first.ship_to_country,
-    },
-    shippingService: first.shipping_service,
-    subtotal: first.order_subtotal,
-    shippingCost: first.order_shipping_cost,
-    tax: first.order_tax,
-    total: first.order_total,
-    items: rows.map((r) => ({
-      title: r.item_title,
-      sku: r.sku,
-      ebayItemId: r.ebay_item_id,
-      quantity: r.quantity_sold,
-      soldFor: r.sold_for,
-      pictureUrl: r.picture_url,
-    })),
-    storeName: process.env.STORE_NAME?.trim() || 'Packing Slip',
-    storeUrl: process.env.STORE_URL?.trim() || null,
-  };
-
-  const pdfBytes = await generatePackingSlipPdf(order);
-  const path = `${orderId}.pdf`;
-
-  const { error: uploadErr } = await supabaseAdmin.storage
-    .from('packing-slips')
-    .upload(path, Buffer.from(pdfBytes), { contentType: 'application/pdf', upsert: true });
-  if (uploadErr) throw uploadErr;
-
-  const { data: publicUrlData } = supabaseAdmin.storage.from('packing-slips').getPublicUrl(path);
-
-  await supabaseAdmin
-    .from('ebay_sales')
-    .update({
-      packing_slip_generated_at: new Date().toISOString(),
-      packing_slip_url: publicUrlData.publicUrl,
-    })
-    .eq('order_number', orderId);
 }

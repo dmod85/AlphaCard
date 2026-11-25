@@ -1,11 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { supabaseAdmin } from '@/app/lib/supabase-admin';
-import { generatePackingSlipPdf, PackingSlipOrder } from '@/app/lib/packing-slip';
+import {
+  regenerateAndStoreSlip,
+  shouldUpdateRowsOnView,
+} from '@/app/lib/packing-slip-store';
 import { slipContentDisposition } from '@/app/lib/slip-disposition';
 
 // Manual/on-demand packing slip generation — GET /api/ebay/packing-slip/{orderNumber}
-// Reuses the same generator the ITEM_MARKED_SHIPPED webhook uses, useful for
-// testing the layout or re-printing without waiting for a real eBay event.
+// Rebuilds the slip with the current layout, overwrites the stored PDF, and
+// returns the fresh bytes (view or save). Row URLs are only updated when the
+// order is already printed, so viewing an unprinted slip cannot auto-print it.
 
 export const runtime = 'nodejs';
 
@@ -14,59 +17,25 @@ export async function GET(
   { params }: { params: Promise<{ orderNumber: string }> }
 ) {
   const { orderNumber } = await params;
+  const download = request.nextUrl.searchParams.get('download') === '1';
 
-  const { data: rows, error } = await supabaseAdmin
-    .from('ebay_sales')
-    .select('*')
-    .eq('order_number', orderNumber);
-
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  if (!rows || rows.length === 0) {
+  let result: Awaited<ReturnType<typeof regenerateAndStoreSlip>>;
+  try {
+    result = await regenerateAndStoreSlip(orderNumber, {
+      updateRows: ({ alreadyPrinted }) => shouldUpdateRowsOnView(alreadyPrinted),
+      throwOnStoreError: false,
+    });
+  } catch (err: any) {
+    return NextResponse.json({ error: err.message || 'Failed to generate packing slip' }, { status: 500 });
+  }
+  if (!result) {
     return NextResponse.json({ error: `No sales found for order ${orderNumber}` }, { status: 404 });
   }
 
-  const first = rows[0];
-  const order: PackingSlipOrder = {
-    orderNumber: first.order_number,
-    salesRecordNumber: first.sales_record_number,
-    saleDate: first.sale_date,
-    buyer: first.buyer,
-    shipTo: {
-      name: first.ship_to_name,
-      street1: first.ship_to_street1,
-      street2: first.ship_to_street2,
-      city: first.ship_to_city,
-      state: first.ship_to_state,
-      zip: first.ship_to_zip,
-      country: first.ship_to_country,
-    },
-    shippingService: first.shipping_service,
-    subtotal: first.order_subtotal,
-    shippingCost: first.order_shipping_cost,
-    tax: first.order_tax,
-    total: first.order_total,
-    items: rows.map((r) => ({
-      title: r.item_title,
-      sku: r.sku,
-      ebayItemId: r.ebay_item_id,
-      quantity: r.quantity_sold,
-      soldFor: r.sold_for,
-      pictureUrl: r.picture_url,
-    })),
-    storeName: process.env.STORE_NAME?.trim() || 'Packing Slip',
-    storeUrl: process.env.STORE_URL?.trim() || null,
-  };
-
-  const pdfBytes = await generatePackingSlipPdf(order);
-
-  const download = request.nextUrl.searchParams.get('download') === '1';
-
-  return new NextResponse(Buffer.from(pdfBytes), {
+  return new NextResponse(Buffer.from(result.bytes), {
     headers: {
       'Content-Type': 'application/pdf',
       'Content-Disposition': slipContentDisposition(orderNumber, download),
     },
   });
 }
-
-
